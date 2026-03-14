@@ -1,0 +1,41 @@
+{
+    "version": 2,
+    "name": "vaultbank-frontend",
+    "buildCommand": "npm run build",
+    "outputDirectory": "build",
+    "framework": "create-react-app",
+    "routes": [
+        {
+            "src": "/static/(.*)",
+            "dest": "/static/$1"
+        },
+        {
+            "src": "/favicon.ico",
+            "dest": "/favicon.ico"
+        },
+        {
+            "src": "/manifest.json",
+            "dest": "/manifest.json"
+        },
+        {
+            "src": "/robots.txt",
+            "dest": "/robots.txt"
+        },
+        {
+            "src": "/(.*)",
+            "dest": "/index.html"
+        }
+    ],
+    "env": {
+        "REACT_APP_API_BASE_URL": "@vaultbank_api_base_url",
+        "REACT_APP_NAME": "VaultBank24",
+        "REACT_APP_VERSION": "2.0.0",
+        "REACT_APP_ENV": "production",
+        "REACT_APP_ENABLE_ANALYTICS": "true",
+        "REACT_APP_ENABLE_REWARDS": "true",
+        "REACT_APP_ENABLE_MARKETPLACE": "true",
+        "REACT_APP_ENABLE_SECURITY_MONITORING": "true",
+        "REACT_APP_DEBUG_MODE": "false",
+        "REACT_APP_LOG_LEVEL": "error"
+    }
+}

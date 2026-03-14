@@ -1,0 +1,24 @@
+{
+  "css.validate": false,
+  "css.customData": ["./tailwind-css-custom-data.json"],
+  "files.associations": {
+    "*.css": "css"
+  },
+  "editor.quickSuggestions": {
+    "strings": true
+  },
+  "tailwindCSS.emmetCompletions": true,
+  "tailwindCSS.includeLanguages": {
+    "javascript": "javascript",
+    "javascriptreact": "javascriptreact",
+    "typescript": "typescript",
+    "typescriptreact": "typescriptreact"
+  },
+  "tailwindCSS.experimental.classRegex": [
+    ["class[:]\\s*['\\\"`]([^\\\"`]*)['\\\"`]", "([^\\\"`]*)"],
+    ["className[:]\\s*['\\\"`]([^\\\"`]*)['\\\"`]", "([^\\\"`]*)"]
+  ],
+  "css.lint.unknownAtRules": "ignore",
+  "scss.lint.unknownAtRules": "ignore",
+  "less.lint.unknownAtRules": "ignore"
+}
