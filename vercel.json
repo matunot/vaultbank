@@ -1,4 +1,18 @@
 {
+    "experimental": {
+        "services": {
+            "api": {
+                "src": "api/index.js",
+                "use": "@vercel/node",
+                "routePrefix": "/_/api"
+            },
+            "server": {
+                "src": "server/index.js",
+                "use": "@vercel/node",
+                "routePrefix": "/_/server"
+            }
+        }
+    },
     "builds": [
         {
             "src": "client/package.json",
@@ -7,10 +21,6 @@
                 "buildCommand": "cd client && npm run build",
                 "distDir": "client/build"
             }
-        },
-        {
-            "src": "api/index.js",
-            "use": "@vercel/node"
         }
     ],
     "routes": [
