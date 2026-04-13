@@ -9,7 +9,9 @@
     "install:client": "cd client && npm install",
     "install:server": "cd server && npm install",
     "install:all": "npm run install:client && npm run install:server",
-    "build": "cd client && npm run build"
+    "build": "cd client && npm run build",
+    "vercel:build": "npm run build",
+    "vercel:dev": "npm run dev"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.14",
@@ -27,6 +29,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@craco/craco": "^7.1.0",
     "bcrypt": "^6.0.0",
     "csv-writer": "^1.6.0",
     "dotenv": "^17.2.3",
