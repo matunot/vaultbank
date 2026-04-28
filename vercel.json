@@ -1,36 +1,4 @@
 {
-    "experimental": {
-        "services": {
-            "api": {
-                "src": "api/index.js",
-                "use": "@vercel/node",
-                "routePrefix": "/_/api"
-            },
-            "server": {
-                "src": "server/index.js",
-                "use": "@vercel/node",
-                "routePrefix": "/_/server"
-            }
-        }
-    },
-    "builds": [
-        {
-            "src": "client/package.json",
-            "use": "@vercel/static-build",
-            "config": {
-                "buildCommand": "npm run build",
-                "distDir": "client/build"
-            }
-        }
-    ],
-    "routes": [
-        {
-            "src": "/api/(.*)",
-            "dest": "/api/index.js"
-        },
-        {
-            "src": "/(.*)",
-            "dest": "client/build/index.html"
-        }
-    ]
+    "buildCommand": "cd client && npm run build",
+    "outputDirectory": "client/build"
 }
