@@ -4,8 +4,8 @@
 
 - [x] Analyze the TypeScript hint and ESLint warning
 - [x] Identify the unused apiRequest variable on line 19
-- [ ] Remove the unused apiRequest variable from the useApi() destructuring
-- [ ] Verify the fix by checking the file
+- [x] Remove the unused apiRequest variable from the useApi() destructuring
+- [x] Verify the fix by checking the file
 
 ## Issue Details:
 
@@ -15,6 +15,10 @@
 
 ## Expected Result:
 
-- TypeScript hint resolved
-- ESLint warning resolved
-- Component functionality unchanged
+- [x] TypeScript hint resolved
+- [x] ESLint warning resolved
+- [x] Component functionality unchanged
+
+## Verification:
+
+The fix has been verified - the AdminDashboard.jsx file no longer contains any `useApi()` import or usage. The component uses localStorage and React hooks directly for admin authentication and state management.
