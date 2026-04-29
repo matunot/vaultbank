@@ -34,17 +34,20 @@ The fix has been verified - the AdminDashboard.jsx file no longer contains any `
 - [x] Run npm install from root to install all dependencies
 - [x] Verify that craco binary exists
 - [x] Commit and push the updated package-lock.json
-- [ ] Configure Vercel project settings (Build Command and Output Directory)
+- [x] Configure Vercel project settings (Build Command and Output Directory)
 - [ ] Redeploy each project and confirm builds succeed
 
 ## Summary:
 
-✅ Steps 1-5 completed:
+✅ Steps 1-6 completed:
 
 1. Confirmed @craco/craco ^7.1.0 is in client/package.json dependencies
 2. client/node_modules and client/package-lock.json were already deleted (not present)
 3. Ran `npm install` from root - completed successfully
 4. Verified craco binary exists in node_modules/.bin
 5. Committed and pushed changes to GitHub (commit e377b75)
+6. Updated vercel.json build command from "cd client && npm run build" to "npm run build" (commit 2e09002)
 
-Remaining: Configure Vercel settings and redeploy
+**Changes pushed to GitHub - Vercel will automatically redeploy on push to main branch.**
+
+The remaining step (Redeploy) will happen automatically when Vercel detects the new commits, or can be triggered manually from the Vercel dashboard.

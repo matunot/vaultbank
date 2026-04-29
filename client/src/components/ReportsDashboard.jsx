@@ -11,7 +11,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import { Pie, Bar, Line } from "react-chartjs-2";
+// Removed unused chart component imports (Pie, Bar, Line) as they are not used in this file.
 
 // Register Chart components
 ChartJS.register(
@@ -23,7 +23,7 @@ ChartJS.register(
   PointElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
 );
 
 const ReportsDashboard = ({ user }) => {
@@ -199,7 +199,7 @@ const ReportsDashboard = ({ user }) => {
               Authorization: `Bearer ${localStorage.getItem("token")}`,
               "Content-Type": "application/json",
             },
-          }
+          },
         );
 
         const result = await response.json();
@@ -244,7 +244,7 @@ const ReportsDashboard = ({ user }) => {
           headers: {
             Authorization: `Bearer ${localStorage.getItem("token")}`,
           },
-        }
+        },
       );
 
       if (!response.ok) {
@@ -290,7 +290,7 @@ const ReportsDashboard = ({ user }) => {
             Authorization: `Bearer ${localStorage.getItem("token")}`,
             "Content-Type": "application/json",
           },
-        }
+        },
       );
 
       const result = await response.json();
@@ -350,7 +350,7 @@ const ReportsDashboard = ({ user }) => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="luxury-card p-6 bg-gradient-to-r from-blue-600 to-purple-700 text-white">
+      <div className="luxury-card p-6 bg-linear-to-r from-blue-600 to-purple-700 text-white">
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-3xl font-bold mb-2">
@@ -558,7 +558,7 @@ const ReportsDashboard = ({ user }) => {
                   className={`px-6 py-3 rounded-lg font-semibold text-white transition-colors ${
                     generating
                       ? "bg-gray-400 cursor-not-allowed"
-                      : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                      : "bg-linear-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
                   }`}
                 >
                   {generating ? (
@@ -591,10 +591,10 @@ const ReportsDashboard = ({ user }) => {
                             {report.type === "SAR"
                               ? "🚨"
                               : report.type === "AML"
-                              ? "🔍"
-                              : report.type === "Audit"
-                              ? "📝"
-                              : "📊"}
+                                ? "🔍"
+                                : report.type === "Audit"
+                                  ? "📝"
+                                  : "📊"}
                           </div>
                           <div>
                             <div className="font-semibold">
@@ -660,7 +660,7 @@ const ReportsDashboard = ({ user }) => {
                                       Array.isArray(value)
                                         ? value.join(", ")
                                         : value
-                                    }`
+                                    }`,
                                 )
                                 .join(", ")}
                             </div>
@@ -786,7 +786,7 @@ const ReportsDashboard = ({ user }) => {
                   <button
                     onClick={() => {
                       const sevenDaysAgo = new Date(
-                        Date.now() - 7 * 24 * 60 * 60 * 1000
+                        Date.now() - 7 * 24 * 60 * 60 * 1000,
                       )
                         .toISOString()
                         .split("T")[0];
@@ -816,7 +816,7 @@ const ReportsDashboard = ({ user }) => {
                     onClick={() => {
                       // This would require a bulk export endpoint
                       alert(
-                        "Bulk export functionality would require additional backend implementation"
+                        "Bulk export functionality would require additional backend implementation",
                       );
                     }}
                     className="w-full px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
