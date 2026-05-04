@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const requestLogger = require('./middleware/logger');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -15,9 +16,12 @@ const businessRoutes = require('./routes/business');
 const investmentsRoutes = require('./routes/investments');
 const adminRoutes = require('./routes/admin');
 const paymentsRoutes = require('./routes/payments');
+const amlRoutes = require('./routes/aml');
+const reportsRoutes = require('./routes/reports');
 
 // Import middleware
 const { generalLimiter } = require('./middleware/rateLimiter');
+const { logAction } = require('./middleware/audit');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -62,10 +66,18 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // ─── Logging ─────────────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {
     app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
+    // Custom request logger for structured logging
+    app.use(requestLogger);
 }
 
 // ─── Rate Limiting (global) ──────────────────────────────────────────────────
 app.use(generalLimiter);
+
+// Attach audit logger to request for easy use in routes
+app.use((req, res, next) => {
+    req.logAction = logAction;
+    next();
+});
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
@@ -90,6 +102,12 @@ app.use('/', businessRoutes);
 app.use('/', investmentsRoutes);
 app.use('/', adminRoutes);
 app.use('/', paymentsRoutes);
+app.use('/', amlRoutes);
+// Register anomalies route
+const anomaliesRoutes = require('./routes/anomalies');
+app.use('/', anomaliesRoutes);
+// Register compliance reports route
+app.use('/', reportsRoutes);
 
 // ─── API Info ────────────────────────────────────────────────────────────────
 app.get('/api', (req, res) => {
@@ -155,6 +173,11 @@ app.get('/api', (req, res) => {
                 'POST /api/payments/upi/initiate',
                 'POST /api/payments/paypal/initiate',
                 'GET /api/payments/history'
+            ],
+            aml: [
+                'GET /api/aml/flags',
+                'PUT /api/aml/:flagId/approve',
+                'PUT /api/aml/:flagId/reject'
             ]
         },
         docs: 'See DEPLOYMENT_README.md for full documentation',

@@ -13,6 +13,7 @@ import ReportsDashboard from './components/ReportsDashboard';
 import AnalyticsDashboard from './components/AnalyticsDashboard';
 import WealthDashboard from './components/WealthDashboard';
 import AssistantWidget from './components/AssistantWidget';
+import InvestorDashboard from './components/InvestorDashboard';
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -166,6 +167,10 @@ function App() {
             <Route
               path="/wealth"
               element={<WealthDashboard darkMode={darkMode} />}
+            />
+            <Route
+              path="/investor"
+              element={<InvestorDashboard user={user} />}
             />
           </Routes>
         </div>

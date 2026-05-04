@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useLog, LOG_EVENTS } from "../hooks/useLog";
 import { useSuccessToast, useErrorToast } from "./NotificationContainer";
+import { api } from "../config/apiConfig";
 
 export default function Transfer({ subscription, user, onTransactionAdd }) {
   // Logging and toast hooks
@@ -48,7 +49,7 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
 
   // Filter methods based on subscription
   const availableMethods = methods.filter(
-    (m) => !m.premium || subscription === "premium" || subscription === "trial"
+    (m) => !m.premium || subscription === "premium" || subscription === "trial",
   );
 
   // Supported currencies for FX conversion
@@ -75,7 +76,7 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
         method,
         amount,
         recipient: recipient.substring(0, 10) + "...", // Partial for privacy
-      }
+      },
     );
 
     // Check rate limiting
@@ -83,7 +84,7 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
       errorToast(
         `Rate limit exceeded. Please wait ${transferCooldown} seconds before making another transfer.`,
         5000,
-        transferCooldown > 2 ? initRequestId : null
+        transferCooldown > 2 ? initRequestId : null,
       );
       // Log rate limit event
       await log(LOG_EVENTS.SECURITY_RATE_LIMIT, {
@@ -141,7 +142,7 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
             successToast(
               `📱 UPI payment initiated! Open your UPI app to complete the payment.`,
               8000,
-              initRequestId
+              initRequestId,
             );
 
             // Clear form
@@ -185,7 +186,7 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
         errorToast(
           `❌ ${method.toUpperCase()} payment failed: ${error.message}`,
           5000,
-          initRequestId
+          initRequestId,
         );
         return;
       }
@@ -226,40 +227,52 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
       }
     }
 
-    const newTransaction = {
-      id: Date.now(),
-      label: `${method.toUpperCase()} Transfer to ${recipient}`,
-      amount: -transferAmount,
-      date: new Date().toISOString().split("T")[0],
-      category: "transfer",
+    // Build payload for the serverless transfer endpoint
+    const payload = {
+      amount: transferAmount,
+      recipient,
+      method,
+      // Include method‑specific fields only when they are relevant
+      ...(method === "domestic" && { accountNumber, ifscCode }),
+      ...(method === "international" && { iban, swiftCode }),
+      ...(method === "vaultbank" && { vaultbankId }),
+      ...(method === "crypto" && { walletAddress, cryptoType }),
     };
 
-    // Add transaction to user's history
-    onTransactionAdd && onTransactionAdd(newTransaction);
+    // Call the Vercel serverless transfers API
+    let apiResponse;
+    try {
+      apiResponse = await api.post("/api/transfers", payload);
+    } catch (apiError) {
+      console.error("Transfer API error:", apiError);
+      errorToast(
+        `❌ Transfer failed: ${apiError.message || "Unknown error"}`,
+        5000,
+        initRequestId,
+      );
+      return;
+    }
+
+    const { transaction } = apiResponse;
+    // Add transaction to user's history (client‑side state)
+    onTransactionAdd && onTransactionAdd(transaction);
 
     // Earn rewards points for transaction (1 point per ₹100 spent)
     try {
       const pointsToEarn = Math.floor(Math.abs(transferAmount) / 100); // 1 point per ₹100 spent
       if (pointsToEarn > 0) {
-        await fetch("/api/rewards/earn", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${localStorage.getItem("token")}`,
+        await api.post("/api/rewards/earn", {
+          userId: user.id || user._id,
+          action: "transaction",
+          actionId: transaction.id.toString(),
+          points: pointsToEarn,
+          description: `Earned ${pointsToEarn} points for ₹${transferAmount} transfer`,
+          metadata: {
+            amount: transferAmount,
+            method: method,
+            recipient: recipient.substring(0, 10) + "...",
           },
-          body: JSON.stringify({
-            userId: user.id || user._id,
-            action: "transaction",
-            actionId: newTransaction.id.toString(),
-            points: pointsToEarn,
-            description: `Earned ${pointsToEarn} points for ₹${transferAmount} transfer`,
-            metadata: {
-              amount: transferAmount,
-              method: method,
-              recipient: recipient.substring(0, 10) + "...",
-            },
-            idempotencyKey: `txn-${newTransaction.id}-${Date.now()}`,
-          }),
+          idempotencyKey: `txn-${transaction.id}-${Date.now()}`,
         });
         console.log(`Earned ${pointsToEarn} rewards points for transaction`);
       }
@@ -306,10 +319,10 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
     // Show success toast with request ID
     successToast(
       `⚡ Transfer of $${transferAmount.toFixed(
-        2
+        2,
       )} to ${recipient} via ${transferMethod} initiated!\n\nProcessing time: ${processingTime}`,
       8000,
-      initRequestId
+      initRequestId,
     );
 
     // Log successful transfer initiation
@@ -318,7 +331,7 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
       amount: transferAmount,
       recipient: recipient.substring(0, 10) + "...",
       processingTime,
-      transactionId: newTransaction.id,
+      transactionId: transaction.id,
     });
 
     // Reset form after successful transfer
@@ -353,7 +366,7 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
 
     // Fetch real-time exchange rate
     fetch(
-      `https://api.exchangerate.host/convert?from=${sendCurrency}&to=${receiveCurrency}&amount=${amount}`
+      `https://api.exchangerate.host/convert?from=${sendCurrency}&to=${receiveCurrency}&amount=${amount}`,
     )
       .then((res) => res.json())
       .then((data) => {
@@ -870,10 +883,10 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
             {method === "vaultbank"
               ? "✨ VaultBank Instant transfers: Absolutely FREE"
               : method === "domestic"
-              ? "💳 Domestic transfers: Competitive rates apply"
-              : method === "international"
-              ? "🌍 International transfers: USD 15-35 + exchange rate"
-              : "₿ Crypto transfers: Pay network gas fees"}
+                ? "💳 Domestic transfers: Competitive rates apply"
+                : method === "international"
+                  ? "🌍 International transfers: USD 15-35 + exchange rate"
+                  : "₿ Crypto transfers: Pay network gas fees"}
           </p>
         </div>
       </form>

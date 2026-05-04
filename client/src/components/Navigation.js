@@ -91,6 +91,26 @@ export default function Navigation() {
                   return null;
                 }
               })()}
+              {/* Investor Dashboard Link for Investor Users */}
+              {(() => {
+                try {
+                  const userData = JSON.parse(localStorage.getItem('user') || '{}');
+                  return userData.role === 'investor' && (
+                    <Link
+                      to="/investor"
+                      className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center space-x-2 ${location.pathname === '/investor'
+                        ? 'text-purple-400 bg-purple-400/10 border border-purple-400/30'
+                        : 'text-gray-300 hover:text-purple-400 hover:bg-purple-400/5 border border-transparent'
+                        }`}
+                    >
+                      <span className="text-lg">📈</span>
+                      <span>Investor</span>
+                    </Link>
+                  );
+                } catch {
+                  return null;
+                }
+              })()}
             </div>
           )}
 

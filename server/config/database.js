@@ -34,6 +34,8 @@ const demoStore = {
             role: 'user',
             balance: 5230.50,
             subscription: 'trial',
+            verified: false,
+            risk_score: 0,
             transactions: [
                 { id: 1, label: 'Salary Deposit', amount: 2000, date: '2025-10-01', category: 'income' },
                 { id: 2, label: 'Rent Payment', amount: -500, date: '2025-10-05', category: 'housing' },
@@ -42,6 +44,10 @@ const demoStore = {
             ],
             summary: { totalIncome: 2150, totalExpenses: 750, netSavings: 1400 },
             goals: [],
+            // 2FA fields (default disabled)
+            twoFAEnabled: false,
+            twoFASecret: null,
+            backupCodes: [],
             createdAt: new Date().toISOString()
         },
         {
@@ -52,6 +58,26 @@ const demoStore = {
             role: 'super_admin',
             balance: 0,
             subscription: 'admin',
+            verified: true,
+            risk_score: 0,
+            transactions: [],
+            summary: { totalIncome: 0, totalExpenses: 0, netSavings: 0 },
+            goals: [],
+            twoFAEnabled: false,
+            twoFASecret: null,
+            backupCodes: [],
+            createdAt: new Date().toISOString()
+        },
+        {
+            id: 'investor-user-001',
+            email: 'investor@vaultbank.com',
+            password: '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', // "password"
+            name: 'Investor User',
+            role: 'investor',
+            balance: 10000.00,
+            subscription: 'premium',
+            verified: false,
+            risk_score: 0,
             transactions: [],
             summary: { totalIncome: 0, totalExpenses: 0, netSavings: 0 },
             goals: [],

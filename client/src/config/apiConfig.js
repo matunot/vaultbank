@@ -3,8 +3,14 @@
  * Reads from environment variables with fallback to development defaults
  */
 
-// Get API base URL from environment variable, fallback to localhost for development
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
+// Determine the API base URL.
+// In production (Vercel) the serverless functions are served from the same origin,
+// so we use a relative path (empty string) which results in fetch calls like
+// `/api/...`. During local development we fall back to the Express dev server.
+const API_BASE_URL =
+    process.env.NODE_ENV === 'production'
+        ? ''
+        : process.env.REACT_APP_API_BASE_URL || 'http://localhost:5000';
 
 // Helper function to create API resource with improved error handling
 function createApiResource(baseUrl) {

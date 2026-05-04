@@ -14,6 +14,7 @@ import Reports from "./components/Reports";
 import TrendReports from "./components/TrendReports";
 import GoalsDashboard from "./components/GoalsDashboard";
 import Transfer from "./components/Transfer";
+import TransferHistory from "./components/TransferHistory";
 import BudgetCard from "./components/BudgetCard";
 import WeeklyDigest from "./components/WeeklyDigest";
 import Chatbot from "./components/Chatbot";
@@ -1419,6 +1420,8 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
             }));
           }}
         />
+        {/* Transfer History Component */}
+        <TransferHistory />
 
         {/* Weekly Digest Summary - Premium Feature */}
         {subscription === "premium" || subscription === "trial" ? (
