@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { api } from './config/apiConfig';
 
 export default function Login({ onVerify }) {
   const [formData, setFormData] = useState({
@@ -13,6 +14,8 @@ export default function Login({ onVerify }) {
   const [mfaAttempts, setMfaAttempts] = useState(0);
   const [cooldown, setCooldown] = useState(0);
   const cooldownIntervalRef = useRef(null);
+  const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [magicLinkMessage, setMagicLinkMessage] = useState('');
 
   const handleChange = (e) => {
     setFormData({
@@ -40,6 +43,29 @@ export default function Login({ onVerify }) {
       setMessageType('success');
       setLoading(false);
     }, 1000); // Simulate network delay
+  };
+
+  // Request a magic link for password‑less login
+  const handleMagicLink = async () => {
+    if (!formData.email) {
+      setMagicLinkMessage('Please enter your email first.');
+      setMagicLinkSent(false);
+      return;
+    }
+    try {
+      const response = await api.post('/api/auth/magic-link', { email: formData.email });
+      if (response.success) {
+        setMagicLinkMessage('Magic link sent! Check your email.');
+        setMagicLinkSent(true);
+      } else {
+        setMagicLinkMessage(response.message || 'Failed to send magic link.');
+        setMagicLinkSent(false);
+      }
+    } catch (err) {
+      console.error('Magic link request error:', err);
+      setMagicLinkMessage('Error sending magic link.');
+      setMagicLinkSent(false);
+    }
   };
 
   const handleVerify = () => {
@@ -245,6 +271,19 @@ export default function Login({ onVerify }) {
                     Signup coming soon! (demo only)
                   </span>
                 </p>
+                {/* Magic‑link request button */}
+                <button
+                  type="button"
+                  onClick={handleMagicLink}
+                  className="mt-2 button2"
+                >
+                  ✉️ Send Magic Link
+                </button>
+                {magicLinkMessage && (
+                  <p className="mt-2 text-sm" style={{ color: magicLinkSent ? '#4ade80' : '#f87171' }}>
+                    {magicLinkMessage}
+                  </p>
+                )}
               </div>
             </form>
           )}
