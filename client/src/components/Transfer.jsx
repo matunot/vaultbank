@@ -227,7 +227,7 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
       }
     }
 
-    // Build payload for the serverless transfer endpoint
+    // Build payload for the serverless transfer endpoint (used for tokenized flow)
     const payload = {
       amount: transferAmount,
       recipient,
@@ -239,21 +239,72 @@ export default function Transfer({ subscription, user, onTransactionAdd }) {
       ...(method === "crypto" && { walletAddress, cryptoType }),
     };
 
-    // Call the Vercel serverless transfers API
-    let apiResponse;
+    // --- Privacy‑by‑default tokenized transfer flow ---
+    // 1️⃣ Initiate a tokenized transfer (no debit yet)
+    let initResponse;
     try {
-      apiResponse = await api.post("/api/transfers", payload);
-    } catch (apiError) {
-      console.error("Transfer API error:", apiError);
+      initResponse = await api.post("/api/transfer/initiate", payload);
+    } catch (initError) {
+      console.error("Initiate transfer error:", initError);
       errorToast(
-        `❌ Transfer failed: ${apiError.message || "Unknown error"}`,
+        `❌ Initiate transfer failed: ${initError.message || "Unknown error"}`,
         5000,
         initRequestId,
       );
       return;
     }
 
-    const { transaction } = apiResponse;
+    const { token, status: initStatus } = initResponse;
+    if (initStatus !== "pending") {
+      errorToast(
+        `❌ Unexpected initiate status: ${initStatus}`,
+        5000,
+        initRequestId,
+      );
+      return;
+    }
+
+    // 2️⃣ Claim the tokenized transfer (debits sender, credits recipient)
+    let claimResponse;
+    try {
+      claimResponse = await api.post("/api/transfer/claim", { token });
+    } catch (claimError) {
+      console.error("Claim transfer error:", claimError);
+      errorToast(
+        `❌ Claim transfer failed: ${claimError.message || "Unknown error"}`,
+        5000,
+        initRequestId,
+      );
+      return;
+    }
+
+    const {
+      token: claimedToken,
+      amount: claimedAmount,
+      status: claimStatus,
+    } = claimResponse;
+    if (claimStatus !== "claimed") {
+      errorToast(
+        `❌ Unexpected claim status: ${claimStatus}`,
+        5000,
+        initRequestId,
+      );
+      return;
+    }
+
+    // Construct a transaction‑like object for downstream UI logic (rewards, history, etc.)
+    // Construct a transaction‑like object for downstream UI logic (rewards, history, etc.)
+    // Exclude the sender identifier to maintain privacy‑by‑default.
+    const transaction = {
+      id: claimedToken,
+      // fromUser omitted for privacy
+      toUser: recipient,
+      amount: claimedAmount,
+      method,
+      createdAt: new Date().toISOString(),
+      ledgerEntries: {}, // Not needed for UI, placeholder for compatibility
+    };
+
     // Add transaction to user's history (client‑side state)
     onTransactionAdd && onTransactionAdd(transaction);
 

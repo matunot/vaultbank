@@ -14,6 +14,9 @@ import AnalyticsDashboard from './components/AnalyticsDashboard';
 import WealthDashboard from './components/WealthDashboard';
 import AssistantWidget from './components/AssistantWidget';
 import InvestorDashboard from './components/InvestorDashboard';
+import MagicLinkCallback from './components/MagicLinkCallback';
+import Transfer from './components/Transfer';
+import Payments from './components/Payments';
 
 function App() {
   const [isLoading, setIsLoading] = useState(true);
@@ -92,6 +95,21 @@ function App() {
     localStorage.setItem('token', userData.token);
   }, []);
 
+  // On initial render, hydrate auth state from localStorage (e.g., after magic‑link login)
+  useEffect(() => {
+    const storedToken = localStorage.getItem('token');
+    const storedUser = localStorage.getItem('user');
+    if (storedToken && storedUser) {
+      try {
+        const userData = JSON.parse(storedUser);
+        setUser(userData);
+        setVerified(true);
+      } catch (e) {
+        console.error('Error parsing stored user data', e);
+      }
+    }
+  }, []);
+
   // Set loading to false after component mounts
   useEffect(() => {
     setIsLoading(false);
@@ -129,6 +147,7 @@ function App() {
                 <Login onVerify={handleLogin} />
               )}
             />
+            <Route path="/magic" element={<MagicLinkCallback />} />
             <Route
               path="/pricing"
               element={
@@ -171,6 +190,14 @@ function App() {
             <Route
               path="/investor"
               element={<InvestorDashboard user={user} />}
+            />
+            <Route
+              path="/transfer"
+              element={<Transfer subscription={subscription} user={user} onTransactionAdd={() => { }} />}
+            />
+            <Route
+              path="/payments"
+              element={<Payments subscription={subscription} user={user} />}
             />
           </Routes>
         </div>

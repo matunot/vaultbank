@@ -19,6 +19,18 @@ const totalTransferVolume = new client.Counter({
     help: 'Total volume transferred across all transfers',
 });
 
+// Counter for tokenized transfers (privacy-focused)
+const totalTokenizedTransfers = new client.Counter({
+    name: 'vaultbank_total_tokenized_transfers',
+    help: 'Total number of tokenized transfer operations',
+});
+
+// Counter for total volume transferred via tokenized transfers
+const totalTokenizedTransferVolume = new client.Counter({
+    name: 'vaultbank_total_tokenized_transfer_volume',
+    help: 'Total volume transferred across tokenized transfers',
+});
+
 // Counter for number of anomalous transfers detected
 const anomalyTransfers = new client.Counter({
     name: 'vaultbank_anomaly_transfers',
@@ -57,6 +69,8 @@ module.exports = {
     client,
     totalTransfers,
     totalTransferVolume,
+    totalTokenizedTransfers,
+    totalTokenizedTransferVolume,
     activeUsers,
     totalBalance,
     setActiveUsers,

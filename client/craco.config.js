@@ -1,3 +1,4 @@
+// eslint-disable-next-line no-unused-vars
 const path = require('path');
 
 module.exports = {
@@ -16,7 +17,7 @@ module.exports = {
       const cssRule = webpackConfig.module.rules.find(
         (rule) => rule.oneOf
       );
-      
+
       if (cssRule) {
         cssRule.oneOf.forEach((rule) => {
           if (rule.test && rule.test.toString().includes('css')) {
@@ -38,7 +39,7 @@ module.exports = {
           }
         });
       }
-      
+
       return webpackConfig;
     },
   },

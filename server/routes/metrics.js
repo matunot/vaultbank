@@ -3,6 +3,7 @@
  * Exposes all registered metrics in a format suitable for scraping.
  * Secured with the `requireInvestor` middleware to restrict access to users with the "investor" role.
  */
+// TODO: Read server/routes/metrics.js - completed
 const express = require('express');
 const { client } = require('../metrics');
 const requireInvestor = require('../middleware/requireInvestor');

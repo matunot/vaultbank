@@ -13,7 +13,7 @@ import VirtualCard from "./components/VirtualCard";
 import Reports from "./components/Reports";
 import TrendReports from "./components/TrendReports";
 import GoalsDashboard from "./components/GoalsDashboard";
-import Transfer from "./components/Transfer";
+import TransferForm from "./components/TransferForm";
 import TransferHistory from "./components/TransferHistory";
 import BudgetCard from "./components/BudgetCard";
 import WeeklyDigest from "./components/WeeklyDigest";
@@ -957,7 +957,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
 
   const exportTransactions = () => {
     if (!user?.transactions || user.transactions.length === 0) {
-      alert("No transactions to export!");
+      console.log("No transactions to export!");
       return;
     }
 
@@ -1409,7 +1409,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
         </div>
 
         {/* Advanced Transfer System */}
-        <Transfer
+        <TransferForm
           subscription={subscription}
           user={user}
           onTransactionAdd={(transaction) => {

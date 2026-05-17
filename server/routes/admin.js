@@ -3,6 +3,7 @@ const { v4: uuidv4 } = require('uuid');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { adminLimiter } = require('../middleware/rateLimiter');
 const { demoStore, findUserById } = require('../config/database');
+const { generateAuditReport } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -76,6 +77,7 @@ router.get('/api/admin/users', authenticateToken, requireAdmin, adminLimiter, (r
         const { page = 1, limit = 20, search, role, subscription } = req.query;
 
         let users = demoStore.users.map(u => {
+            // eslint-disable-next-line no-unused-vars
             const { password, ...userWithoutPwd } = u;
             return userWithoutPwd;
         });
@@ -122,6 +124,7 @@ router.get('/api/admin/users/:id', authenticateToken, requireAdmin, (req, res) =
         if (!user) {
             return res.status(404).json({ success: false, message: 'User not found.' });
         }
+        // eslint-disable-next-line no-unused-vars
         const { password, ...userWithoutPwd } = user;
 
         return res.status(200).json({
@@ -316,6 +319,26 @@ router.post('/api/admin/broadcast', authenticateToken, requireAdmin, (req, res) 
         });
     } catch (error) {
         return res.status(500).json({ success: false, message: 'Error broadcasting.' });
+    }
+});
+
+/**
+ * GET /api/admin/audit-report
+ * Generate an audit CSV report and return the file path.
+ * Accessible only to admin users.
+ */
+router.get('/api/admin/audit-report', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const filePath = await generateAuditReport();
+        // Respond with the generated file path. Client can download if needed.
+        return res.status(200).json({
+            success: true,
+            message: 'Audit report generated successfully.',
+            reportPath: filePath,
+        });
+    } catch (err) {
+        console.error('Admin audit report generation error:', err);
+        return res.status(500).json({ success: false, message: 'Failed to generate audit report.' });
     }
 });
 

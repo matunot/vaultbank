@@ -215,7 +215,9 @@ app.use((req, res) => {
 });
 
 // ─── Global Error Handler ────────────────────────────────────────────────────
-app.use((err, req, res, next) => {
+//The fourth argument is required by Express to identify error-handling middleware.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
     console.error('Unhandled error:', err);
 
     // CORS error

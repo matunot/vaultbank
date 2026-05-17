@@ -17,13 +17,8 @@
     "lint": "eslint client/src/**/*.js client/src/**/*.jsx"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.14",
-    "autoprefixer": "^10.4.21",
-    "concurrently": "^8.2.0",
-    "eslint": "^8.57.1",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.15",
-    "eslint-plugin-react": "^7.34.0"
+    "glob": "^10.5.0",
+    "rimraf": "^4.4.1"
   },
   "keywords": [
     "banking",
@@ -35,6 +30,8 @@
   "license": "ISC",
   "dependencies": {
     "@craco/craco": "^5.9.0",
+    "@jridgewell/sourcemap-codec": "^1.5.5",
+    "@rollup/plugin-terser": "^1.0.0",
     "bcrypt": "^6.0.0",
     "csv-writer": "^1.6.0",
     "dotenv": "^17.2.3",
@@ -42,6 +39,7 @@
     "fast-csv": "^4.3.6",
     "file-saver": "^2.0.5",
     "jsonwebtoken": "^9.0.2",
+    "morgan": "^1.10.1",
     "multer": "^2.1.1",
     "papaparse": "^5.5.3",
     "pdfkit": "^0.17.2",
@@ -50,8 +48,10 @@
     "react-confetti": "^6.4.0",
     "react-icons": "^5.5.0",
     "react-router-dom": "^7.14.2",
+    "svgo": "^2.8.2",
     "swiper": "^12.0.3",
     "table": "^6.9.0",
+    "winston": "^3.19.0",
     "xlsx": "^0.18.5"
   },
   "main": "index.js",

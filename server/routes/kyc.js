@@ -5,8 +5,6 @@ const fs = require('fs');
 const { authenticateToken } = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/auth');
 const { query } = require('../config/db');
-const Joi = require('joi');
-const validation = require('../middleware/validation');
 
 // Ensure upload directory exists
 const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'kyc');

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from "react";
-import { Pie, Area, Bar } from "react-chartjs-2";
+import React, { useState, useEffect, useCallback } from "react";
+import { Pie, Area } from "react-chartjs-2";
 import {
   Chart as ChartJS,
   ArcElement,
@@ -7,8 +7,8 @@ import {
   Legend,
   CategoryScale,
   LinearScale,
-  BarElement,
-  Title,
+  // BarElement, // Unused import removed
+  // Title, // Unused import removed
   PointElement,
   LineElement,
   AreaElement,
@@ -20,11 +20,11 @@ ChartJS.register(
   Legend,
   CategoryScale,
   LinearScale,
-  BarElement,
-  Title,
+  // BarElement, // Unused registration removed
+  // Title, // Unused registration removed
   PointElement,
   LineElement,
-  AreaElement
+  AreaElement,
 );
 
 const BusinessDashboard = ({ darkMode }) => {
@@ -37,29 +37,9 @@ const BusinessDashboard = ({ darkMode }) => {
   const [team, setTeam] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch user's businesses
-  const fetchBusinesses = async () => {
-    try {
-      const response = await fetch("/api/business/me", {
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem("token")}`,
-        },
-      });
-      const data = await response.json();
-      if (data.success) {
-        setBusinesses(data.data);
-        if (data.data.length > 0 && !selectedBusiness) {
-          setSelectedBusiness(data.data[0].businessDetails);
-          fetchBusinessDetails(data.data[0].businessDetails._id);
-        }
-      }
-    } catch (error) {
-      console.error("Failed to fetch businesses:", error);
-    }
-  };
-
   // Fetch business details
-  const fetchBusinessDetails = async (businessId) => {
+  // Memoize fetchBusinessDetails to avoid recreating the function on each render.
+  const fetchBusinessDetails = useCallback(async (businessId) => {
     try {
       const [analyticsRes, invoicesRes, payrollRes, teamRes] =
         await Promise.all([
@@ -102,17 +82,39 @@ const BusinessDashboard = ({ darkMode }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Memoized fetch for user's businesses to avoid recreating the function on each render.
+  const fetchBusinesses = useCallback(async () => {
+    try {
+      const response = await fetch("/api/business/me", {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+      });
+      const data = await response.json();
+      if (data.success) {
+        setBusinesses(data.data);
+        if (data.data.length > 0 && !selectedBusiness) {
+          setSelectedBusiness(data.data[0].businessDetails);
+          // Use the memoized fetchBusinessDetails function.
+          fetchBusinessDetails(data.data[0].businessDetails._id);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch businesses:", error);
+    }
+  }, [fetchBusinessDetails, selectedBusiness]);
 
   useEffect(() => {
     fetchBusinesses();
-  }, []);
+  }, [fetchBusinesses]);
 
   useEffect(() => {
     if (selectedBusiness) {
       fetchBusinessDetails(selectedBusiness._id);
     }
-  }, [selectedBusiness]);
+  }, [selectedBusiness, fetchBusinessDetails]);
 
   // Chart data for revenue vs expenses
   const revenueChartData = {
@@ -143,7 +145,7 @@ const BusinessDashboard = ({ darkMode }) => {
         data: [
           invoices.filter((inv) => inv.status === "paid").length,
           invoices.filter((inv) =>
-            ["sent", "viewed", "partial"].includes(inv.status)
+            ["sent", "viewed", "partial"].includes(inv.status),
           ).length,
           invoices.filter((inv) => inv.status === "overdue").length,
         ],
@@ -203,7 +205,7 @@ const BusinessDashboard = ({ darkMode }) => {
           value={selectedBusiness?._id || ""}
           onChange={(e) => {
             const business = businesses.find(
-              (b) => b.businessDetails._id === e.target.value
+              (b) => b.businessDetails._id === e.target.value,
             )?.businessDetails;
             setSelectedBusiness(business);
           }}
@@ -395,8 +397,8 @@ const BusinessDashboard = ({ darkMode }) => {
                         invoice.status === "paid"
                           ? "bg-green-100 text-green-800"
                           : invoice.status === "sent"
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-red-100 text-red-800"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-red-100 text-red-800"
                       }`}
                     >
                       {invoice.status.toUpperCase()}
@@ -487,8 +489,8 @@ const BusinessDashboard = ({ darkMode }) => {
                         payrollItem.status === "completed"
                           ? "bg-green-100 text-green-800"
                           : payrollItem.status === "scheduled"
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-yellow-100 text-yellow-800"
+                            ? "bg-blue-100 text-blue-800"
+                            : "bg-yellow-100 text-yellow-800"
                       }`}
                     >
                       {payrollItem.status.toUpperCase()}

@@ -6,6 +6,13 @@
  * on managed services (e.g., Railway, Heroku).
  */
 
+// Load environment variables from the project's root .env file.
+// This ensures that any module requiring this DB configuration has access to
+// DATABASE_URL and other settings, even when the script is executed from a
+// different working directory (e.g., scripts/check_audit_logs.js).
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
+
 const { Pool } = require('pg');
 
 if (!process.env.DATABASE_URL) {

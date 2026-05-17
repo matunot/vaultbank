@@ -2,6 +2,7 @@
   "name": "client",
   "version": "0.1.0",
   "private": true,
+  "homepage": ".",
   "dependencies": {
     "@craco/craco": "^7.1.0",
     "@testing-library/dom": "^10.4.1",
@@ -23,13 +24,17 @@
     "react-scripts": "^5.0.1",
     "react-share": "^5.2.2",
     "tailwindcss": "^3.4.18",
+    "vaultbank": "file:..",
     "web-vitals": "^2.1.4",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "autoprefixer": "^10.4.21",
+    "cross-env": "^7.0.3",
     "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.18"
+    "tailwindcss": "^3.4.18",
+    "rimraf": "^4.0.0",
+    "glob": "^10.0.0"
   },
   "eslintConfig": {
     "extends": [
@@ -50,12 +55,12 @@
     ]
   },
   "scripts": {
-    "start": "GENERATE_SOURCEMAP=false craco start",
-    "build": "craco build",
+    "start": "cross-env GENERATE_SOURCEMAP=false craco start",
+    "build": "cross-env GENERATE_SOURCEMAP=false craco build",
     "test": "craco test",
     "eject": "react-scripts eject"
   },
   "engines": {
-    "node": "18.x"
+    "node": "22.x"
   }
 }

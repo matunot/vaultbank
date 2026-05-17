@@ -2,6 +2,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authenticateToken } = require('../middleware/auth');
 const { demoStore } = require('../config/database');
+const { logAudit } = require('../utils/audit');
 
 const router = express.Router();
 
@@ -9,7 +10,7 @@ const router = express.Router();
  * POST /api/payments/upi/initiate
  * Initiate a UPI payment
  */
-router.post('/api/payments/upi/initiate', authenticateToken, (req, res) => {
+router.post('/api/payments/upi/initiate', authenticateToken, async (req, res) => {
     try {
         const { amount, upiId, description, currency } = req.body;
         const userId = req.user.id;
@@ -133,12 +134,76 @@ router.post('/api/payments/paypal/initiate', authenticateToken, (req, res) => {
 });
 
 /**
+ * POST /api/payments/stripe/initiate
+ * Initiate a Stripe payment (mock implementation)
+ */
+router.post('/api/payments/stripe/initiate', authenticateToken, async (req, res) => {
+    try {
+        const { amount, currency, description } = req.body;
+        const userId = req.user.id;
+
+        if (!amount) {
+            return res.status(400).json({
+                success: false,
+                message: 'Amount is required.'
+            });
+        }
+
+        const paymentRef = `VB-STRIPE-${Date.now()}`;
+
+        const payment = {
+            id: uuidv4(),
+            userId,
+            type: 'stripe',
+            amount: parseFloat(amount),
+            currency: currency || 'USD',
+            description: description || 'Stripe Payment',
+            status: 'pending',
+            reference: paymentRef,
+            createdAt: new Date().toISOString()
+        };
+
+        // Record audit log specific to Stripe
+        demoStore.auditLogs.push({
+            id: uuidv4(),
+            userId,
+            action: 'stripe_payment_initiated',
+            category: 'financial',
+            resourceId: payment.id,
+            details: JSON.stringify({ amount, currency, reference: paymentRef }),
+            timestamp: new Date().toISOString()
+        });
+
+        // Generic audit entry
+        await logAudit(userId, 'payment_stripe', 'payment');
+
+        const checkoutUrl = `https://checkout.stripe.com/pay/${paymentRef}`;
+
+        return res.status(200).json({
+            success: true,
+            message: 'Stripe payment initiated.',
+            data: {
+                payment,
+                checkoutUrl,
+                reference: paymentRef
+            }
+        });
+    } catch (error) {
+        console.error('Stripe payment error:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error initiating Stripe payment.'
+        });
+    }
+});
+
+/**
  * POST /api/payments/paypal/success
  * Handle PayPal payment success callback
  */
 router.post('/api/payments/paypal/success', authenticateToken, (req, res) => {
     try {
-        const { paymentId, payerId, token } = req.body;
+        const { paymentId } = req.body;
 
         return res.status(200).json({
             success: true,

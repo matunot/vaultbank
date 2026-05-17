@@ -1,252 +1,202 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { jwtDecode } from "jwt-decode";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  LineElement,
+  PointElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+} from "chart.js";
+import { Bar, Line, Doughnut } from "react-chartjs-2";
+import { useLog } from "../hooks/useLog";
+import { api } from "../config/apiConfig";
 
-// Import admin components
-import RewardsAdmin from "./RewardsAdmin";
-import AnalyticsDashboard from "./AnalyticsDashboard";
-import AutomationDashboard from "./AutomationDashboard";
-import SecurityDashboard from "./SecurityDashboard";
-import BusinessDashboard from "./BusinessDashboard";
-import AuditLog from "./AuditLog";
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  LineElement,
+  PointElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler,
+);
 
 export default function AdminDashboard() {
-  const [activeTab, setActiveTab] = useState("rewards");
-  const [adminUser, setAdminUser] = useState(null);
+  const [auditData, setAuditData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
+  const [error, setError] = useState(null);
+  const { log } = useLog();
 
   useEffect(() => {
-    // Check for admin authentication
-    const adminToken = localStorage.getItem("adminToken");
-    const adminUserData = localStorage.getItem("adminUser");
+    fetchAuditData();
+  }, []);
 
-    if (!adminToken || !adminUserData) {
-      navigate("/admin-login");
-      return;
-    }
-
+  const fetchAuditData = async () => {
     try {
-      // Verify token is still valid
-      const decoded = jwtDecode(adminToken);
-      const currentTime = Date.now() / 1000;
-
-      if (decoded.exp < currentTime) {
-        // Token expired, redirect to login
-        localStorage.removeItem("adminToken");
-        localStorage.removeItem("adminUser");
-        navigate("/admin-login");
-        return;
-      }
-
-      // Parse admin user data
-      const userData = JSON.parse(adminUserData);
-      setAdminUser(userData);
+      setLoading(true);
+      const response = await api.get("/api/admin/audit-report");
+      setAuditData(response.data.data);
+      log("info", "Audit data fetched successfully");
+    } catch (err) {
+      setError(err.message);
+      log("error", "Failed to fetch audit data");
+    } finally {
       setLoading(false);
-    } catch (error) {
-      console.error("Admin auth verification error:", error);
-      navigate("/admin-login");
     }
-  }, [navigate]);
-
-  const handleLogout = () => {
-    // Clear admin session
-    localStorage.removeItem("adminToken");
-    localStorage.removeItem("adminUser");
-    navigate("/admin-login");
   };
 
-  const handleTabChange = (tab) => {
-    setActiveTab(tab);
-  };
-
-  if (loading) {
+  if (loading)
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-900">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-green-400 mx-auto"></div>
-          <p className="text-green-400 text-lg mt-4">
-            Loading Admin Dashboard...
-          </p>
-        </div>
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-xl">Loading Admin Dashboard...</div>
       </div>
     );
-  }
+  if (error)
+    return (
+      <div className="flex items-center justify-center h-screen text-red-500">
+        Error: {error}
+      </div>
+    );
 
-  if (!adminUser) {
-    return null; // Will redirect to login
-  }
+  const loginsData = {
+    labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+    datasets: [
+      {
+        label: "Logins",
+        data: [12, 19, 15, 25, 22, 18, 30],
+        borderColor: "rgb(59, 130, 246)",
+        backgroundColor: "rgba(59, 130, 246, 0.1)",
+        fill: true,
+        tension: 0.4,
+      },
+    ],
+  };
 
-  const tabs = [
+  const transfersData = {
+    labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
+    datasets: [
+      {
+        label: "Transfers",
+        data: [45000, 52000, 49000, 63000, 58000, 72000],
+        backgroundColor: "rgba(16, 185, 129, 0.7)",
+        borderColor: "rgb(16, 185, 129)",
+        borderWidth: 1,
+      },
+    ],
+  };
+
+  const anomaliesData = {
+    labels: [
+      "Login Attempts",
+      "Suspicious Activity",
+      "Failed Payments",
+      "Security Events",
+    ],
+    datasets: [
+      {
+        data: [45, 12, 8, 23],
+        backgroundColor: [
+          "rgba(239, 68, 68, 0.8)",
+          "rgba(245, 158, 11, 0.8)",
+          "rgba(168, 85, 247, 0.8)",
+          "rgba(59, 130, 246, 0.8)",
+        ],
+        borderWidth: 0,
+      },
+    ],
+  };
+
+  const summaryCards = [
     {
-      id: "rewards",
-      name: "Rewards Admin",
-      icon: "🎁",
-      component: RewardsAdmin,
+      title: "Total Logins",
+      value: "2,847",
+      change: "+12%",
+      color: "text-blue-600",
     },
     {
-      id: "lending",
-      name: "Lending Admin",
-      icon: "💰",
-      component: () => (
-        <div className="p-6 text-center">
-          <h3 className="text-xl font-semibold text-white mb-4">
-            Lending Admin Panel
-          </h3>
-          <p className="text-gray-400">Manage lending products and services</p>
-        </div>
-      ),
+      title: "Transfers",
+      value: "$342,500",
+      change: "+8%",
+      color: "text-green-600",
     },
     {
-      id: "insurance",
-      name: "Insurance Admin",
-      icon: "🛡️",
-      component: () => (
-        <div className="p-6 text-center">
-          <h3 className="text-xl font-semibold text-white mb-4">
-            Insurance Admin Panel
-          </h3>
-          <p className="text-gray-400">Manage insurance products and claims</p>
-        </div>
-      ),
+      title: "Anomalies",
+      value: "23",
+      change: "-5%",
+      color: "text-red-600",
     },
     {
-      id: "fx",
-      name: "FX Admin",
-      icon: "💱",
-      component: () => (
-        <div className="p-6 text-center">
-          <h3 className="text-xl font-semibold text-white mb-4">
-            Foreign Exchange Admin Panel
-          </h3>
-          <p className="text-gray-400">Manage FX rates and currency services</p>
-        </div>
-      ),
-    },
-    {
-      id: "business",
-      name: "Business Admin",
-      icon: "🏢",
-      component: BusinessDashboard,
-    },
-    {
-      id: "analytics",
-      name: "Analytics",
-      icon: "📊",
-      component: AnalyticsDashboard,
-    },
-    {
-      id: "automation",
-      name: "Automation",
-      icon: "⚙️",
-      component: AutomationDashboard,
-    },
-    {
-      id: "security",
-      name: "Security",
-      icon: "🔒",
-      component: SecurityDashboard,
-    },
-    {
-      id: "audit",
-      name: "Audit Logs",
-      icon: "📋",
-      component: AuditLog,
+      title: "Security Events",
+      value: "45",
+      change: "+2%",
+      color: "text-purple-600",
     },
   ];
 
-  const ActiveComponent =
-    tabs.find((tab) => tab.id === activeTab)?.component || RewardsAdmin;
-
   return (
-    <div className="min-h-screen bg-gray-900">
-      {/* Header */}
-      <header className="bg-gray-800 border-b border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            {/* Logo and Title */}
-            <div className="flex items-center">
-              <div className="text-2xl font-bold text-white">
-                🔐 VaultBank Admin
-              </div>
-              <div className="ml-4 px-3 py-1 bg-green-600 text-white text-xs font-semibold rounded-full">
-                {adminUser.role?.toUpperCase() || "ADMIN"}
-              </div>
-            </div>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="max-w-7xl mx-auto">
+        <h1 className="text-3xl font-bold text-gray-900 mb-8">
+          Admin Compliance Dashboard
+        </h1>
 
-            {/* User Info */}
-            <div className="flex items-center space-x-4">
-              <div className="text-right">
-                <div className="text-white font-medium">
-                  {adminUser.name || adminUser.email}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+          {summaryCards.map((card, index) => (
+            <div key={index} className="bg-white rounded-lg shadow p-6">
+              <p className="text-gray-600 text-sm">{card.title}</p>
+              <p className={`text-2xl font-bold ${card.color}`}>{card.value}</p>
+              <p className="text-sm text-gray-500">
+                {card.change} from last period
+              </p>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold mb-4">Logins Per Day</h2>
+            <Line data={loginsData} />
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold mb-4">Transfers Volume</h2>
+            <Bar data={transfersData} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold mb-4">Payment Anomalies</h2>
+            <Doughnut data={anomaliesData} />
+          </div>
+          <div className="bg-white rounded-lg shadow p-6">
+            <h2 className="text-xl font-semibold mb-4">Audit Report</h2>
+            {auditData ? (
+              <div className="space-y-4">
+                <div className="p-4 bg-gray-50 rounded">
+                  <p className="text-sm text-gray-600">Report Path</p>
+                  <p className="font-mono text-sm">{auditData.reportPath}</p>
                 </div>
-                <div className="text-gray-400 text-sm">{adminUser.email}</div>
+                <div className="p-4 bg-gray-50 rounded">
+                  <p className="text-sm text-gray-600">Generated At</p>
+                  <p className="text-sm">
+                    {new Date(auditData.generatedAt).toLocaleString()}
+                  </p>
+                </div>
               </div>
-              <button
-                onClick={handleLogout}
-                className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
-                Logout
-              </button>
-            </div>
+            ) : (
+              <p className="text-gray-500">No audit data available</p>
+            )}
           </div>
         </div>
-      </header>
-
-      {/* Navigation Tabs */}
-      <nav className="bg-gray-800 border-b border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8 overflow-x-auto">
-            {tabs.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => handleTabChange(tab.id)}
-                className={`flex items-center space-x-2 py-4 px-2 border-b-2 font-medium text-sm whitespace-nowrap transition-colors ${
-                  activeTab === tab.id
-                    ? "border-green-400 text-green-400"
-                    : "border-transparent text-gray-400 hover:text-gray-300 hover:border-gray-300"
-                }`}
-              >
-                <span className="text-lg">{tab.icon}</span>
-                <span>{tab.name}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </nav>
-
-      {/* Main Content */}
-      <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="px-4 py-6 sm:px-0">
-          {/* Active Tab Indicator */}
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-white flex items-center">
-              <span className="mr-3 text-2xl">
-                {tabs.find((tab) => tab.id === activeTab)?.icon}
-              </span>
-              {tabs.find((tab) => tab.id === activeTab)?.name}
-            </h2>
-            <div className="mt-2 h-1 bg-gradient-to-r from-green-400 to-blue-500 rounded"></div>
-          </div>
-
-          {/* Active Component */}
-          <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700">
-            <ActiveComponent />
-          </div>
-        </div>
-      </main>
-
-      {/* Security Notice */}
-      <footer className="bg-gray-800 border-t border-gray-700 mt-8">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="text-center">
-            <p className="text-xs text-gray-500">
-              🔒 All admin actions are monitored and logged. Session timeout: 7
-              days
-            </p>
-          </div>
-        </div>
-      </footer>
+      </div>
     </div>
   );
 }

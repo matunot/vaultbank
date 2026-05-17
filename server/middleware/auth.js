@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { findUserById, demoStore } = require('../config/database');
+const { findUserById } = require('../config/database');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'vaultbank-demo-secret-key-2025';
 
@@ -111,7 +111,9 @@ const generateToken = (user) => {
             id: user.id,
             email: user.email,
             role: user.role,
-            subscription: user.subscription
+            subscription: user.subscription,
+            twoFAEnabled: !!user.twoFAEnabled,
+            provider: user.provider || 'local'
         },
         JWT_SECRET,
         { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }

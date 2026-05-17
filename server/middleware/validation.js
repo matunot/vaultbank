@@ -4,7 +4,6 @@
  * It validates req.body and req.query (if present) against the schema.
  * If validation fails, responds with 400 and error details.
  */
-const Joi = require('joi');
 
 function validation(schema) {
     return (req, res, next) => {

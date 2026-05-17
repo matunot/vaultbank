@@ -35,6 +35,22 @@ const authLimiter = rateLimit({
 });
 
 /**
+ * Stricter limiter for social login, magic‑link and other auth endpoints.
+ * Allows a maximum of 5 attempts per minute to mitigate brute‑force attacks.
+ */
+const authStrictLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+        success: false,
+        message: 'Too many authentication attempts. Please wait a minute before trying again.',
+        retryAfter: 60
+    }
+});
+
+/**
  * Transfer rate limiter
  */
 const transferLimiter = rateLimit({
@@ -82,6 +98,7 @@ const adminLimiter = rateLimit({
 module.exports = {
     generalLimiter,
     authLimiter,
+    authStrictLimiter,
     transferLimiter,
     signupLimiter,
     adminLimiter

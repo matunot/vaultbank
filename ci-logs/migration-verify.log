@@ -1,0 +1,308 @@
+psql: warning: extra command-line argument "ALTER USER postgres WITH PASSWORD 'VaultBank123!';" ignored
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+psql: warning: extra command-line argument "CREATE DATABASE vaultbank;" ignored
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+psql: warning: extra command-line argument "server\\migrations\\001_init.sql" ignored
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+psql: warning: extra command-line argument "server\\migrations\\002_add_kyc_aml_fields.sql" ignored
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+psql: warning: extra command-line argument "server\\migrations\\003_add_audit_logs.sql" ignored
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+psql: warning: extra command-line argument "server\\migrations\\004_add_token_and_status_to_transfers.sql" ignored
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+psql: warning: extra command-line argument "\d audit_logs" ignored
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+psql: warning: extra command-line argument "\di+ audit_logs*" ignored
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+psql: warning: extra command-line argument "INSERT INTO audit_logs (action, created_at) VALUES ('test_migration', NOW());" ignored
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+psql: warning: extra command-line argument "SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 1;" ignored
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+ALTER ROLE
+CREATE DATABASE
+CREATE EXTENSION
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+ALTER TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+ALTER TABLE
+CREATE INDEX
+                             Table "public.audit_logs"
+   Column    |           Type           | Collation | Nullable |      Default       
+-------------+--------------------------+-----------+----------+--------------------
+ id          | uuid                     |           | not null | uuid_generate_v4()
+ user_id     | uuid                     |           | not null | 
+ action      | text                     |           | not null | 
+ category    | text                     |           | not null | 
+ resource_id | uuid                     |           |          | 
+ details     | jsonb                    |           |          | 
+ ip_address  | text                     |           |          | 
+ user_agent  | text                     |           |          | 
+ timestamp   | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+Indexes:
+    "audit_logs_pkey" PRIMARY KEY, btree (id)
+    "idx_audit_logs_category" btree (category)
+    "idx_audit_logs_timestamp" btree ("timestamp")
+    "idx_audit_logs_user_id" btree (user_id)
+Foreign-key constraints:
+    "audit_logs_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+
+                                                 List of relations
+ Schema |      Name       | Type  |  Owner   |   Table    | Persistence | Access method |    Size    | Description 
+--------+-----------------+-------+----------+------------+-------------+---------------+------------+-------------
+ public | audit_logs_pkey | index | postgres | audit_logs | permanent   | btree         | 8192 bytes | 
+(1 row)
+
+ERROR:  column "created_at" of relation "audit_logs" does not exist
+LINE 1: INSERT INTO audit_logs (action, created_at) VALUES ('test_mi...
+                                        ^
+ERROR:  column "created_at" does not exist
+LINE 1: SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 1;
+                                          ^
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+ERROR:  database "vaultbank" already exists
+psql:server/migrations/001_init.sql:4: NOTICE:  extension "uuid-ossp" already exists, skipping
+CREATE EXTENSION
+psql:server/migrations/001_init.sql:16: NOTICE:  relation "users" already exists, skipping
+CREATE TABLE
+psql:server/migrations/001_init.sql:27: NOTICE:  relation "transfers" already exists, skipping
+CREATE TABLE
+psql:server/migrations/001_init.sql:37: NOTICE:  relation "ledger" already exists, skipping
+CREATE TABLE
+psql:server/migrations/001_init.sql:40: NOTICE:  relation "idx_transfers_from_user" already exists, skipping
+CREATE INDEX
+psql:server/migrations/001_init.sql:41: NOTICE:  relation "idx_transfers_to_user" already exists, skipping
+CREATE INDEX
+psql:server/migrations/001_init.sql:42: NOTICE:  relation "idx_ledger_user_id" already exists, skipping
+CREATE INDEX
+psql:server/migrations/002_add_kyc_aml_fields.sql:6: ERROR:  column "verified" of relation "users" already exists
+psql:server/migrations/002_add_kyc_aml_fields.sql:17: NOTICE:  relation "kyc_documents" already exists, skipping
+CREATE TABLE
+psql:server/migrations/002_add_kyc_aml_fields.sql:28: NOTICE:  relation "aml_flags" already exists, skipping
+CREATE TABLE
+psql:server/migrations/003_add_audit_logs.sql:16: ERROR:  relation "audit_logs" already exists
+psql:server/migrations/003_add_audit_logs.sql:19: ERROR:  relation "idx_audit_logs_user_id" already exists
+psql:server/migrations/003_add_audit_logs.sql:20: ERROR:  relation "idx_audit_logs_category" already exists
+psql:server/migrations/003_add_audit_logs.sql:21: ERROR:  relation "idx_audit_logs_timestamp" already exists
+psql:server/migrations/004_add_token_and_status_to_transfers.sql:4: ERROR:  column "token" of relation "transfers" already exists
+psql:server/migrations/004_add_token_and_status_to_transfers.sql:7: NOTICE:  relation "idx_transfers_token" already exists, skipping
+CREATE INDEX
+                             Table "public.audit_logs"
+   Column    |           Type           | Collation | Nullable |      Default       
+-------------+--------------------------+-----------+----------+--------------------
+ id          | uuid                     |           | not null | uuid_generate_v4()
+ user_id     | uuid                     |           | not null | 
+ action      | text                     |           | not null | 
+ category    | text                     |           | not null | 
+ resource_id | uuid                     |           |          | 
+ details     | jsonb                    |           |          | 
+ ip_address  | text                     |           |          | 
+ user_agent  | text                     |           |          | 
+ timestamp   | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+Indexes:
+    "audit_logs_pkey" PRIMARY KEY, btree (id)
+    "idx_audit_logs_category" btree (category)
+    "idx_audit_logs_timestamp" btree ("timestamp")
+    "idx_audit_logs_user_id" btree (user_id)
+Foreign-key constraints:
+    "audit_logs_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+
+                                                 List of relations
+ Schema |      Name       | Type  |  Owner   |   Table    | Persistence | Access method |    Size    | Description 
+--------+-----------------+-------+----------+------------+-------------+---------------+------------+-------------
+ public | audit_logs_pkey | index | postgres | audit_logs | permanent   | btree         | 8192 bytes | 
+(1 row)
+
+ERROR:  null value in column "user_id" of relation "audit_logs" violates not-null constraint
+DETAIL:  Failing row contains (b3012a67-c465-4aa3-a19b-c271a85d6f4d, null, test_migration, null, null, null, null, null, 2026-05-13 22:46:59.094979-07).
+ id | user_id | action | category | resource_id | details | ip_address | user_agent | timestamp 
+----+---------+--------+----------+-------------+---------+------------+------------+-----------
+(0 rows)
+
+psql: error: connection to server at "localhost" (::1), port 5432 failed: FATAL:  password authentication failed for user "postgres"
+DROP DATABASE
+CREATE DATABASE
+CREATE EXTENSION
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+ALTER TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+ALTER TABLE
+CREATE INDEX
+                             Table "public.audit_logs"
+   Column    |           Type           | Collation | Nullable |      Default       
+-------------+--------------------------+-----------+----------+--------------------
+ id          | uuid                     |           | not null | uuid_generate_v4()
+ user_id     | uuid                     |           | not null | 
+ action      | text                     |           | not null | 
+ category    | text                     |           | not null | 
+ resource_id | uuid                     |           |          | 
+ details     | jsonb                    |           |          | 
+ ip_address  | text                     |           |          | 
+ user_agent  | text                     |           |          | 
+ timestamp   | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+Indexes:
+    "audit_logs_pkey" PRIMARY KEY, btree (id)
+    "idx_audit_logs_category" btree (category)
+    "idx_audit_logs_timestamp" btree ("timestamp")
+    "idx_audit_logs_user_id" btree (user_id)
+Foreign-key constraints:
+    "audit_logs_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+
+                                                 List of relations
+ Schema |      Name       | Type  |  Owner   |   Table    | Persistence | Access method |    Size    | Description 
+--------+-----------------+-------+----------+------------+-------------+---------------+------------+-------------
+ public | audit_logs_pkey | index | postgres | audit_logs | permanent   | btree         | 8192 bytes | 
+(1 row)
+
+INSERT 0 1
+ERROR:  null value in column "category" of relation "audit_logs" violates not-null constraint
+DETAIL:  Failing row contains (42ba5192-2a92-4635-a46f-3747c7370b03, 00000000-0000-0000-0000-000000000001, test_migration, null, null, null, null, null, 2026-05-13 22:58:04.881672-07).
+ id | user_id | action | category | resource_id | details | ip_address | user_agent | timestamp 
+----+---------+--------+----------+-------------+---------+------------+------------+-----------
+(0 rows)
+
+ALTER ROLE
+DROP DATABASE
+CREATE DATABASE
+CREATE EXTENSION
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+ALTER TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+ALTER TABLE
+CREATE INDEX
+                             Table "public.audit_logs"
+   Column    |           Type           | Collation | Nullable |      Default       
+-------------+--------------------------+-----------+----------+--------------------
+ id          | uuid                     |           | not null | uuid_generate_v4()
+ user_id     | uuid                     |           | not null | 
+ action      | text                     |           | not null | 
+ category    | text                     |           | not null | 
+ resource_id | uuid                     |           |          | 
+ details     | jsonb                    |           |          | 
+ ip_address  | text                     |           |          | 
+ user_agent  | text                     |           |          | 
+ timestamp   | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+Indexes:
+    "audit_logs_pkey" PRIMARY KEY, btree (id)
+    "idx_audit_logs_category" btree (category)
+    "idx_audit_logs_timestamp" btree ("timestamp")
+    "idx_audit_logs_user_id" btree (user_id)
+Foreign-key constraints:
+    "audit_logs_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+
+                                                 List of relations
+ Schema |      Name       | Type  |  Owner   |   Table    | Persistence | Access method |    Size    | Description 
+--------+-----------------+-------+----------+------------+-------------+---------------+------------+-------------
+ public | audit_logs_pkey | index | postgres | audit_logs | permanent   | btree         | 8192 bytes | 
+(1 row)
+
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+                  id                  |               user_id                |     action     | category | resource_id | details | ip_address | user_agent |           timestamp           
+--------------------------------------+--------------------------------------+----------------+----------+-------------+---------+------------+------------+-------------------------------
+ 5be8bc7f-061d-4aca-9617-c069b2eec523 | 00000000-0000-0000-0000-000000000001 | password_reset | security |             |         |            |            | 2026-05-14 00:36:45.738029-07
+(1 row)
+
+                  id                  |               user_id                |        action        | category | resource_id | details | ip_address | user_agent |           timestamp           
+--------------------------------------+--------------------------------------+----------------------+----------+-------------+---------+------------+------------+-------------------------------
+ 5be8bc7f-061d-4aca-9617-c069b2eec523 | 00000000-0000-0000-0000-000000000001 | password_reset       | security |             |         |            |            | 2026-05-14 00:36:45.738029-07
+ 9c0c777a-2059-42dc-930f-58fc75cd8e4a | 00000000-0000-0000-0000-000000000001 | fund_transfer_100USD | transfer |             |         |            |            | 2026-05-14 00:36:45.647574-07
+ b9cb4039-2b22-479a-97a5-389afd167ec3 | 00000000-0000-0000-0000-000000000001 | user_login           | login    |             |         |            |            | 2026-05-14 00:36:45.558958-07
+ 62177e8f-ae39-4735-ae47-7b1e0224ab43 | 00000000-0000-0000-0000-000000000001 | test_migration       | test     |             |         |            |            | 2026-05-14 00:36:45.466701-07
+(4 rows)
+
+ALTER ROLE
+DROP DATABASE
+CREATE DATABASE
+CREATE EXTENSION
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+ALTER TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE INDEX
+CREATE INDEX
+ALTER TABLE
+CREATE INDEX
+                             Table "public.audit_logs"
+   Column    |           Type           | Collation | Nullable |      Default       
+-------------+--------------------------+-----------+----------+--------------------
+ id          | uuid                     |           | not null | uuid_generate_v4()
+ user_id     | uuid                     |           | not null | 
+ action      | text                     |           | not null | 
+ category    | text                     |           | not null | 
+ resource_id | uuid                     |           |          | 
+ details     | jsonb                    |           |          | 
+ ip_address  | text                     |           |          | 
+ user_agent  | text                     |           |          | 
+ timestamp   | timestamp with time zone |           |          | CURRENT_TIMESTAMP
+Indexes:
+    "audit_logs_pkey" PRIMARY KEY, btree (id)
+    "idx_audit_logs_category" btree (category)
+    "idx_audit_logs_timestamp" btree ("timestamp")
+    "idx_audit_logs_user_id" btree (user_id)
+Foreign-key constraints:
+    "audit_logs_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+
+                                                 List of relations
+ Schema |      Name       | Type  |  Owner   |   Table    | Persistence | Access method |    Size    | Description 
+--------+-----------------+-------+----------+------------+-------------+---------------+------------+-------------
+ public | audit_logs_pkey | index | postgres | audit_logs | permanent   | btree         | 8192 bytes | 
+(1 row)
+
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+                  id                  |               user_id                |     action     | category | resource_id | details | ip_address | user_agent |           timestamp           
+--------------------------------------+--------------------------------------+----------------+----------+-------------+---------+------------+------------+-------------------------------
+ 3a94428c-b156-467a-b353-681f32816ba8 | 00000000-0000-0000-0000-000000000001 | password_reset | security |             |         |            |            | 2026-05-14 16:52:12.188884-07
+(1 row)
+
+                  id                  |               user_id                |        action        | category | resource_id | details | ip_address | user_agent |           timestamp           
+--------------------------------------+--------------------------------------+----------------------+----------+-------------+---------+------------+------------+-------------------------------
+ 3a94428c-b156-467a-b353-681f32816ba8 | 00000000-0000-0000-0000-000000000001 | password_reset       | security |             |         |            |            | 2026-05-14 16:52:12.188884-07
+ dc04ba4b-f279-46ad-ae2f-19e74063dba7 | 00000000-0000-0000-0000-000000000001 | fund_transfer_100USD | transfer |             |         |            |            | 2026-05-14 16:52:12.104617-07
+ 25b5c83f-49e3-4559-aeff-38b8cd2c181a | 00000000-0000-0000-0000-000000000001 | user_login           | login    |             |         |            |            | 2026-05-14 16:52:12.01783-07
+ fce80b79-5653-4b85-81fa-eb279f2fdb06 | 00000000-0000-0000-0000-000000000001 | test_migration       | test     |             |         |            |            | 2026-05-14 16:52:11.930932-07
+(4 rows)
+
