@@ -13,14 +13,17 @@
     "prebuild": "test -d client || echo 'No client folder, using root build'",
     "build": "cd client && npm run build",
     "vercel:build": "npm run build",
-    "vercel:dev": "npm run dev"
+    "vercel:dev": "npm run dev",
+    "lint": "eslint client/src/**/*.js client/src/**/*.jsx"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.14",
     "autoprefixer": "^10.4.21",
     "concurrently": "^8.2.0",
+    "eslint": "^8.57.1",
     "postcss": "^8.5.6",
-    "tailwindcss": "^4.1.15"
+    "tailwindcss": "^4.1.15",
+    "eslint-plugin-react": "^7.34.0"
   },
   "keywords": [
     "banking",
@@ -53,6 +56,6 @@
   },
   "main": "index.js",
   "engines": {
-    "node": "18.x"
+    "node": "22.x"
   }
 }
