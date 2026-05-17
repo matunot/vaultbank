@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -35,11 +35,8 @@ export default function AdminDashboard() {
   const [error, setError] = useState(null);
   const { log } = useLog();
 
-  useEffect(() => {
-    fetchAuditData();
-  }, []);
-
-  const fetchAuditData = async () => {
+  // Fetch audit data from the API. Wrapped in useCallback to ensure a stable reference.
+  const fetchAuditData = useCallback(async () => {
     try {
       setLoading(true);
       const response = await api.get("/api/admin/audit-report");
@@ -51,7 +48,12 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [log]);
+
+  // Run fetchAuditData on component mount.
+  useEffect(() => {
+    fetchAuditData();
+  }, [fetchAuditData]);
 
   if (loading)
     return (
