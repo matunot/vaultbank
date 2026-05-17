@@ -48,12 +48,12 @@ export default function AdminDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [log]);
+  }, [log]); // added missing semicolon
 
   // Run fetchAuditData on component mount.
   useEffect(() => {
     fetchAuditData();
-  }, [fetchAuditData]);
+  }, [fetchAuditData]); // added missing semicolon
 
   if (loading)
     return (
