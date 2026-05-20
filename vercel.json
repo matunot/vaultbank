@@ -1,14 +1,14 @@
 {
     "buildCommand": "cd client && npm run build",
     "outputDirectory": "client/build",
-    "routes": [
+    "rewrites": [
         {
             "src": "/api/(.*)",
             "dest": "/server/index.js"
         },
         {
             "src": "/(.*)",
-            "dest": "client/build/$1"
+            "dest": "/client/build/$1"
         }
     ]
 }
