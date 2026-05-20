@@ -56,9 +56,11 @@
   },
   "scripts": {
     "start": "cross-env GENERATE_SOURCEMAP=false craco start",
-    "build": "cross-env GENERATE_SOURCEMAP=false craco build",
+    "build": "craco build",
     "test": "craco test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "dev": "cross-env GENERATE_SOURCEMAP=false craco start",
+    "lint": "eslint src --fix"
   },
   "engines": {
     "node": "22.x"
