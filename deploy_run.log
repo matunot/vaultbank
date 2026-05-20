@@ -1,0 +1,32 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20260520075615
+Username: DESKTOP-UJJKETL\cr7
+RunAs User: DESKTOP-UJJKETL\cr7
+Configuration Name: 
+Machine: DESKTOP-UJJKETL (Microsoft Windows NT 10.0.19045.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command & { Start-Transcript -Path deploy_run.log -Force; try { .\deploy.ps1 } catch { Write-Error ; exit 1 } finally { Stop-Transcript } }
+Process ID: 5288
+PSVersion: 5.1.19041.6456
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.19041.6456
+BuildVersion: 10.0.19041.6456
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is deploy_run.log
+Removing client\node_modules and package-lock.json...
+Installing dependencies in client...
+
+
+
+
+Triggering Vercel production deploy...
+
+Vercel deploy command failed
+**********************
+Windows PowerShell transcript end
+End time: 20260520075840
+**********************
