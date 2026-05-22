@@ -23,9 +23,8 @@ if (Test-Path client\package.json) { Copy-Item client\package.json client\packag
 if (Test-Path vercel.json) { Copy-Item vercel.json vercel.json.bak -Force }
 
 # 2) Remove BOM from client/package.json and root package.json if present
-$changed = $false
-if (Remove-BOMFromFile "client\package.json") { Write-Host "Removed BOM from client/package.json"; $changed = $true }
-if (Remove-BOMFromFile "package.json") { Write-Host "Removed BOM from root package.json"; $changed = $true }
+if (Remove-BOMFromFile "client\package.json") { Write-Host "Removed BOM from client/package.json" }
+if (Remove-BOMFromFile "package.json") { Write-Host "Removed BOM from root package.json" }
 
 # 3) Validate and fix client/package.json JSON parse errors (best-effort)
 try {
