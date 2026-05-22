@@ -198,9 +198,33 @@ curl -X POST https://api.vaultbank.com/api/business/create \
 curl https://api.vaultbank.com/api/transfers/history \
   -H "Authorization: Bearer $TOKEN"
 
-# 4. Compliance Testing
-# Verify AML alerts are generated for suspicious activities
+ # 4. Compliance Testing
+ # Verify AML alerts are generated for suspicious activities
 ```
+
+## 🚀 FINAL_DROP: Ultra‑fast repair + deploy
+
+The `FINAL_DROP.ps1` script provides an automated way to backup, repair, validate, commit, and deploy your VaultBank application. It performs the following steps:
+
+1.  **Backup** the `auto_fix_401.ps1` script.
+2.  **Syntax repair** (BOM removal, quote fixing, brace balancing, try/catch addition).
+3.  **Validate** the repaired script.
+4.  **Commit & push** changes.
+5.  **Run** the repaired script and trigger a Vercel production deployment.
+6.  **Detect** the production URL and poll until the site returns HTTP 200.
+
+**Usage**
+
+```bash
+# From the repository root
+powershell -NoProfile -ExecutionPolicy Bypass -File FINAL_DROP.ps1
+```
+
+**Prerequisites**
+
+- PowerShell (Windows) or PowerShell Core (cross‑platform)
+- Git
+- Vercel CLI (`npm install -g vercel`)
 
 ## 📊 5. Monitoring Setup
 
@@ -221,12 +245,10 @@ curl https://api.vaultbank.com/health
 ### Advanced Monitoring
 
 1. **Application Performance Monitoring (APM):**
-
    - Configure Sentry DSN in `.env`
    - Monitor application errors and performance
 
 2. **Database Monitoring:**
-
    - Use Supabase dashboard for query analytics
    - Monitor connection pools and slow queries
 

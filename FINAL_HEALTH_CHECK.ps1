@@ -1,4 +1,4 @@
-# FINAL_HEALTH_CHECK.ps1 — run after deploy
+# FINAL_HEALTH_CHECK.ps1 - run after deploy
 Write-Host '🔍 Checking VaultBank production health...'
 $prodUrl = 'https://vaultbank-e5r3gy2bv-matus-projects-c3e42681.vercel.app'
  
@@ -12,21 +12,21 @@ catch {
 }
  
 # 2) SSL/TLS check
-# SSL/TLS check – use OpenSSL if available, otherwise skip
+# SSL/TLS check - use OpenSSL if available, otherwise skip
 if (Get-Command openssl -ErrorAction SilentlyContinue) {
     Write-Host 'SSL Expiry:'
     & openssl s_client -connect vaultbank-e5r3gy2bv-matus-projects-c3e42681.vercel.app:443 -servername vaultbank-e5r3gy2bv-matus-projects-c3e42681.vercel.app -quiet | openssl x509 -noout -dates
 }
 else {
-    Write-Host 'OpenSSL not found – skipping SSL expiry check.'
+    Write-Host 'OpenSSL not found - skipping SSL expiry check.'
 }
  
 # 3) Env var sanity (list production vars)
 Write-Host 'Listing production environment variables:'
-npx vercel env ls --environment production
+npx vercel env ls
  
 # 4) Dependency audit
 npm audit --production
  
 # 5) Log tail (last 100 lines)
-npx vercel logs --environment production --limit 100
+npx vercel logs --limit 100

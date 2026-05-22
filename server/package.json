@@ -30,7 +30,7 @@
         "qrcode": "^1.5.1",
         "simple-statistics": "^7.8.9",
         "speakeasy": "^2.0.0",
-        "uuid": "^9.0.0",
+        "uuid": "^14.0.0",
         "vaultbank": "file:..",
         "winston": "^3.13.0"
     },

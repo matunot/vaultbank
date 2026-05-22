@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import { Pie, Bar, Line, Doughnut } from "react-chartjs-2";
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement, Title, PointElement, LineElement } from "chart.js";
 import Papa from "papaparse";
-import * as XLSX from "xlsx";
+import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import {
   TwitterShareButton,
@@ -1011,21 +1011,40 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
     });
   };
 
-  const exportToExcel = () => {
+  const exportToExcel = async () => {
     if (!user?.transactions || user.transactions.length === 0) {
       alert("No transactions to export!");
       return;
     }
 
-    const ws = XLSX.utils.json_to_sheet(user.transactions);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Transactions");
+    // Create a new workbook and worksheet using ExcelJS
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Transactions");
 
-    // Add header styling
-    ws["A1"].s = { font: { bold: true }, fill: { fgColor: { rgb: "FFD700" } } };
+    // Define header row
+    const header = ["Date", "Label", "Category", "Amount"];
+    const headerRow = worksheet.addRow(header);
+    // Apply header styling (bold font and gold background)
+    headerRow.font = { bold: true };
+    headerRow.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFFD700" }
+    };
 
-    const wbout = XLSX.write(wb, { bookType: "xlsx", type: "array" });
-    saveAs(new Blob([wbout], { type: "application/octet-stream" }), "VaultBank_Report.xlsx");
+    // Add transaction rows
+    user.transactions.forEach(tx => {
+      worksheet.addRow([
+        tx.date || "N/A",
+        tx.label || "N/A",
+        tx.category || "Uncategorized",
+        tx.amount || 0
+      ]);
+    });
+
+    // Generate Excel file buffer and trigger download
+    const buffer = await workbook.xlsx.writeBuffer();
+    saveAs(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "VaultBank_Report.xlsx");
   };
 
   // Filter transactions with safe checks
@@ -1093,7 +1112,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
         (subscription === "premium" || subscription === "trial") ? "theme-luxury" :
           (theme === "dark" ? "bg-gray-900 text-white" :
             theme === "light" ? "bg-gray-100 text-gray-900" :
-              "bg-gradient-to-br from-gray-900 via-indigo-900 to-purple-900 text-white")
+              "bg-linear-to-br from-gray-900 via-indigo-900 to-purple-900 text-white")
       }`}>
       <LuxurySidebar />
       <div className="max-w-6xl mx-auto md:ml-20 lg:ml-64">
@@ -1117,7 +1136,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
           </div>
 
           {/* User Profile & Settings */}
-          <div className="flex-shrink-0 flex items-center space-x-4">
+          <div className="shrink-0 flex items-center space-x-4">
             {/* Notification Bell with Dropdown */}
             <div className="relative">
               <button
@@ -1544,7 +1563,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
 
         {/* AI-Powered Forecasting - Premium Feature */}
         {subscription === "premium" || subscription === "trial" ? (
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-700 text-white p-6 rounded-lg shadow-lg mt-6">
+          <div className="bg-linear-to-r from-indigo-600 to-purple-700 text-white p-6 rounded-lg shadow-lg mt-6">
             <h2 className="text-xl font-bold mb-3">🔮 AI Forecast</h2>
             <p>Projected Income: <span className="text-green-300">${forecast.avgIncome.toFixed(2)}</span></p>
             <p>Projected Expenses: <span className="text-red-300">${forecast.avgExpenses.toFixed(2)}</span></p>
