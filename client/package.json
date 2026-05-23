@@ -63,6 +63,6 @@
         "lint": "eslint src --fix"
     },
     "engines": {
-        "node": "22.x"
+        "node": ">=20.0.0"
     }
 }
