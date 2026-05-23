@@ -56,8 +56,11 @@ if (-Not $clientPkg.dependencies) { $clientPkg | Add-Member -MemberType NoteProp
 # Ensure @craco/craco has a proper version string
 $clientPkg.dependencies."@craco/craco" = "^7.0.0"
 
-# Save fixed client/package.json
-$clientPkg | ConvertTo-Json -Depth 10 | Set-Content "client\package.json" -Encoding UTF8
+# Save fixed client/package.json without BOM using .NET API to avoid BOM
+# Serialize client/package.json without BOM
+$clientJson = $clientPkg | ConvertTo-Json -Depth 10
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText("client\package.json", $clientJson, $utf8NoBom)
 Write-Host "Ensured client/package.json has build script and @craco/craco dependency."
 
 # 5) Fix vercel.json: parse; if invalid, create minimal valid file and preserve routes if possible
@@ -90,14 +93,17 @@ if ($needVercelRewrite -or -not $vercelObj) {
     Write-Host "Wrote valid vercel.json"
 }
 
-# 6) Align root package.json engines to 24.x to match Vercel dashboard (fastest path)
+# 6) Align root package.json engines to match the local Node version (22.x)
 try {
     $rootRaw = Get-Content "package.json" -Raw -ErrorAction Stop
     $rootPkg = $rootRaw | ConvertFrom-Json -ErrorAction Stop
     if (-Not $rootPkg.engines) { $rootPkg | Add-Member -MemberType NoteProperty -Name engines -Value @{} -Force }
-    $rootPkg.engines.node = "24.x"
-    $rootPkg | ConvertTo-Json -Depth 10 | Set-Content "package.json" -Encoding UTF8
-    Write-Host "Set root package.json engines.node = 24.x"
+    $rootPkg.engines.node = "22.x"
+    $rootJson = $rootPkg | ConvertTo-Json -Depth 10
+    # Write root package.json without BOM
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText("package.json", $rootJson, $utf8NoBom)
+    Write-Host "Set root package.json engines.node = 22.x"
 }
 catch {
     Write-Host "Warning: could not parse root package.json; skipping engines update."
@@ -124,13 +130,16 @@ if (-Not (Test-Path "client\node_modules\.bin\craco")) {
 
 # 9) Commit and push changes
 git add client/package.json vercel.json package.json
-git commit -m "ci: fix BOM and JSON, ensure craco build, align Node to 24.x" -q 2>$null
+git commit -m "ci: fix BOM and JSON, ensure craco build, align Node to 22.x" -q 2>$null
 git push origin HEAD:main
 Write-Host "Committed and pushed fixes."
 
-# 10) Trigger Vercel production deploy and capture output
+# 9.5) Link Vercel project and trigger production deploy
+Write-Host "Linking Vercel project..."
+$linkOutput = & cmd /c "npx vercel link --yes --project vaultbank --scope matus-projects-c3e42681" 2>&1
+Write-Host $linkOutput
 Write-Host "Triggering Vercel production deploy..."
-$deployOutput = & npx vercel --prod --yes 2>&1
+$deployOutput = & cmd /c "npx vercel --prod --yes" 2>&1
 Write-Host $deployOutput
 
 # 11) Detect production URL
