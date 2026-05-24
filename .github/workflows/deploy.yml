@@ -1,26 +1,59 @@
-name: VaultBank Auto Deploy
+name: Deploy
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [main]
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Setup PowerShell
-        uses: actions/setup-powershell@v2
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
         with:
-          node-version: 22
+          node-version: "20"
 
-      - name: Install Vercel CLI
-        run: npm install -g vercel
+      # Client (Vercel) deployment
+      - name: Install client dependencies
+        working-directory: client
+        run: npm ci
 
-      - name: Run fix_and_deploy.ps1
-        run: pwsh -File ./fix_and_deploy.ps1
+      - name: Build client
+        working-directory: client
+        run: npm run build
+
+      - name: Deploy client to Vercel
+        uses: amondnet/vercel-action@v20
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: client
+          vercel-args: "--prod"
+
+      # Server deployment
+      - name: Install server dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Run server deployment script
+        run: |
+          chmod +x deploy.sh
+          ./deploy.sh
+
+      - name: Run VaultBank health check
+        run: pwsh -File ./FINAL_HEALTH_CHECK.ps1
+        shell: pwsh
+        env:
+          NEXT_PUBLIC_API_TOKEN: ${{ secrets.NEXT_PUBLIC_API_TOKEN }}
