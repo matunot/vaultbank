@@ -64,8 +64,8 @@ jobs:
             missing=1
           else
             nvmrc=$(cat .nvmrc | tr -d '\r\n')
-            if [ "$nvmrc" != "22" ]; then
-              echo "Error: .nvmrc must contain 22, found '$nvmrc'"
+          if [ "$nvmrc" != "24" ]; then
+            echo "Error: .nvmrc must contain 24, found '$nvmrc'"
               missing=1
             fi
           fi
@@ -73,12 +73,12 @@ jobs:
           root_node=$(python3 -c 'import json; print(json.load(open("package.json")).get("engines",{}).get("node",""))')
           client_node=$(python3 -c 'import json; print(json.load(open("client/package.json")).get("engines",{}).get("node",""))')
 
-          if [ "$root_node" != "22.x" ]; then
-            echo "Error: root package.json engines.node must be 22.x (found '$root_node')"
+          if [ "$root_node" != "24.x" ]; then
+            echo "Error: root package.json engines.node must be 24.x (found '$root_node')"
             missing=1
           fi
-          if [ "$client_node" != "22.x" ]; then
-            echo "Error: client/package.json engines.node must be 22.x (found '$client_node')"
+          if [ "$client_node" != "24.x" ]; then
+            echo "Error: client/package.json engines.node must be 24.x (found '$client_node')"
             missing=1
           fi
 
@@ -101,9 +101,9 @@ jobs:
           persist-credentials: true
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
+          uses: actions/setup-node@v4
+          with:
+            node-version: "24"
 
       - name: Cache client node_modules
         uses: actions/cache@v4
