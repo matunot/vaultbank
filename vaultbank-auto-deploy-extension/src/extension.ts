@@ -1,7 +1,8 @@
 import * as vscode from "vscode";
 import { exec } from "child_process";
 import { Octokit } from "@octokit/rest";
-import fetch from "node-fetch";
+// Dynamically import node-fetch when needed to avoid ESM/CommonJS interop issues.
+// This avoids the TypeScript error about importing an ES module from a CommonJS module.
 import { autoFixWorkflowAndSecrets } from "./autoFix";
 
 // Repository constants – adjust if the repo location changes

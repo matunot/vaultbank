@@ -70,7 +70,7 @@ async function commitAndPush(root) {
     try {
         await execCommand('git commit -m "auto-commit on save"', root);
     }
-    catch (e) {
+    catch {
         // No changes to commit – git returns non‑zero exit code
         console.log("No changes to commit");
     }
@@ -89,18 +89,23 @@ async function getLatestWorkflowRun(octokit) {
 }
 /** Poll a workflow run until it finishes, then return its conclusion. */
 async function waitForRunCompletion(octokit, runId) {
-    while (true) {
+    let isCompleted = false;
+    while (!isCompleted) {
         const { data } = await octokit.actions.getWorkflowRun({
             owner: GITHUB_OWNER,
             repo: GITHUB_REPO,
             run_id: runId,
         });
         if (data.status === "completed") {
+            isCompleted = true;
             return data.conclusion;
         }
         // Wait a few seconds before polling again
         await new Promise((r) => setTimeout(r, 5000));
     }
+    // Fallback return to satisfy TypeScript's control flow analysis.
+    // This point should never be reached because the loop only exits via a return.
+    return "";
 }
 /** Verify that the Vercel deployment URL returns HTTP 200. */
 async function verifyVercel() {
@@ -170,7 +175,7 @@ function activate(context) {
         }
     }
     // Register on-save listener
-    const disposableOnSave = vscode.workspace.onDidSaveTextDocument(async (doc) => {
+    const disposableOnSave = vscode.workspace.onDidSaveTextDocument(async () => {
         await runDeploy();
     });
     // Register manual command
