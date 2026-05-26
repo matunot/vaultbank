@@ -150,11 +150,9 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   // Register on-save listener
-  const disposableOnSave = vscode.workspace.onDidSaveTextDocument(
-    async (_doc: vscode.TextDocument) => {
-      await runDeploy();
-    },
-  );
+  const disposableOnSave = vscode.workspace.onDidSaveTextDocument(async () => {
+    await runDeploy();
+  });
 
   // Register manual command
   const disposableCommand = vscode.commands.registerCommand(
