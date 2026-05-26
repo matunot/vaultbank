@@ -32,7 +32,7 @@ async function commitAndPush(root: string): Promise<void> {
   await execCommand("git add -A", root);
   try {
     await execCommand('git commit -m "auto-commit on save"', root);
-  } catch (e) {
+  } catch {
     // No changes to commit – git returns non‑zero exit code
     console.log("No changes to commit");
   }
@@ -56,13 +56,15 @@ async function waitForRunCompletion(
   octokit: Octokit,
   runId: number,
 ): Promise<string> {
-  while (true) {
+  let isCompleted = false;
+  while (!isCompleted) {
     const { data } = await octokit.actions.getWorkflowRun({
       owner: GITHUB_OWNER,
       repo: GITHUB_REPO,
       run_id: runId,
     });
     if (data.status === "completed") {
+      isCompleted = true;
       return data.conclusion as string;
     }
     // Wait a few seconds before polling again
@@ -146,7 +148,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Register on-save listener
   const disposableOnSave = vscode.workspace.onDidSaveTextDocument(
-    async (doc: vscode.TextDocument) => {
+    async (_doc: vscode.TextDocument) => {
       await runDeploy();
     },
   );
