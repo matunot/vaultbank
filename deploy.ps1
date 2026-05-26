@@ -91,10 +91,11 @@ if (-Not (Test-Path "client\node_modules\.bin\craco")) {
     npm install @craco/craco --prefix client --no-audit --no-fund
     if (-Not (Test-Path "client\node_modules\.bin\craco")) { Write-Host "craco install failed"; exit 1 }
 }
-
-# 5) Commit changes and push to origin main
-git add client/package.json vercel.json
-git commit -m "fix: ensure craco build script, set Node 22.x, add vercel.json"
+95 | # 5) Commit changes and push to origin main
+96 | # Include all modified files, especially the CI workflow file
+97 | git add client/package.json vercel.json .github/workflows/deploy.yml
+98 | git commit -m "chore: update CI workflow and deployment script"
+99 | git push origin HEAD:main
 git push origin HEAD:main
 
 # 6) Ensure Vercel uses Node 22.x in project settings via vercel.json engines override

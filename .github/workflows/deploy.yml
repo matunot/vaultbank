@@ -59,6 +59,15 @@ jobs:
           cd server
           npm test || echo "No server tests"
 
+      # New step: Run deployment script to trigger Vercel deployment
+      - name: Run deployment script
+        run: |
+          pwsh ./deploy.ps1
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
   deploy:
     needs: [lint, build]
     runs-on: ubuntu-latest
