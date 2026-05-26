@@ -1123,7 +1123,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
         <div className="flex justify-between items-start mb-8">
           {/* Main Header */}
           <div className="text-center flex-1">
-            <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent">
+            <h1 className="text-4xl font-bold mb-4 bg-linear-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent">
               Welcome to VaultBank 💎
               <span className={`ml-2 px-2 py-1 rounded text-xs ${subscription === "premium" ? "bg-yellow-400 text-black" : "bg-gray-600 text-white"}`}>
                 {subscription.toUpperCase()}
@@ -1222,7 +1222,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
 
           {/* Trial/Premium Highlight Banner */}
           {(subscription === "premium" || subscription === "trial") && (
-            <div className="bg-gradient-to-r from-yellow-400 to-orange-500 text-black font-bold p-3 rounded mt-4 shadow-lg">
+            <div className="bg-linear-to-r from-yellow-400 to-orange-500 text-black font-bold p-3 rounded mt-4 shadow-lg">
               {subscription === "trial" ? (
                 <>🚀 Premium Trial Active — You’re experiencing VaultBank at full power. This is not a gift, it’s a glimpse of how serious people run money.</>
               ) : (
@@ -1244,7 +1244,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
 
           {/* Referral Rewards - Premium Feature */}
           {(subscription === "premium" || subscription === "trial") && (
-            <div className="bg-gradient-to-r from-yellow-500 to-orange-600 text-black p-4 rounded mt-4 shadow-lg">
+            <div className="bg-linear-to-r from-yellow-500 to-orange-600 text-black p-4 rounded mt-4 shadow-lg">
               <div className="flex items-center space-x-2 mb-2">
                 <span className="text-2xl">🎁</span>
                 <span className="font-bold">Referral Rewards Program</span>
@@ -1292,7 +1292,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
                 onClick={() => setTheme("gradient")}
                 className={`px-4 py-2 rounded font-semibold transition-all duration-300 ${theme === "gradient"
                   ? "bg-indigo-600 text-white shadow-lg scale-105"
-                  : "bg-gradient-to-r from-indigo-500 to-purple-600 text-white hover:scale-105"
+                  : "bg-linear-to-rrom-indigo-500 to-purple-600 text-white hover:scale-105"
                   }`}
               >
                 ✨ Gradient
@@ -1356,25 +1356,25 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
         <div className="flex flex-wrap justify-center gap-4 mt-6">
           <button
             onClick={() => alert("🚀 Quick Add Transaction feature coming soon! You can: \n1. Manual entry \n2. OCR from receipt photos \n3. Voice input \n4. SMS banking imports")}
-            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 transform"
+            className="px-6 py-3 bg-linear-to-r from-blue-500 to-purple-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 transform"
           >
             ➕ Quick Add Transaction
           </button>
           <button
             onClick={() => alert("💸 Transfer feature enhanced! Includes:\n1. Instant P2P transfers\n2. International wire transfers\n3. Recurring payments\n4. Transfer history")}
-            className="px-6 py-3 bg-gradient-to-r from-green-500 to-teal-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 transform"
+            className="px-6 py-3 bg-linear-to-r from-green-500 to-teal-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 transform"
           >
             💸 Instant Transfer
           </button>
           <button
             onClick={exportTransactions}
-            className="px-6 py-3 bg-gradient-to-r from-yellow-500 to-orange-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 transform"
+            className="px-6 py-3 bg-linear-to-r from-yellow-500 to-orange-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 transform"
           >
             ⬇️ Smart Export
           </button>
           <button
             onClick={() => alert("🎯 Budget Insights:\n• Monthly spending analysis\n• Category breakdown\n• Budget recommendations\n• Automated alerts")}
-            className="px-6 py-3 bg-gradient-to-r from-pink-500 to-red-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 transform"
+            className="px-6 py-3 bg-linear-to-r from-pink-500 to-red-600 text-white rounded-xl font-semibold shadow-lg hover:shadow-xl transition-all duration-300 hover:scale-105 transform"
           >
             🎯 Budget Insights
           </button>
@@ -1382,7 +1382,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
 
         {/* Limited-Time Urgency Banner */}
         {offer.active && timeLeft > 0 && (
-          <div className="bg-gradient-to-r from-red-600 to-yellow-500 text-black font-bold p-4 rounded-lg shadow-lg animate-pulse mt-4 mb-6">
+          <div className="bg-linear-to-r from-red-600 to-yellow-500 text-black font-bold p-4 rounded-lg shadow-lg animate-pulse mt-4 mb-6">
             {offer.message} ⏳ Ends in {formatTime(timeLeft)}
           </div>
         )}
@@ -1577,7 +1577,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
 
         {/* Personalized AI Insights - Premium Feature */}
         {subscription === "premium" || subscription === "trial" ? (
-          <div className="bg-gradient-to-r from-green-600 to-emerald-700 text-white p-6 rounded-lg shadow-lg mt-6">
+          <div className="bg-linear-to-r from-green-600 to-emerald-700 text-white p-6 rounded-lg shadow-lg mt-6">
             <h2 className="text-xl font-bold mb-3">💡 Personalized Insights</h2>
             <ul className="space-y-2">
               {personalizedInsights.map((tip, i) => (
@@ -1593,7 +1593,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
 
         {/* Premium Budget Planner - Premium Feature */}
         {subscription === "premium" || subscription === "trial" ? (
-          <div className="bg-gradient-to-r from-teal-700 to-emerald-700 text-white p-6 rounded-lg shadow-lg mt-6">
+          <div className="bg-linear-to-rrom-teal-700 to-emerald-700 text-white p-6 rounded-lg shadow-lg mt-6">
             <h2 className="text-xl font-bold mb-4">📏 Budget Planner</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {budgets.map((b, i) => (
@@ -1609,7 +1609,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
 
         {/* Smart Goals - Premium Feature */}
         {subscription === "premium" || subscription === "trial" ? (
-          <div className="bg-gradient-to-r from-blue-600 to-cyan-700 text-white p-6 rounded-lg shadow-lg mt-6">
+          <div className="bg-linear-to-rrom-blue-600 to-cyan-700 text-white p-6 rounded-lg shadow-lg mt-6">
             <h2 className="text-xl font-bold mb-3">🎯 Smart Goals</h2>
             <ul className="space-y-2">
               {suggestedGoals.map((goal, i) => (
@@ -1627,7 +1627,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
 
         {/* Achievement Badges & Progress Tracking - Premium Feature */}
         {subscription === "premium" || subscription === "trial" ? (
-          <div className="bg-gradient-to-r from-pink-600 to-rose-700 text-white p-6 rounded-lg shadow-lg mt-6">
+          <div className="bg-linear-to-rrom-pink-600 to-rose-700 text-white p-6 rounded-lg shadow-lg mt-6">
             <h2 className="text-xl font-bold mb-3">🏅 Achievements</h2>
             <ul className="space-y-2">
               {badges.map((badge, i) => (
@@ -1780,19 +1780,19 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
           <div className={`${darkMode ? "bg-gray-800" : "bg-white"} rounded-xl p-6 mt-6 shadow-xl max-w-2xl mx-auto`}>
             <h2 className={`text-2xl font-semibold mb-6 text-center ${darkMode ? "" : "text-gray-900"}`}>🎖️ Achievements & Milestones</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="flex flex-col items-center bg-gradient-to-br from-yellow-400 via-yellow-500 to-yellow-600 p-4 rounded-xl shadow-lg hover:scale-105 transition-all duration-300">
+              <div className="flex flex-col items-center bg-linear-to-br from-yellow-400 via-yellow-500 to-yellow-600 p-4 rounded-xl shadow-lg hover:scale-105 transition-all duration-300">
                 <span className="text-3xl mb-2">🏆</span>
                 <p className="text-white font-semibold text-center text-sm">First Goal Reached</p>
               </div>
-              <div className="flex flex-col items-center bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 p-4 rounded-xl shadow-lg hover:scale-105 transition-all duration-300">
+              <div className="flex flex-col items-center bg-linear-to-br from-blue-500 via-blue-600 to-blue-700 p-4 rounded-xl shadow-lg hover:scale-105 transition-all duration-300">
                 <span className="text-3xl mb-2">💰</span>
                 <p className="text-white font-semibold text-center text-sm">$1,000 Saved</p>
               </div>
-              <div className="flex flex-col items-center bg-gradient-to-br from-green-500 via-green-600 to-green-700 p-4 rounded-xl shadow-lg hover:scale-105 transition-all duration-300">
+              <div className="flex flex-col items-center bg-linear-to-brrom-green-500 via-green-600 to-green-700 p-4 rounded-xl shadow-lg hover:scale-105 transition-all duration-300">
                 <span className="text-3xl mb-2">🚀</span>
                 <p className="text-white font-semibold text-center text-sm">Smart Budgeting</p>
               </div>
-              <div className="flex flex-col items-center bg-gradient-to-br from-purple-500 via-purple-600 to-purple-700 p-4 rounded-xl shadow-lg hover:scale-105 transition-all duration-300">
+              <div className="flex flex-col items-center bg-linear-to-br from-purple-500 via-purple-600 to-purple-700 p-4 rounded-xl shadow-lg hover:scale-105 transition-all duration-300">
                 <span className="text-3xl mb-2">📈</span>
                 <p className="text-white font-semibold text-center text-sm">Growing Wealth</p>
               </div>
@@ -1871,7 +1871,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
         )}
 
         {/* Rewards Summary - Available for all users */}
-        <div className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 rounded-xl p-6 mt-6 border border-yellow-500/30">
+        <div className="bg-linear-to-r from-yellow-500/20 to-orange-500/20 rounded-xl p-6 mt-6 border border-yellow-500/30">
           <Rewards subscription={subscription} />
         </div>
 
@@ -2095,7 +2095,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
 
       {/* Referral Program - Premium Feature */}
       {(subscription === "premium" || subscription === "trial") && referralCode && (
-        <div className="bg-gradient-to-r from-yellow-500 to-orange-600 text-black p-4 rounded-lg shadow-lg mt-6 max-w-2xl mx-auto">
+        <div className="bg-linear-to-r from-yellow-500 to-orange-600 text-black p-4 rounded-lg shadow-lg mt-6 max-w-2xl mx-auto">
           <div className="flex items-center space-x-2 mb-2">
             <span className="text-2xl">🎁</span>
             <h3 className="text-xl font-bold">Invite Friends & Earn Rewards</h3>
@@ -2121,7 +2121,7 @@ function Dashboard({ darkMode, subscription, setSubscription }) {
 
       {/* Referral History - Premium Feature */}
       {subscription === "premium" || subscription === "trial" ? (
-        <div className="mt-6 bg-gradient-to-r from-green-600 to-blue-700 text-white p-6 rounded-xl shadow-xl max-w-2xl mx-auto">
+        <div className="mt-6 bg-linear-to-r from-green-600 to-blue-700 text-white p-6 rounded-xl shadow-xl max-w-2xl mx-auto">
           <h3 className="text-xl font-bold mb-4 flex items-center space-x-2">
             <span>👥</span>
             <span>Referral History</span>
