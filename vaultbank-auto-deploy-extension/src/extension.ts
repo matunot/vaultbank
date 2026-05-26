@@ -70,6 +70,9 @@ async function waitForRunCompletion(
     // Wait a few seconds before polling again
     await new Promise((r) => setTimeout(r, 5000));
   }
+  // Fallback return to satisfy TypeScript's control flow analysis.
+  // This point should never be reached because the loop only exits via a return.
+  return "";
 }
 
 /** Verify that the Vercel deployment URL returns HTTP 200. */
