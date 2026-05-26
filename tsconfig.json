@@ -19,6 +19,6 @@
       "@/*": ["client/src/*"]
     }
   },
-  "include": ["client/src/**/*"],
+  "include": ["client/src/**/*", "vaultbank-auto-deploy-extension/src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
