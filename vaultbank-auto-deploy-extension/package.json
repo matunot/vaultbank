@@ -1,0 +1,62 @@
+{
+    "name": "vaultbank-auto-deploy",
+    "displayName": "VaultBank Auto Deploy",
+    "description": "VS Code extension that automatically commits on file save, pushes to origin/main, monitors the GitHub Actions workflow, auto‑fixes common CI issues, and verifies the Vercel deployment.",
+    "version": "0.1.0",
+    "publisher": "vaultbank",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/matunot/vaultbank.git"
+    },
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "main": "./out/extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "vaultbank-auto-deploy.helloWorld",
+                "title": "VaultBank Auto Deploy: Hello World"
+            },
+            {
+                "command": "vaultbank.deploy",
+                "title": "VaultBank: Deploy"
+            }
+        ],
+        "configuration": {
+            "type": "object",
+            "title": "VaultBank Auto Deploy Settings",
+            "properties": {
+                "vaultbank.githubToken": {
+                    "type": "string",
+                    "description": "GitHub personal access token with repo and workflow scopes. Used for CI monitoring and auto‑fixing secrets."
+                },
+                "vaultbank.maxRetries": {
+                    "type": "integer",
+                    "default": 5,
+                    "description": "Maximum number of CI retry attempts before giving up."
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "pretest": "npm run compile",
+        "test": "node ./out/test/runTest.js"
+    },
+    "devDependencies": {
+        "@types/node": "^20.11.0",
+        "@types/vscode": "^1.85.0",
+        "typescript": "^5.2.2",
+        "vscode": "^1.85.0"
+    },
+    "dependencies": {
+        "@octokit/rest": "^20.0.0",
+        "node-fetch": "^3.3.2"
+    }
+}

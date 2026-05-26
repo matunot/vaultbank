@@ -58,7 +58,7 @@ $pkg | ConvertTo-Json -Depth 10 | Set-Content $clientPkg -Encoding UTF8
 # 2) Create or update vercel.json at repo root
 $vercelPath = "vercel.json"
 $vercelJson = @{
-    buildCommand = "cd client && npm run build"
+    buildCommand    = "cd client && npm run build"
     outputDirectory = "client/build"
 }
 
@@ -71,31 +71,31 @@ if (Test-Path $vercelPath) {
     # Preserve routes if they exist
     if ($existing.routes) { $merged.routes = $existing.routes }
     $merged | ConvertTo-Json -Depth 10 | Set-Content $vercelPath -Encoding UTF8
-} else {
+}
+else {
     $vercelJson | ConvertTo-Json -Depth 5 | Set-Content $vercelPath -Encoding UTF8
 }
 
 # 3) Clean and reinstall client dependencies
-Write-Host "Removing client\node_modules and package-lock.json..."
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "client\node_modules"
+Write-Host "Removing client\nnode_modules and package-lock.json..."
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "client\nnode_modules"
 Remove-Item -Force -ErrorAction SilentlyContinue "client\package-lock.json"
 Write-Host "Installing dependencies in client..."
 Push-Location client
 npm install --no-audit --no-fund
 if ($LASTEXITCODE -ne 0) { Write-Host "npm install failed"; Pop-Location; exit 1 }
 Pop-Location
-
-# 4) Verify craco binary exists
-if (-Not (Test-Path "client\node_modules\.bin\craco")) {
+# Verify craco binary exists (fallback install if needed)
+if (-Not (Test-Path "client\nnode_modules\.bin\craco")) {
     Write-Host "craco binary missing; attempting global install fallback..."
     npm install @craco/craco --prefix client --no-audit --no-fund
-    if (-Not (Test-Path "client\node_modules\.bin\craco")) { Write-Host "craco install failed"; exit 1 }
+    if (-Not (Test-Path "client\nnode_modules\.bin\craco")) { Write-Host "craco install failed"; exit 1 }
 }
-95 | # 5) Commit changes and push to origin main
-96 | # Include all modified files, especially the CI workflow file
-97 | git add client/package.json vercel.json .github/workflows/deploy.yml
-98 | git commit -m "chore: update CI workflow and deployment script"
-99 | git push origin HEAD:main
+
+# 5) Commit changes and push to origin main
+# Include all modified files, especially the CI workflow file
+git add client/package.json vercel.json .github/workflows/deploy.yml
+git commit -m "chore: update CI workflow and deployment script"
 git push origin HEAD:main
 
 # 6) Ensure Vercel uses Node 22.x in project settings via vercel.json engines override
@@ -115,7 +115,8 @@ Start-Sleep -Seconds 10
 $deploys = npx vercel ls --prod --limit 1 --json 2>$null | ConvertFrom-Json
 if ($deploys -and $deploys[0].url) {
     $prodUrl = "https://$($deploys[0].url)"
-} else {
+}
+else {
     $prodUrl = $null
 }
 
@@ -132,7 +133,8 @@ try {
     $resp = Invoke-WebRequest -Uri $prodUrl -UseBasicParsing -Method Head -TimeoutSec 30
     if ($resp.StatusCode -eq 200) { Write-Host "✅ Deployment successful, VaultBank live at $prodUrl"; exit 0 }
     else { Write-Host "Deployment returned status $($resp.StatusCode). Check Vercel logs."; exit 1 }
-} catch {
+}
+catch {
     Write-Host "Failed to reach $prodUrl. Check Vercel logs. $_"
     exit 1
 }
