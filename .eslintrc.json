@@ -25,8 +25,12 @@
     }
   },
   "rules": {
-    // Allow unused arguments prefixed with underscore
-    "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
+    // Allow unused arguments prefixed with underscore for both base and TS rules
+    "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/no-unused-vars": [
+      "error",
+      { "argsIgnorePattern": "^_" }
+    ]
   },
   "overrides": [
     {
