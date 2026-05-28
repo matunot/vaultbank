@@ -32,16 +32,14 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
-var __importDefault = (this && this.__importDefault) || function (mod) {
-    return (mod && mod.__esModule) ? mod : { "default": mod };
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
 const child_process_1 = require("child_process");
 const rest_1 = require("@octokit/rest");
-const node_fetch_1 = __importDefault(require("node-fetch"));
+// Dynamically import node-fetch when needed to avoid ESM/CommonJS interop issues.
+// This avoids the TypeScript error about importing an ES module from a CommonJS module.
 const autoFix_1 = require("./autoFix");
 // Repository constants – adjust if the repo location changes
 const GITHUB_OWNER = "matunot";
@@ -110,7 +108,7 @@ async function waitForRunCompletion(octokit, runId) {
 /** Verify that the Vercel deployment URL returns HTTP 200. */
 async function verifyVercel() {
     try {
-        const resp = await (0, node_fetch_1.default)(VERCEL_URL, { method: "HEAD" });
+        const resp = await fetch(VERCEL_URL, { method: "HEAD" });
         return resp.status === 200;
     }
     catch {

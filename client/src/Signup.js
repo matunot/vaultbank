@@ -18,7 +18,7 @@ export default function Signup() {
     setLoading(true);
     setMessage('');
     try {
-      const response = await api.post('/api/auth/register', { email });
+       const response = await api.post('/auth/register', { email });
       if (response.success) {
         setMessageType('success');
         setMessage('Magic link sent! Please check your email to complete registration.');

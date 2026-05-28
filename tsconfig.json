@@ -9,11 +9,12 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
+    "baseUrl": ".",
     "noEmit": true,
     "isolatedModules": true,
     "moduleResolution": "node16",
+    "ignoreDeprecations": "6.0",
     "resolveJsonModule": true,
-    "baseUrl": ".",
     "paths": {
       "@/*": ["client/src/*"]
     }

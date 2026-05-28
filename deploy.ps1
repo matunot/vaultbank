@@ -77,19 +77,19 @@ else {
 }
 
 # 3) Clean and reinstall client dependencies
-Write-Host "Removing client\nnode_modules and package-lock.json..."
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "client\nnode_modules"
+Write-Host "Removing client\node_modules and package-lock.json..."
+Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "client\node_modules"
 Remove-Item -Force -ErrorAction SilentlyContinue "client\package-lock.json"
 Write-Host "Installing dependencies in client..."
 Push-Location client
 npm install --no-audit --no-fund
 if ($LASTEXITCODE -ne 0) { Write-Host "npm install failed"; Pop-Location; exit 1 }
 Pop-Location
-# Verify craco binary exists (fallback install if needed)
-if (-Not (Test-Path "client\nnode_modules\.bin\craco")) {
-    Write-Host "craco binary missing; attempting global install fallback..."
+if (-Not (Test-Path "client\node_modules\.bin\craco")) {
+    Write-Host "craco binary missing; attempting install fallback..."
     npm install @craco/craco --prefix client --no-audit --no-fund
-    if (-Not (Test-Path "client\nnode_modules\.bin\craco")) { Write-Host "craco install failed"; exit 1 }
+    if (-Not (Test-Path "client\node_modules\.bin\craco")) { Write-Host "craco install failed"; exit 1 }
+}
 }
 
 # 5) Commit changes and push to origin main
