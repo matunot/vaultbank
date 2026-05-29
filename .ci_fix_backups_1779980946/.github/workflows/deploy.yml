@@ -1,0 +1,87 @@
+﻿# Auto-fix applied
+name: VaultBank CI/CD
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Run actionlint
+        run: npx actionlint
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install client and server dependencies
+        run: npm run install:all
+      - name: Install client dependencies (fallback if lockfile drift)
+        run: |
+          cd client
+          npm ci || npm install
+      - name: Install server dependencies (fallback if lockfile drift)
+        run: |
+          cd server
+          npm ci || npm install
+
+      - name: Run client tests
+        run: |
+          cd client
+          npm test
+      - name: Run server tests
+        run: |
+          cd server
+          npm test || echo "No server tests"
+
+      # New step: Run deployment script to trigger Vercel deployment
+      - name: Run deployment script
+        run: |
+          pwsh ./deploy.ps1
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+  deploy:
+    needs: [lint, build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if ! git diff-index --quiet HEAD; then
+            git commit -m "CI: Auto-commit changes after successful build and lint"
+            git push origin main
+          else
+            echo "No changes to commit"
+          fi

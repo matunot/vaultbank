@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+﻿#!/usr/bin/env bash
 set -euo pipefail
 LOG_DIR="${LOG_DIR:-./ci-logs}"
 mkdir -p "$LOG_DIR"

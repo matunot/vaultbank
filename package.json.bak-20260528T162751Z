@@ -1,0 +1,30 @@
+{
+    "name": "vaultbank",
+    "version": "1.0.0",
+    "description": "VaultBank - Full Stack Banking Application",
+    "scripts": {
+        "start:client": "cd client && npm start",
+        "start:server": "cd server && npm start",
+        "dev": "concurrently \"npm run start:client\" \"npm run start:server\"",
+        "install:client": "cd client && npm install",
+        "install:server": "cd server && npm install",
+        "install:all": "npm run install:client && npm run install:server",
+        "build": "cd client && npm run build",
+        "vercel:build": "npm run build",
+        "vercel:dev": "npm run dev"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    },
+    "keywords": [
+        "banking",
+        "react",
+        "express",
+        "fullstack"
+    ],
+    "author": "",
+    "license": "ISC",
+    "engines": {
+        "node": "24.x"
+    }
+}
