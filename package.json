@@ -11,7 +11,8 @@
     "install:all": "npm run install:client && npm run install:server",
     "build": "cd client && npm run build",
     "vercel:build": "npm run build",
-    "vercel:dev": "npm run dev"
+    "vercel:dev": "npm run dev",
+    "preinstall": "node -e \"const v=process.version; if(!/^v24\\./.test(v)){console.warn('Warning: Node 24.x required.'); process.exit(0);}\""
   },
   "devDependencies": {
     "ajv": "^8.12.0",
@@ -29,7 +30,7 @@
   "author": "",
   "license": "ISC",
   "engines": {
-    "node": "24.x"
+    "node": ">=24 <25"
   },
   "dependencies": {
     "@craco/craco": "^7.1.0",
