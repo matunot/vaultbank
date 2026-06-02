@@ -65,14 +65,10 @@ jobs:
       - name: Install dependencies
         run: |
           cd client
+          # Remove lockfile and node_modules to work around npm optional deps bug
+          # See: https://github.com/npm/cli/issues/4828
+          rm -rf node_modules package-lock.json
           npm install --no-audit --no-fund
-          # Fix: lightningcss optional native binary for Linux CI runners
-          # The lockfile may have been generated on Windows/macOS and missing Linux binaries
-          npm install --no-save lightningcss-linux-x64-gnu --no-audit --no-fund 2>/dev/null || true
-          # Copy the native binary to where lightningcss expects it
-          if [ -f node_modules/lightningcss-linux-x64-gnu/lightningcss.linux-x64-gnu.node ]; then
-            cp node_modules/lightningcss-linux-x64-gnu/lightningcss.linux-x64-gnu.node node_modules/lightningcss/
-          fi
 
       - name: Verify node-deps patches were applied
         run: |
