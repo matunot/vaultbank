@@ -9,6 +9,7 @@
         "test": "jest"
     },
     "dependencies": {
+        "@fast-csv/format": "^5.0.0",
         "@paypal/checkout-server-sdk": "^1.0.3",
         "@supabase/supabase-js": "^2.39.0",
         "bcryptjs": "^2.4.3",
@@ -31,7 +32,6 @@
         "razorpay": "^2.9.2",
         "stripe": "^14.14.0",
         "uuid": "^9.0.0",
-        "vaultbank": "file:..",
         "winston": "^3.13.0"
     },
     "devDependencies": {

@@ -15,20 +15,34 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '..', '.env') });
 
 const { Pool } = require('pg');
 
-if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL environment variable is not set.');
-}
-
 const isProduction = process.env.NODE_ENV === 'production';
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    // Enable SSL in production; rejectUnauthorized false allows self‑signed certs.
-    ssl: isProduction ? { rejectUnauthorized: false } : false,
-});
+// Gracefully handle missing DATABASE_URL for demo/serverless mode
+let pool = null;
+if (process.env.DATABASE_URL) {
+    pool = new Pool({
+        connectionString: process.env.DATABASE_URL,
+        // Enable SSL in production; rejectUnauthorized false allows self‑signed certs.
+        ssl: isProduction ? { rejectUnauthorized: false } : false,
+    });
+} else {
+    console.warn('⚠️  DATABASE_URL not set. Running in demo mode (no database).');
+}
 
 module.exports = {
-    query: (text, params) => pool.query(text, params),
-    getClient: () => pool.connect(),
+    query: (text, params) => {
+        if (!pool) {
+            console.warn('Database query skipped (no DATABASE_URL):', text);
+            return Promise.resolve({ rows: [], rowCount: 0 });
+        }
+        return pool.query(text, params);
+    },
+    getClient: () => {
+        if (!pool) {
+            throw new Error('Database not configured (DATABASE_URL not set)');
+        }
+        return pool.connect();
+    },
     pool,
+    isDemo: !pool,
 };
