@@ -65,8 +65,14 @@ jobs:
       - name: Install dependencies
         run: |
           cd client
-          # Use --force to ensure platform-specific optional deps (like lightningcss-linux-x64-gnu) are resolved
-          npm install --force --no-audit --no-fund
+          npm install --no-audit --no-fund
+          # Fix: lightningcss optional native binary for Linux CI runners
+          # The lockfile may have been generated on Windows/macOS and missing Linux binaries
+          npm install --no-save lightningcss-linux-x64-gnu --no-audit --no-fund 2>/dev/null || true
+          # Copy the native binary to where lightningcss expects it
+          if [ -f node_modules/lightningcss-linux-x64-gnu/lightningcss.linux-x64-gnu.node ]; then
+            cp node_modules/lightningcss-linux-x64-gnu/lightningcss.linux-x64-gnu.node node_modules/lightningcss/
+          fi
 
       - name: Verify node-deps patches were applied
         run: |
