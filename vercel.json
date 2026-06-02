@@ -1,8 +1,8 @@
 {
     "version": 2,
-    "installCommand": "cd \"$(git rev-parse --show-toplevel 2>/dev/null || echo .)\" && cd client && npm install --no-audit --no-fund && cd ../api && npm install --no-audit --no-fund",
-    "buildCommand": "cd \"$(git rev-parse --show-toplevel 2>/dev/null || echo .)\" && cd client && npm run build --if-present && cd \"$(git rev-parse --show-toplevel 2>/dev/null || echo .)\" && ln -sfn client/build build",
-    "outputDirectory": "build",
+    "installCommand": "cd client && npm install --no-audit --no-fund && cd ../api && npm install --no-audit --no-fund",
+    "buildCommand": "cd client && npm run build",
+    "outputDirectory": "client/build",
     "functions": {
         "api/login.js": {
             "maxDuration": 10
