@@ -2,7 +2,37 @@
     "version": 2,
     "buildCommand": "cd client && npm run build",
     "outputDirectory": "client/build",
+    "functions": {
+        "api/login.js": {
+            "maxDuration": 10
+        },
+        "api/transfers.js": {
+            "maxDuration": 10
+        },
+        "api/payments.js": {
+            "maxDuration": 10
+        },
+        "api/index.js": {
+            "maxDuration": 10
+        }
+    },
     "rewrites": [
+        {
+            "source": "/api/payments/(.*)",
+            "destination": "/api/payments"
+        },
+        {
+            "source": "/api/transfers/(.*)",
+            "destination": "/api/transfers"
+        },
+        {
+            "source": "/api/login/(.*)",
+            "destination": "/api/login"
+        },
+        {
+            "source": "/api/(.*)",
+            "destination": "/api/index"
+        },
         {
             "source": "/((?!api/|.*\\.[a-zA-Z0-9]+).*)",
             "destination": "/index.html"
