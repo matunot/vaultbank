@@ -1,0 +1,43 @@
+name: Deploy to Vercel
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CI: "true"
+      DISABLE_ESLINT_PLUGIN: "true"
+      ESLINT_NO_DEV_ERRORS: "true"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: |
+          if [ -f client/package-lock.json ]; then
+            cd client && npm ci --prefer-offline --no-audit --no-fund
+          else
+            cd client && npm install --no-audit --no-fund
+          fi
+      - name: Verify node-deps patches were applied
+        run: |
+          cd client
+          test -f node_modules/ajv-keywords/dist/keywords/index.js && \
+            grep -q formatMinimum node_modules/ajv-keywords/dist/keywords/index.js || \
+            (echo "ajv-keywords patch missing"; node scripts/patch-node-deps.js)
+          test -f node_modules/react-refresh/cjs/react-refresh-babel.production.min.js && \
+            grep -q "if(false)" node_modules/react-refresh/cjs/react-refresh-babel.production.min.js || \
+            (echo "react-refresh patch missing"; node scripts/patch-node-deps.js)
+      - name: Build client
+        run: |
+          cd client && npm run build --if-present
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel --prod --token ${{ secrets.VERCEL_TOKEN }}

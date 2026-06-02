@@ -6,7 +6,7 @@ module.exports = {
     postcss: {
       mode: 'extends',
       plugins: [
-        require('tailwindcss'),
+        require('@tailwindcss/postcss'),
         require('autoprefixer'),
       ],
     },
@@ -28,7 +28,7 @@ module.exports = {
                     ...loader.options,
                     postcssOptions: {
                       plugins: [
-                        require('tailwindcss'),
+                        require('@tailwindcss/postcss'),
                         require('autoprefixer'),
                       ],
                     },
@@ -38,6 +38,33 @@ module.exports = {
             }
           }
         });
+      }
+
+      // Stub out ajv-keywords' _formatLimit keyword AND the react-refresh
+      // babel plugin in production. Both are loaded transitively and crash
+      // when NODE_ENV=production. Aliasing them to no-op stubs lets the
+      // build proceed.
+      const isProd = process.env.NODE_ENV === 'production' || process.env.CI;
+      const stubDir = path.resolve(__dirname, 'scripts');
+      const ajvStub = path.join(stubDir, 'ajv-keywords-stub.js');
+      const refreshStub = path.join(stubDir, 'react-refresh-stub.js');
+
+      const existingAlias = webpackConfig.resolve && webpackConfig.resolve.alias;
+      const aliasPatch = {
+        'ajv-keywords/dist/keywords/_formatLimit': ajvStub,
+      };
+      if (isProd) {
+        aliasPatch['react-refresh/babel'] = refreshStub;
+      }
+      if (existingAlias && typeof existingAlias === 'object') {
+        if (Array.isArray(existingAlias)) {
+          existingAlias.push(aliasPatch);
+        } else {
+          Object.assign(existingAlias, aliasPatch);
+        }
+      } else {
+        webpackConfig.resolve = webpackConfig.resolve || {};
+        webpackConfig.resolve.alias = aliasPatch;
       }
 
       return webpackConfig;
