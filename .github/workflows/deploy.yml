@@ -64,11 +64,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          if [ -f client/package-lock.json ]; then
-            cd client && npm ci --prefer-offline --no-audit --no-fund
-          else
-            cd client && npm install --no-audit --no-fund
-          fi
+          cd client && npm install --no-audit --no-fund
 
       - name: Verify node-deps patches were applied
         run: |
