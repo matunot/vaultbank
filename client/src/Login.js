@@ -38,11 +38,39 @@ export default function Login({ onVerify }) {
     setLoading(true);
     setMessage('');
 
-    // Demo mode: Always succeed for any email/password
-    setTimeout(() => {
-      setMessageType('success');
+    try {
+      const response = await api.post('/api/auth/login', {
+        email: formData.email,
+        password: formData.password
+      });
+
+      if (response.success) {
+        if (response.twoFARequired) {
+          // 2FA is required - prompt user for code
+          setMessageType('success');
+          setMessage('2FA required. Enter the code from your authenticator app.');
+        } else {
+          // Direct login - store token and user data
+          localStorage.setItem('token', response.token);
+          localStorage.setItem('user', JSON.stringify(response.user));
+          setMessageType('success');
+          setMessage('✔️ Login successful! Redirecting...');
+          // Call onVerify with user data to update App state
+          if (onVerify) {
+            onVerify(response.user);
+          }
+        }
+      } else {
+        setMessageType('error');
+        setMessage(response.message || 'Login failed.');
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setMessageType('error');
+      setMessage('Invalid email or password.');
+    } finally {
       setLoading(false);
-    }, 1000); // Simulate network delay
+    }
   };
 
   // Request a magic link for password‑less login

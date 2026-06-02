@@ -4,9 +4,49 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+
 jobs:
+  validate-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate required secrets
+        run: |
+          echo "Checking required secrets..."
+          MISSING=""
+
+          # Auth & Database secrets
+          [ -z "${{ secrets.JWT_SECRET }}" ] && MISSING="$MISSING JWT_SECRET"
+          [ -z "${{ secrets.DATABASE_URL }}" ] && MISSING="$MISSING DATABASE_URL"
+
+          # SMTP secrets
+          [ -z "${{ secrets.SMTP_HOST }}" ] && MISSING="$MISSING SMTP_HOST"
+          [ -z "${{ secrets.SMTP_PORT }}" ] && MISSING="$MISSING SMTP_PORT"
+          [ -z "${{ secrets.SMTP_USER }}" ] && MISSING="$MISSING SMTP_USER"
+          [ -z "${{ secrets.SMTP_PASS }}" ] && MISSING="$MISSING SMTP_PASS"
+          [ -z "${{ secrets.SMTP_FROM }}" ] && MISSING="$MISSING SMTP_FROM"
+
+          # Payment provider secrets
+          [ -z "${{ secrets.PAYMENT_PROVIDER_STRIPE_KEY }}" ] && MISSING="$MISSING PAYMENT_PROVIDER_STRIPE_KEY"
+          [ -z "${{ secrets.PAYMENT_PROVIDER_STRIPE_SECRET }}" ] && MISSING="$MISSING PAYMENT_PROVIDER_STRIPE_SECRET"
+          [ -z "${{ secrets.PAYMENT_PROVIDER_RAZORPAY_KEY }}" ] && MISSING="$MISSING PAYMENT_PROVIDER_RAZORPAY_KEY"
+          [ -z "${{ secrets.PAYMENT_PROVIDER_RAZORPAY_SECRET }}" ] && MISSING="$MISSING PAYMENT_PROVIDER_RAZORPAY_SECRET"
+          [ -z "${{ secrets.PAYMENT_PROVIDER_PAYPAL_CLIENT_ID }}" ] && MISSING="$MISSING PAYMENT_PROVIDER_PAYPAL_CLIENT_ID"
+          [ -z "${{ secrets.PAYMENT_PROVIDER_PAYPAL_SECRET }}" ] && MISSING="$MISSING PAYMENT_PROVIDER_PAYPAL_SECRET"
+
+          # Vercel token
+          [ -z "${{ secrets.VERCEL_TOKEN }}" ] && MISSING="$MISSING VERCEL_TOKEN"
+
+          if [ -n "$MISSING" ]; then
+            echo "::warning::Missing secrets:$MISSING"
+            echo "Some secrets are not configured. Deployment will continue but functionality may be limited."
+            echo "Please add these secrets in GitHub Settings > Secrets and variables > Actions"
+          else
+            echo "✅ All required secrets are configured"
+          fi
+
   deploy:
     runs-on: ubuntu-latest
+    needs: validate-secrets
     env:
       CI: "true"
       DISABLE_ESLINT_PLUGIN: "true"
@@ -14,10 +54,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
       - name: Install dependencies
         run: |
           if [ -f client/package-lock.json ]; then
@@ -25,6 +67,7 @@ jobs:
           else
             cd client && npm install --no-audit --no-fund
           fi
+
       - name: Verify node-deps patches were applied
         run: |
           cd client
@@ -34,9 +77,11 @@ jobs:
           test -f node_modules/react-refresh/cjs/react-refresh-babel.production.min.js && \
             grep -q "if(false)" node_modules/react-refresh/cjs/react-refresh-babel.production.min.js || \
             (echo "react-refresh patch missing"; node scripts/patch-node-deps.js)
+
       - name: Build client
         run: |
           cd client && npm run build --if-present
+
       - name: Deploy to Vercel
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}

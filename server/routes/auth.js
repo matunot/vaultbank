@@ -588,10 +588,10 @@ router.post('/api/auth/disable-2fa', authenticateToken, async (req, res) => {
 });
 
 /**
- * POST /api/auth/login
+ * POST /api/auth/admin/login
  * Admin login endpoint
  */
-router.post('/api/auth/login', authLimiter, async (req, res) => {
+router.post('/api/auth/admin/login', authLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
 

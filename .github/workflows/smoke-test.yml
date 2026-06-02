@@ -1,0 +1,61 @@
+name: Smoke Test
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Verify Node and npm
+        run: |
+          echo "Node: $(node -v)"
+          echo "npm: $(npm -v)"
+
+      - name: Install dependencies (deterministic)
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --prefer-offline --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Quick sanity checks
+        run: |
+          if [ ! -f package-lock.json ]; then
+            echo "package-lock.json missing after install" >&2
+            exit 1
+          fi
+          if [ ! -d node_modules ]; then
+            echo "node_modules not present after install" >&2
+            exit 1
+          fi
+
+      - name: Build (fast)
+        run: |
+          if [ -d client ]; then
+            (cd client && npm run build --if-present)
+          else
+            npm run build --if-present
+          fi
+
+      - name: Lint workflow files (optional)
+        run: |
+          if command -v actionlint >/dev/null 2>&1; then
+            actionlint || true
+          fi
+
+      - name: Smoke test success marker
+        run: echo "Smoke test passed"

@@ -2,7 +2,8 @@
   "env": {
     "browser": true,
     "es2021": true,
-    "node": true
+    "node": true,
+    "jest": true
   },
   "extends": [
     "eslint:recommended",
@@ -18,7 +19,7 @@
     "ecmaVersion": 12,
     "sourceType": "module"
   },
-  "plugins": ["react", "@typescript-eslint"],
+  "plugins": ["react", "@typescript-eslint", "jest"],
   "settings": {
     "react": {
       "version": "detect"
@@ -35,9 +36,22 @@
   "overrides": [
     {
       "files": ["*.js", "*.jsx"],
+      "excludedFiles": ["server/**/*.js", "api/**/*.js", "scripts/**/*.js"],
       "parser": "@typescript-eslint/parser",
       "parserOptions": {
         "project": "./tsconfig.json"
+      }
+    },
+    {
+      "files": ["server/**/*.js", "api/**/*.js", "scripts/**/*.js"],
+      "parser": "espree",
+      "parserOptions": {
+        "ecmaVersion": 2021,
+        "sourceType": "script"
+      },
+      "rules": {
+        "@typescript-eslint/no-var-requires": "off",
+        "no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
       }
     }
   ]
