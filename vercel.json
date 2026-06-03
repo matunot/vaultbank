@@ -19,6 +19,10 @@
     },
     "rewrites": [
         {
+            "source": "/api/auth/(.*)",
+            "destination": "/api/login"
+        },
+        {
             "source": "/api/payments/(.*)",
             "destination": "/api/payments"
         },

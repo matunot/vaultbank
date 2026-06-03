@@ -5,18 +5,16 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 
-// Import routes from server/ (api/ doesn't duplicate the routes directory)
-const authRoutes = require('../server/routes/auth');
-const transferRoutes = require('../server/routes/transfers');
-const rewardsRoutes = require('../server/routes/rewards');
-const alertsRoutes = require('../server/routes/alerts');
-const auditRoutes = require('../server/routes/audit');
-const businessRoutes = require('../server/routes/business');
-const investmentsRoutes = require('../server/routes/investments');
-const adminRoutes = require('../server/routes/admin');
-const paymentsRoutes = require('../server/routes/payments');
-const anomaliesRoutes = require('../server/routes/anomalies');
-const reportsRoutes = require('../server/routes/reports');
+// Import routes
+const authRoutes = require('./routes/auth');
+const transferRoutes = require('./routes/transfers');
+const rewardsRoutes = require('./routes/rewards');
+const alertsRoutes = require('./routes/alerts');
+const auditRoutes = require('./routes/audit');
+const businessRoutes = require('./routes/business');
+const investmentsRoutes = require('./routes/investments');
+const adminRoutes = require('./routes/admin');
+const paymentsRoutes = require('./routes/payments');
 
 // Import middleware
 const { generalLimiter } = require('./middleware/rateLimiter');
@@ -91,8 +89,6 @@ app.use('/', businessRoutes);
 app.use('/', investmentsRoutes);
 app.use('/', adminRoutes);
 app.use('/', paymentsRoutes);
-app.use('/', anomaliesRoutes);
-app.use('/', reportsRoutes);
 
 // ─── API Info ────────────────────────────────────────────────────────────────
 app.get('/api', (req, res) => {
