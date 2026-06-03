@@ -1,7 +1,7 @@
 {
     "version": 2,
-    "installCommand": "cd client && npm install --no-audit --no-fund && cd ../api && npm install --no-audit --no-fund",
-    "buildCommand": "cd client && npm run build",
+    "installCommand": "cd api && npm install --no-audit --no-fund",
+    "buildCommand": "echo \"Client build completed in CI - skipping\"",
     "outputDirectory": "client/build",
     "functions": {
         "api/login.js": {
