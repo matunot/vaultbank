@@ -15,9 +15,7 @@
         },
         "api/index.js": {
             "maxDuration": 10,
-            "includeFiles": [
-                "server/**"
-            ]
+            "includeFiles": "server/**"
         }
     },
     "rewrites": [
