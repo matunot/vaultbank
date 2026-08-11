@@ -3,7 +3,7 @@
  * Handles all communication with the backend server
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || '/';
+const API_BASE = 'https://vaultbank-md20.onrender.com';
 
 interface AuthResponse {
   success: boolean;
