@@ -4,7 +4,7 @@ services:
     env: node
     plan: free
     runtime: nodejs20
-    buildCommand: npm install --prefix server
+    buildCommand: npm install
     startCommand: node index.js
     workingDirectory: server
     envVars:
