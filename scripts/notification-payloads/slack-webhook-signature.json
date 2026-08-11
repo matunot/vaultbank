@@ -1,0 +1,65 @@
+{
+    "text": ":warning: *VaultBank Payments — Webhook Signature Failures*",
+    "blocks": [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": ":warning: VaultBank Webhook Signature Verification Failure",
+                "emoji": true
+            }
+        },
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": "*Provider:*\n{{provider}}"
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": "*Failure Count (5m):*\n{{count}}"
+                }
+            ]
+        },
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": "*Time:*\n{{timestamp}}"
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": "*Severity:*\n:rotating_light: CRITICAL"
+                }
+            ]
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*Possible causes:*\n• Webhook signing secret rotated in provider dashboard but not in Vercel env\n• Manually replayed webhook with wrong secret\n• Possible replay attack"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*Immediate actions:*\n1️⃣ Disable live providers:\n```\ncurl -X POST -H \"Authorization: Bearer $ADMIN_JWT\" -H \"Content-Type: application/json\" -d '{\"key\":\"payments.live_providers_percent\",\"percentage\":0}' https://vaultbank.vercel.app/api/admin/flags\n```\n2️⃣ Verify webhook signing secrets match provider dashboard config\n3️⃣ Check Vercel env for `PAYMENT_PROVIDER_*_WEBHOOK_SECRET` values\n4️⃣ Re-send test webhook to confirm fix"
+            }
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": "Runbook: <https://github.com/matunot/vaultbank/blob/main/docs/incident_playbook.md|Incident Playbook> | VaultBank Payments Security"
+                }
+            ]
+        }
+    ]
+}

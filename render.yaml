@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: vaultbank-backend
+    env: node
+    plan: free
+    runtime: nodejs20
+    buildCommand: npm install --prefix server
+    startCommand: node index.js
+    workingDirectory: server
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        value: admin@vaultbank.com
+      - key: ADMIN_PASSWORD
+        value: admin123

@@ -1,0 +1,64 @@
+groups:
+  - name: vaultbank-payments
+    rules:
+      # Critical: Payment failure rate exceeds 1% for 30 minutes
+      - alert: PaymentFailureRateHigh
+        expr: |
+          sum(rate(payment_failure_total[5m])) / sum(rate(payment_attempts_total[5m])) > 0.01
+        for: 30m
+        labels:
+          severity: critical
+          team: payments
+        annotations:
+          summary: "Payment failure rate > 1% for 30 minutes"
+          description: "Failure rate: {{ $value | humanizePercentage }}"
+          runbook: "Check provider status pages, webhook logs, and ledger for stuck payments"
+
+      # Critical: Webhook signature verification failures
+      - alert: WebhookSignatureFailures
+        expr: increase(webhook_signature_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "Webhook signature verification failures detected"
+          description: "{{ $value }} signature failures in last 5 minutes"
+          runbook: "Verify webhook signing secrets match provider dashboard config"
+
+      # Critical: Reconciliation mismatches
+      - alert: ReconciliationMismatches
+        expr: increase(reconciliation_mismatches_total[1h]) > 0
+        for: 5m
+        labels:
+          severity: critical
+          team: finance
+        annotations:
+          summary: "Critical reconciliation mismatches detected"
+          description: "{{ $value }} mismatches in last hour"
+          runbook: "Run manual reconciliation and check for duplicate/missing charges"
+
+      # Warning: Idempotency replay rate spike
+      - alert: IdempotencyReplaySpike
+        expr: |
+          rate(idempotency_replays_total[10m]) > 5 * rate(idempotency_replays_total[1h])
+        for: 10m
+        labels:
+          severity: warning
+          team: payments
+        annotations:
+          summary: "Idempotency replay rate 5x baseline"
+          description: "Possible duplicate charge attempts or client retry storm"
+          runbook: "Check client retry logic and idempotency key generation"
+
+      # Warning: P99 payment latency exceeds 10 seconds
+      - alert: PaymentLatencyP99High
+        expr: histogram_quantile(0.99, sum(rate(payment_latency_seconds_bucket[5m])) by (le)) > 10
+        for: 15m
+        labels:
+          severity: warning
+          team: payments
+        annotations:
+          summary: "P99 payment latency > 10s"
+          description: "P99 latency: {{ $value }}s"
+          runbook: "Check provider API response times and network latency"

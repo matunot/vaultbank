@@ -1,0 +1,5 @@
+id,user_id,action,category,resource_id,details,ip_address,user_agent,timestamp
+3a94428c-b156-467a-b353-681f32816ba8,00000000-0000-0000-0000-000000000001,password_reset,security,,,,,Thu May 14 2026 16:52:12 GMT-0700 (Pacific Daylight Time)
+dc04ba4b-f279-46ad-ae2f-19e74063dba7,00000000-0000-0000-0000-000000000001,fund_transfer_100USD,transfer,,,,,Thu May 14 2026 16:52:12 GMT-0700 (Pacific Daylight Time)
+25b5c83f-49e3-4559-aeff-38b8cd2c181a,00000000-0000-0000-0000-000000000001,user_login,login,,,,,Thu May 14 2026 16:52:12 GMT-0700 (Pacific Daylight Time)
+fce80b79-5653-4b85-81fa-eb279f2fdb06,00000000-0000-0000-0000-000000000001,test_migration,test,,,,,Thu May 14 2026 16:52:11 GMT-0700 (Pacific Daylight Time)

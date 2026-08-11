@@ -1,0 +1,134 @@
+{
+    "dashboard": {
+        "title": "VaultBank Payments",
+        "uid": "vaultbank-payments",
+        "tags": [
+            "payments",
+            "production"
+        ],
+        "panels": [
+            {
+                "id": 1,
+                "title": "Payment Attempts / Success / Failure Rate",
+                "type": "timeseries",
+                "targets": [
+                    {
+                        "expr": "sum(rate(payment_attempts_total[5m]))",
+                        "legendFormat": "Attempts"
+                    },
+                    {
+                        "expr": "sum(rate(payment_success_total[5m]))",
+                        "legendFormat": "Success"
+                    },
+                    {
+                        "expr": "sum(rate(payment_failure_total[5m]))",
+                        "legendFormat": "Failure"
+                    }
+                ],
+                "gridPos": {
+                    "x": 0,
+                    "y": 0,
+                    "w": 12,
+                    "h": 8
+                }
+            },
+            {
+                "id": 2,
+                "title": "Webhook Events by Provider & Status",
+                "type": "timeseries",
+                "targets": [
+                    {
+                        "expr": "sum by (provider, status) (rate(webhook_events_processed_total[5m]))",
+                        "legendFormat": "{{provider}} - {{status}}"
+                    }
+                ],
+                "gridPos": {
+                    "x": 12,
+                    "y": 0,
+                    "w": 12,
+                    "h": 8
+                }
+            },
+            {
+                "id": 3,
+                "title": "Reconciliation Mismatches (24h)",
+                "type": "stat",
+                "targets": [
+                    {
+                        "expr": "sum(increase(reconciliation_mismatches_total[24h]))",
+                        "legendFormat": "Mismatches"
+                    }
+                ],
+                "gridPos": {
+                    "x": 0,
+                    "y": 8,
+                    "w": 6,
+                    "h": 4
+                }
+            },
+            {
+                "id": 4,
+                "title": "Idempotency Replays (10m rate)",
+                "type": "timeseries",
+                "targets": [
+                    {
+                        "expr": "rate(idempotency_replays_total[10m])",
+                        "legendFormat": "Replays/s"
+                    }
+                ],
+                "gridPos": {
+                    "x": 6,
+                    "y": 8,
+                    "w": 12,
+                    "h": 4
+                }
+            },
+            {
+                "id": 5,
+                "title": "Payment Latency (P50/P95/P99)",
+                "type": "timeseries",
+                "targets": [
+                    {
+                        "expr": "histogram_quantile(0.50, sum(rate(payment_latency_seconds_bucket[5m])) by (le))",
+                        "legendFormat": "P50"
+                    },
+                    {
+                        "expr": "histogram_quantile(0.95, sum(rate(payment_latency_seconds_bucket[5m])) by (le))",
+                        "legendFormat": "P95"
+                    },
+                    {
+                        "expr": "histogram_quantile(0.99, sum(rate(payment_latency_seconds_bucket[5m])) by (le))",
+                        "legendFormat": "P99"
+                    }
+                ],
+                "gridPos": {
+                    "x": 0,
+                    "y": 12,
+                    "w": 12,
+                    "h": 8
+                }
+            },
+            {
+                "id": 6,
+                "title": "Live Provider Canary %",
+                "type": "gauge",
+                "targets": [
+                    {
+                        "expr": "feature_flag_payments_live_providers_percent",
+                        "legendFormat": "Canary %"
+                    }
+                ],
+                "gridPos": {
+                    "x": 12,
+                    "y": 8,
+                    "w": 6,
+                    "h": 4
+                }
+            }
+        ],
+        "time": {
+            "from": "now-1h",
+            "to": "now"
+        }
+    }
+}

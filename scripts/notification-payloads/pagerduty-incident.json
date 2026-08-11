@@ -1,0 +1,42 @@
+{
+    "routing_key": "REPLACE_PAGERDUTY_INTEGRATION_KEY",
+    "event_action": "trigger",
+    "payload": {
+        "summary": "VaultBank Payments — High Failure Rate (>1%)",
+        "severity": "critical",
+        "source": "vaultbank.vercel.app",
+        "component": "payments",
+        "group": "production",
+        "class": "payment_processing",
+        "custom_details": {
+            "environment": "production",
+            "metric": "payment_failure_rate",
+            "threshold": ">1% over 30m",
+            "dashboard": "https://grafana.vaultbank.com/d/vaultbank-payments",
+            "runbook": "https://github.com/matunot/vaultbank/blob/main/docs/incident_playbook.md",
+            "immediate_actions": [
+                "Set canary to 0% via /api/admin/flags",
+                "Check provider status pages (Stripe, Razorpay, PayPal)",
+                "Review webhook_logs for signature failures",
+                "Check ledger for stuck pending payments"
+            ]
+        }
+    },
+    "links": [
+        {
+            "href": "https://github.com/matunot/vaultbank/blob/main/docs/release_checklist.md",
+            "text": "Release Checklist"
+        },
+        {
+            "href": "https://github.com/matunot/vaultbank/blob/main/docs/incident_playbook.md",
+            "text": "Incident Playbook"
+        }
+    ],
+    "images": [
+        {
+            "src": "https://grafana.vaultbank.com/d/vaultbank-payments?orgId=1",
+            "href": "https://grafana.vaultbank.com/d/vaultbank-payments",
+            "alt": "Payment Metrics Dashboard"
+        }
+    ]
+}

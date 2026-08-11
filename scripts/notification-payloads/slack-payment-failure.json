@@ -1,0 +1,58 @@
+{
+    "text": ":rotating_light: *VaultBank Payments — High Failure Rate*",
+    "blocks": [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": ":rotating_light: VaultBank Payments — High Failure Rate",
+                "emoji": true
+            }
+        },
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": "*Environment:*\nProduction"
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": "*Alert:*\nPayment failure rate > 1% (30m)"
+                }
+            ]
+        },
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": "*Time:*\n{{timestamp}}"
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": "*Failure Rate:*\n{{failure_rate}}"
+                }
+            ]
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": "*Immediate actions:*\n1️⃣ Set canary to 0%:\n```\ncurl -X POST -H \"Authorization: Bearer $ADMIN_JWT\" -H \"Content-Type: application/json\" -d '{\"key\":\"payments.live_providers_percent\",\"percentage\":0}' https://vaultbank.vercel.app/api/admin/flags\n```\n2️⃣ Check reconciliation and webhook logs\n3️⃣ Notify on-call and open incident"
+            }
+        },
+        {
+            "type": "divider"
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "mrkdwn",
+                    "text": "Runbook: <https://github.com/matunot/vaultbank/blob/main/docs/release_checklist.md|Release Checklist> | <https://github.com/matunot/vaultbank/blob/main/docs/incident_playbook.md|Incident Playbook>"
+                }
+            ]
+        }
+    ]
+}
