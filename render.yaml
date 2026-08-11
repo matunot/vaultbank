@@ -20,3 +20,16 @@ services:
         value: admin@vaultbank.com
       - key: ADMIN_PASSWORD
         value: admin123
+      # ── Real Money Providers (set these in Render dashboard when you have keys) ──
+      - key: PAYMENT_PROVIDER_STRIPE_KEY
+        sync: false
+      - key: PAYMENT_PROVIDER_STRIPE_SECRET
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: PAYMENT_PROVIDER_PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYMENT_PROVIDER_PAYPAL_SECRET
+        sync: false
+      - key: PAYPAL_WEBHOOK_ID
+        sync: false
