@@ -43,6 +43,8 @@ const allowedOrigins = [
     'http://127.0.0.1:3000',
     'http://127.0.0.1:5173',
     'https://vaultbank.vercel.app',
+    'https://vaultbank-mu.vercel.app',
+    'https://vaultbank-hha0sj6he-matus-projects-c3e42681.vercel.app',
     'https://vaultbank.com',
     'https://www.vaultbank.com'
 ];
