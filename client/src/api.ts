@@ -33,6 +33,13 @@ class ApiError extends Error {
   }
 }
 
+const MAX_RETRIES = 2;
+const RETRY_DELAY_MS = 1500;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('vaultbank_token');
 
@@ -45,25 +52,38 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  try {
-    const response = await fetch(`${API_BASE}${endpoint}`, {
-      ...options,
-      headers,
-    });
+  // Retry on network errors (e.g. Render free-tier cold starts)
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        ...options,
+        headers,
+      });
 
-    const data = await response.json();
+      const data = await response.json();
 
-    if (!response.ok) {
-      throw new ApiError(data.message || 'Request failed', response.status);
+      if (!response.ok) {
+        throw new ApiError(data.message || 'Request failed', response.status);
+      }
+
+      return data as T;
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+
+      // Network error (TypeError: Failed to fetch) — retry a couple times
+      console.warn(`[API] Network error for ${endpoint} (attempt ${attempt + 1}/${MAX_RETRIES + 1}):`, error);
+
+      if (attempt < MAX_RETRIES) {
+        await delay(RETRY_DELAY_MS);
+      }
     }
-
-    return data as T;
-  } catch (error) {
-    if (error instanceof ApiError) throw error;
-    // Network error - fall back to demo mode gracefully
-    console.warn(`[API] Network error for ${endpoint}, using fallback:`, error);
-    throw error;
   }
+
+  // All retries exhausted — throw a clear, user-friendly error
+  throw new ApiError(
+    'Cannot reach the server. Please check your internet connection and try again.',
+    0
+  );
 }
 
 export const api = {

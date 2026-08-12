@@ -1,3 +1,42 @@
-node_modules
+# Dependencies
+node_modules/
+
+# Build output
+client/dist/
+dist/
+build/
+
+# Environment files — NEVER commit secrets
+.env
+.env.*
+!.env.example
+server/.env
+server/.env.*
+
+# Logs
+logs/
+*.log
+server/logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Deployment
 .vercel
-.env*
+.netlify
+now.json
+
+# Testing
+coverage/
+.nyc_output/
+
+# Editor/OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+
+# VaultBank auto-deploy extension build artifact
+vaultbank-auto-deploy-extension/*.vsix

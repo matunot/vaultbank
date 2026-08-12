@@ -1,9 +1,8 @@
-name: Keep Render Backend Alive
+name: Keep Render Backend Alive + Health Bot
 
 "on":
   schedule:
-    # Run every 10 minutes to keep the Render free tier server awake
-    # Render free tier spins down after 15 minutes of inactivity
+    # Run every 10 minutes to keep Render free tier awake (spins down after 15 min)
     - cron: '*/10 * * * *'
   workflow_dispatch: # Allow manual triggering
 
@@ -13,11 +12,44 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Ping health endpoint
+        id: health
         run: |
           echo "Pinging https://vaultbank-md20.onrender.com/health"
-          curl -sS -o /dev/null -w "HTTP Status: %{http_code} | Response Time: %{time_total}s\n" \
-            --max-time 60 \
-            https://vaultbank-md20.onrender.com/health
+          RESPONSE=$(curl -sS -o /dev/null -w "%{http_code}|%{time_total}" --max-time 60 \
+            https://vaultbank-md20.onrender.com/health)
+          STATUS=$(echo "$RESPONSE" | cut -d'|' -f1)
+          TIME=$(echo "$RESPONSE" | cut -d'|' -f2)
+          echo "HTTP Status: $STATUS | Response Time: ${TIME}s"
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          echo "time=$TIME" >> "$GITHUB_OUTPUT"
+
+          # If response time is > 30s, it likely cold-started (was asleep)
+          COLD_START=$(awk "BEGIN { print ($TIME > 30) ? 1 : 0 }")
+          if [ "$COLD_START" = "1" ]; then
+            echo "::warning::Backend was cold-starting (asleep). Response took ${TIME}s."
+            echo "cold_start=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Backend is warm and responsive (${TIME}s)."
+            echo "cold_start=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Test real login endpoint
+        id: login_test
+        run: |
+          echo "Testing real login (POST /login)"
+          LOGIN_RESPONSE=$(curl -sS -o /tmp/login.json -w "%{http_code}" --max-time 60 \
+            -X POST https://vaultbank-md20.onrender.com/login \
+            -H "Content-Type: application/json" \
+            -d '{"email":"demo@vaultbank.com","password":"password"}')
+          echo "Login HTTP Status: $LOGIN_RESPONSE"
+          echo "status=$LOGIN_RESPONSE" >> "$GITHUB_OUTPUT"
+
+          if [ "$LOGIN_RESPONSE" = "200" ]; then
+            echo "✅ Login test PASSED — API is functional"
+          else
+            echo "❌ Login test FAILED — API is broken or returning errors"
+            cat /tmp/login.json 2>/dev/null || true
+          fi
 
       - name: Ping root endpoint
         run: |
@@ -26,17 +58,90 @@ jobs:
             --max-time 60 \
             https://vaultbank-md20.onrender.com/
 
-      - name: Check for cold-start delay alert
-        run: |
-          echo "Checking response time..."
-          RESPONSE_TIME=$(curl -sS -o /dev/null -w "%{time_total}" --max-time 60 https://vaultbank-md20.onrender.com/health)
-          echo "Response time: ${RESPONSE_TIME}s"
+      - name: Open GitHub Issue if backend is down
+        if: steps.health.outputs.status != '200' || steps.login_test.outputs.status != '200'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: ['🚨 outage'],
+            });
 
-          # If response time is > 30s, it likely cold-started (was asleep)
-          # Use awk (always available on GitHub runners) instead of bc
-          COLD_START=$(awk "BEGIN { print ($RESPONSE_TIME > 30) ? 1 : 0 }")
-          if [ "$COLD_START" = "1" ]; then
-            echo "::warning::Backend was cold-starting (asleep). Response took ${RESPONSE_TIME}s."
-          else
-            echo "Backend is warm and responsive (${RESPONSE_TIME}s)."
-          fi
+            const healthStatus = '${{ steps.health.outputs.status }}';
+            const loginStatus = '${{ steps.login_test.outputs.status }}';
+
+            // Only open a NEW issue if an outage issue isn't already open
+            const alreadyOpen = existing.some(issue =>
+              issue.title.includes('🚨 VaultBank Backend Outage')
+            );
+
+            if (alreadyOpen) {
+              console.log('⚠️ Outage issue already open — skipping duplicate.');
+            } else {
+              const body = [
+                '## 🚨 VaultBank Backend Outage Detected',
+                '',
+                'The health-bot detected that the backend is DOWN or misbehaving.',
+                '',
+                '| Check | Status |',
+                '|-------|--------|',
+                `| Health Check | \`${healthStatus || 'N/A'}\` |`,
+                `| Login Test | \`${loginStatus || 'N/A'}\` |`,
+                '',
+                '**Possible causes:**',
+                '- Render free tier might have exceeded its monthly hours',
+                '- Backend deployment failed or is crashing',
+                '- Database (Neon) connection issue',
+                '- Rate limiting (too many requests)',
+                '',
+                '**Next steps:**',
+                '1. Check Render dashboard: https://dashboard.render.com',
+                '2. View backend logs for errors',
+                '3. Check Neon database status: https://console.neon.tech',
+                '',
+                'This issue was auto-created by the keep-alive health bot 🤖',
+              ].join('\n');
+
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: '🚨 VaultBank Backend Outage Detected',
+                body,
+                labels: ['🚨 outage'],
+              });
+
+              console.log('✅ Outage issue created.');
+            }
+
+      - name: Close outage issue when backend recovers
+        if: steps.health.outputs.status == '200' && steps.login_test.outputs.status == '200'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: ['🚨 outage'],
+            });
+
+            for (const issue of openIssues) {
+              if (issue.title.includes('🚨 VaultBank Backend Outage')) {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  body: '✅ Health-bot: Backend is healthy again. Closing this outage issue.',
+                });
+                await github.rest.issues.update({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: issue.number,
+                  state: 'closed',
+                });
+                console.log(`✅ Closed outage issue #${issue.number}`);
+              }
+            }
