@@ -54,6 +54,12 @@ app.use(cors({
         // Allow requests with no origin (mobile apps, curl, Postman)
         if (!origin) return callback(null, true);
 
+        // Allow any Vercel deployment (production + preview URLs like
+        // vaultbank-978m-git-main-matus-projects-c3e42681.vercel.app)
+        if (origin.endsWith('.vercel.app')) {
+            return callback(null, true);
+        }
+
         if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
             callback(null, true);
         } else {
