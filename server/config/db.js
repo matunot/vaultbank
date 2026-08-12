@@ -2,7 +2,7 @@
  * VAULTBANK DATABASE CONFIGURATION - REAL POSTGRESQL
  * ================================================
  * Uses Neon PostgreSQL for real data persistence.
- * No more in-memory MongoDB or demo mode.
+ * Falls back to in-memory demo mode if DATABASE_URL is not set.
  */
 
 const path = require('path');
@@ -10,8 +10,15 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
 const { Pool } = require('pg');
 
+// ─── Compatibility flags ─────────────────────────────────────────────────────
+// Auto-detect demo mode: if no DATABASE_URL is configured, fall back to the
+// in-memory demo store so the API keeps working (e.g., on Render free tier
+// where DATABASE_URL may not have been configured in the dashboard).
+const isDemo = !process.env.DATABASE_URL;
+const isMongo = false;
+
 // ─── PostgreSQL Connection Pool ──────────────────────────────────────────────
-const pool = new Pool({
+const pool = process.env.DATABASE_URL ? new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('sslmode') 
         ? { rejectUnauthorized: false } 
@@ -19,16 +26,19 @@ const pool = new Pool({
     max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
-});
+}) : null;
 
-pool.on('error', (err) => {
-    console.error('❌ Unexpected PostgreSQL pool error:', err.message);
-});
+if (pool) {
+    pool.on('error', (err) => {
+        console.error('❌ Unexpected PostgreSQL pool error:', err.message);
+    });
+}
 
 let isConnected = false;
 
 // ─── Connection Management ───────────────────────────────────────────────────
 async function ensureConnection() {
+    if (isDemo) return; // No DB to connect to in demo mode
     if (isConnected) return;
     try {
         const client = await pool.connect();
@@ -38,12 +48,15 @@ async function ensureConnection() {
         console.info('✅ PostgreSQL database connection established');
     } catch (err) {
         console.error('❌ Failed to connect to PostgreSQL:', err.message);
-        throw err;
+        // Don't throw — allow demo fallback in the calling code
     }
 }
 
 // ─── Query Helper ────────────────────────────────────────────────────────────
 async function query(text, params) {
+    if (isDemo) {
+        throw new Error('Database not available in demo mode. Use demoStore functions instead.');
+    }
     await ensureConnection();
     const client = await pool.connect();
     try {
@@ -56,6 +69,9 @@ async function query(text, params) {
 
 // ─── Transaction Client Helper ───────────────────────────────────────────────
 async function getClient() {
+    if (isDemo) {
+        throw new Error('Database not available in demo mode. Use demoStore functions instead.');
+    }
     await ensureConnection();
     const client = await pool.connect();
     return {
@@ -66,10 +82,6 @@ async function getClient() {
         release: () => client.release(),
     };
 }
-
-// ─── Compatibility flags ─────────────────────────────────────────────────────
-const isDemo = false;
-const isMongo = false;
 
 // ─── Mongoose-like model stubs (for backward compat with routes) ─────────────
 // These provide a thin compatibility layer so existing routes that use
@@ -505,9 +517,11 @@ models.AMLFlag = {
 };
 
 // ─── Initialize on module load ───────────────────────────────────────────────
-ensureConnection().catch(err => {
-    console.error('⚠️  PostgreSQL connection failed:', err.message);
-});
+if (!isDemo) {
+    ensureConnection().catch(err => {
+        console.error('⚠️  PostgreSQL connection failed:', err.message);
+    });
+}
 
 module.exports = {
     query,

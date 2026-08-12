@@ -219,20 +219,28 @@ router.post('/api/auth/login', async (req, res) => {
         // Generate full access token
         const token = generateToken(user);
 
-        // Update last login
-        await updateLastLogin(user.id, req.ip);
+        // Update last login (non-critical — don't fail login if DB write fails)
+        try {
+            await updateLastLogin(user.id, req.ip);
+        } catch (err) {
+            console.error('updateLastLogin failed (non-fatal):', err.message);
+        }
 
         // Get account info
         const account = await findAccountByUserId(user.id);
 
-        // Log successful login
-        await createAuditLog({
-            userId: user.id,
-            action: 'login_success',
-            details: { method: 'email_password' },
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent']
-        });
+        // Log successful login (non-critical — don't fail login if DB write fails)
+        try {
+            await createAuditLog({
+                userId: user.id,
+                action: 'login_success',
+                details: { method: 'email_password' },
+                ipAddress: req.ip,
+                userAgent: req.headers['user-agent']
+            });
+        } catch (err) {
+            console.error('createAuditLog failed (non-fatal):', err.message);
+        }
 
         res.json({
             success: true,
