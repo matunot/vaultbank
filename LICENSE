@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 MIT License
 
 Copyright (c) 2024-2026 VaultBank
@@ -19,3 +20,533 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+=======
+================================================================================
+                      VAULTBANK SOFTWARE LICENCE AGREEMENT
+================================================================================
+
+  License No.:    VB-LIC-2024-001-SW
+  Issued By:       VaultBank AG (Incorporated under Swiss Law)
+  Issue Date:      January 1, 2024
+  Version:         4.2.1 (Multi-Jurisdictional Banking Framework)
+  Classification:  Proprietary — Protected by International Banking Law
+  Jurisdiction:    Zurich, Switzerland (Primary) | New York, USA (US) |
+                   Abu Dhabi, UAE (UAE) | London, UK (UK) | Singapore (SG)
+
+================================================================================
+
+THIS LICENSE AGREEMENT ("Agreement") is entered into as of the Issue Date
+hereof between VaultBank AG, a corporation organized and existing under the
+laws of the Swiss Confederation, with its principal office at
+Bahnhofstrasse 69, 8001 Zurich, Switzerland ("Licensor"), having its
+subsidiary entities in the United States of America, the United Arab Emirates,
+the United Kingdom of Great Britain and Northern Ireland, and the Republic of
+Singapore, and the individual or legal entity ("Licensee") accessing the
+VaultBank software and all associated documentation and materials.
+
+BY ACCESSING, USING, OR DISTRIBUTING THE VAULTBANK SOFTWARE, LICENSEE AGREES
+TO BE BOUND BY THE TERMS AND CONDITIONS OF THIS AGREEMENT. IF LICENSEE DOES NOT
+AGREE TO THESE TERMS, DO NOT ACCESS OR USE THE SOFTWARE IN ANY MANNER.
+
+================================================================================
+1. DEFINITIONS AND INTERPRETATION
+================================================================================
+
+1.1  "Software" means the VaultBank proprietary software platform, including
+     all source code, object code, binaries, documentation, configuration
+     files, databases, APIs, and associated materials (collectively, the
+     "VaultBank Platform"), whether in human-readable or machine-readable
+     form, including any modifications, updates, patches, or enhancements
+     thereto created by Licensor or its authorized agents.
+
+1.2  "Financial Services" means any service related to deposit accounts,
+     wealth management, private banking, asset custody, investment advisory,
+     payment processing, credit facilities, currency exchange, or any other
+     activity regulated under applicable banking and financial services laws.
+
+1.3  "Regulated Jurisdictions" means Switzerland, United States of America,
+     United Arab Emirates, United Kingdom, Singapore, European Union member
+     states, Cayman Islands, British Virgin Islands, Hong Kong SAR, and any
+     other jurisdiction in which VaultBank maintains a licensed financial
+     services presence.
+
+1.4  "Confidential Information" includes all non-public information
+     disclosed by Licensor, including but not limited to source code,
+     algorithms, trading strategies, customer data, transaction records,
+     risk models, and proprietary business methods.
+
+1.5  The headings in this Agreement are for convenience only and shall not
+     affect its interpretation.
+
+The terms of this Agreement shall be interpreted in accordance with Swiss
+substantive law, with due consideration of applicable regulations in all
+Regulated Jurisdictions where the Software operates.
+
+================================================================================
+2. GRANT OF LICENCE
+================================================================================
+
+2.1  Subject to the terms and conditions of this Agreement, Licensor hereby
+     grants to Licensee a limited, non-exclusive, non-transferable,
+     non-sublicensable, revocable licence to use the Software solely for
+     internal evaluation, testing, and demonstration purposes within the
+     Licensee's organisation ("Authorised Use").
+
+2.2  The Software contains proprietary algorithms, trading systems, risk
+     management frameworks, and cryptographic security protocols developed
+     in accordance with:
+
+     (a) The Swiss Banking Act of 1934 (SR 952.21) and the Swiss Banking
+         Ordinance on Commercial Risk Management (SR 952.211);
+     (b) The Basel III Capital Accord as implemented by the Swiss Federal
+         Council and the Swiss Financial Market Supervisory Authority
+         (FINMA);
+     (c) Directive (EU) 2015/2366 (PSD2) and Regulation (EU) 2016/679 (GDPR);
+     (d) The United States Federal Reserve Act, the Dodd-Frank Wall Street
+         Reform and Consumer Protection Act of 2010, 12 CFR Part 217
+         (Basel III), USA PATRIOT Act, and Bank Secrecy Act (BSA);
+     (e) UAE Central Bank Regulations, the UAE Anti-Money Laundering Law
+         (Federal Decree-Law No. 20 of 2018), and the Emirates Securities
+         and Commodities Authority (ESCA) regulations;
+     (f) The UK Financial Services and Markets Act 2000 (FSMA) and the
+         Prudential Regulation Authority (PRA) Rulebook;
+     (g) The Monetary Authority of Singapore (MAS) Notice 626 on Technology
+         Risk Management and the Securities and Futures Act (Cap. 289);
+     (h) SWIFT Customer Security Programme (CSP) standards and the
+         associated security controls framework;
+     (i) The Payment Card Industry Data Security Standard (PCI DSS) Version
+         4.0 and all subsequent revisions;
+     (j) The Wolfsberg Group Recommendations on Anti-Money Laundering
+         and Counter-Terrorist Financing; and
+     (k) All applicable national and supranational financial services,
+         data protection, cybersecurity, and consumer protection laws.
+
+2.3  Licensee acknowledges that the Software is designed to meet the highest
+     standards of financial institution-grade security, compliance, and
+     operational resilience as required by the aforementioned regulatory
+     frameworks.
+
+================================================================================
+3. RESTRICTIONS
+================================================================================
+
+3.1  Licensee shall NOT:
+
+     (a) Use the Software for any commercial purpose, production
+         deployment, or live financial transaction processing without
+         obtaining a separate commercial banking licence from VaultBank AG;
+     (b) Reverse engineer, decompile, disassemble, or attempt to derive
+         the source code, algorithms, or cryptographic methods of the
+         Software, except as expressly permitted under Article 6 of the
+         Swiss Copyright Act or equivalent fair use provisions;
+     (c) Remove, alter, or obscure any proprietary notices, copyright
+         marks, trade secrets, or legends contained in the Software;
+     (d) Transfer, sublicense, lease, rent, lend, or otherwise distribute
+         the Software to third parties without the prior written consent
+         of a VaultBank AG authorised signatory;
+     (e) Use the Software in any jurisdiction where such use would
+         constitute a violation of local banking secrecy laws, financial
+         services regulations, or cross-border data transfer restrictions;
+     (f) Employ the Software for any activity that would subject the
+         Licensee to regulation under the USA PATRIOT Act, BSA/AML
+         requirements, or comparable anti-money laundering legislation
+         without maintaining a fully compliant BSA/AML programme;
+     (g) Attempt to gain unauthorised access to any VaultBank production
+         environment, customer data repository, or payment processing
+         system through the use of the Software; or
+     (h) Use the Software to facilitate, enable, or conceal any
+         illicit financial activity, including but not limited to money
+         laundering, terrorist financing, sanctions evasion, or tax
+         evasion.
+
+3.2  Licensee represents and warrants that it is not a prohibited person
+     or entity under the U.S. Treasury Department's Office of Foreign
+     Assets Control (OFAC) sanctions lists, the EU Consolidated List of
+     Sanctions, the UAE Ministry of Foreign Affairs sanctions regime, or
+     any other applicable sanctions authority, and that its use of the
+     Software shall comply with all applicable export control laws
+     including but not limited to the U.S. Export Administration
+     Regulations (EAR) and International Traffic in Arms Regulations (ITAR).
+
+================================================================================
+4. INTELLECTUAL PROPERTY
+================================================================================
+
+4.1  The Software, including all intellectual property rights embodied
+     therein, is and shall remain the sole and exclusive property of
+     VaultBank AG and its licensors. Nothing in this Agreement shall be
+     construed as granting any intellectual property rights except the
+     limited licence expressly set forth in Section 2.1 above.
+
+4.2  "VaultBank," "VAULTBANK," the vault and key logo, and all associated
+     trademarks, service marks, trade names, and registered designs
+     ("Marks") are the exclusive property of VaultBank AG. Licensee
+     shall not use, reproduce, or display any Marks without the prior
+     written consent of VaultBank AG's Chief Brand Officer.
+
+4.3  The Software incorporates cryptographic technologies that are subject
+     to export control regulations in various jurisdictions. Licensee
+     acknowledges that re-export or transfer of the Software (or any
+     derived data or services) may require compliance with the laws of
+     the country of destination and that such export may be restricted or
+     require authorisation under the Wassenaar Arrangement, the U.S.
+     Export Administration Act, the EU Dual-Use Regulation (EU) 2021/821,
+     or equivalent national legislation.
+
+================================================================================
+5. COMPLIANCE OBLIGATIONS
+================================================================================
+
+5.1  Licensee acknowledges that any use of the Software involves the
+     processing of personal data and agrees to comply with all applicable
+     data protection laws, including:
+
+     - GDPR (Regulation (EU) 2016/679) where applicable within the EEA
+       and to the processing of data of EEA data subjects globally;
+     - UK GDPR (UK General Data Protection Regulation) as supplemented
+       by the Data Protection Act 2018;
+     - CCPA/CPRA (California Consumer Privacy Act / California Privacy
+       Rights Act) where applicable to California residents;
+     - UAE Federal Decree-Law No. 46 of 2021 on the Protection of Personal
+       Data ("UAE Data Protection Law");
+     - Swiss Federal Act on Data Protection (FADP), as revised effective
+       September 1, 2023;
+     - Singapore Personal Data Protection Act 2012 (PDPA);
+     - The Hong Kong Personal Data (Privacy) Ordinance (Cap. 486);
+     - Brazilian Lei Geral de Proteção de Dados (LGPD); and
+     - Any other applicable national, regional, or local data protection
+       laws.
+
+5.2  Licensee shall implement appropriate technical and organisational
+     measures in accordance with Article 32 of the GDPR and equivalent
+     provisions in other applicable jurisdictions to ensure a level of
+     security appropriate to the risk, including:
+
+     (a) Pseudonymisation and encryption of personal data (AES-256 or
+         equivalent industry-standard encryption);
+     (b) Ensuring ongoing confidentiality, integrity, availability, and
+         resilience of processing systems and services;
+     (c) A process for regularly testing, assessing, and evaluating the
+         effectiveness of technical and organisational measures for
+         ensuring the security of the processing; and
+     (d) Compliance with ISO/IEC 27001:2022, NIST Cybersecurity Framework
+         (CSF) 2.0, and the CIS Controls Version 8.0.
+
+5.3  Licensee shall cooperate fully with VaultBank AG's compliance,
+     risk, and audit functions in the event of any data protection
+     incident or suspected breach and shall notify VaultBank AG within
+     seventy-two (72) hours of becoming aware of any such incident,
+     in accordance with Article 33 of the GDPR and equivalent
+     notification requirements in other jurisdictions.
+
+5.4  The Software is designed to support compliance with the
+     anti-money laundering and counter-terrorist financing obligations
+     set forth in:
+
+     - The 40 Recommendations of the Financial Action Task Force (FATF);
+     - FATF Recommendation 15 (New Technologies) and the associated
+       Guidance on Virtual Assets and Virtual Asset Service Providers;
+     - The EU Anti-Money Laundering Directives (5AMLD and 6AMLD);
+     - The U.S. Bank Secrecy Act and USA PATRIOT Act;
+     - The UAE AML/CFT Framework (Federal Decree-Law No. 20 of 2018
+       and Cabinet Resolution No. 58 of 2020);
+     - The UK Money Laundering, Terrorist Persons and Transfer of
+       Funds (Information on the Payer) Regulations 2017 (as amended);
+     - The Singapore Monetary Authority of Singapore's Notice on
+       Prevention of Money- Laundering and Countering the Financing of
+       Terrorism (MAS Notice 626); and
+     - Equivalent AML/CFT regimes in all other Regulated Jurisdictions.
+
+================================================================================
+6. SECURITY AND RISK MANAGEMENT
+================================================================================
+
+6.1  Licensee acknowledges that the VaultBank Platform implements
+     enterprise-grade security controls consistent with the requirements
+     of:
+
+     - The Swiss Financial Market Infrastructure Act (FMIS) and FINMA
+       Circular 2018/1 on outsourcing;
+     - The Basel Committee on Banking Supervision (BCBS) "Principles
+       for Operational Resilience";
+     - The NIST Cybersecurity Framework (CSF) 2.0;
+     - The ISO/IEC 27001:2022 and ISO/IEC 27002:2022 standards;
+     - The Payment Services Directive 2 (PSD2) Strong Customer
+       Authentication (SCA) requirements under Regulatory Technical
+       Standards (RTS) on strong customer authentication;
+     - The PCI DSS Version 4.0 and the PCI Secure Software Framework;
+     - The SWIFT Customer Security Programme (CSP) and SWIFT's
+       "My Baseline Control Framework" (MBCF);
+     - The Cloud Security Alliance (CSA) Security Best Practices; and
+     - The OWASP Top 10 and OWASP API Security Top 10 (2023).
+
+6.2  Licensee shall not attempt to circumvent, bypass, or defeat any
+     security controls, authentication mechanisms, encryption protocols,
+     or access controls implemented within the Software, in accordance
+     with Article 8(2) of the EU Cybersecurity Act and equivalent
+     provisions under the U.S. Computer Fraud and Abuse Act (CFAA),
+     the UK Computer Misuse Act 1990, and the UAE Cybercrime Law
+     (Federal Decree-Law No. 5 of 2012).
+
+6.3  The Software incorporates real-time anomaly detection and fraud
+     prevention systems powered by the VaultBank "Sentinel" engine,
+     which utilises machine learning models trained on synthetic and
+     anonymised transaction data in compliance with GDPR Article 89
+     (safeguards for processing).
+
+================================================================================
+7. TERM AND TERMINATION
+================================================================================
+
+7.1  This Agreement commences on the date of first access to the Software
+     and continues indefinitely unless terminated in accordance with this
+     Section 7.
+
+7.2  Either party may terminate this Agreement immediately upon written
+     notice if the other party:
+
+     (a) Becomes insolvent, enters into liquidation, or has a receiver
+         or administrator appointed over its assets;
+     (b) Materially breaches any provision of this Agreement and fails
+         to cure such breach within thirty (30) days of written notice;
+     (c) Is found to be acting in contravention of applicable financial
+         services, AML/CFT, or sanctions laws; or
+     (d) Attempts to reverse engineer, circumvent security controls, or
+         unlawfully access VaultBank production systems or customer data.
+
+7.3  Upon termination, Licensee shall immediately cease all use of the
+     Software and shall destroy all copies of the Software and
+     Confidential Information in its possession, except as required by
+     law for audit or compliance purposes.
+
+================================================================================
+8. DISCLAIMER AND LIMITATION OF LIABILITY
+================================================================================
+
+8.1  THE SOFTWARE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS.
+     VAULTBANK AG DISCLAIMS ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+     WITHOUT LIMITATION, ANY IMPLIED WARRANTIES OF MERCHANTABILITY,
+     FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, accuracy,
+     quiet enjoyment, and freedom from latent or other defects, whether
+     arising by statute, course of dealing, course of performance, or
+     otherwise.
+
+8.2  VAULTBANK AG DOES NOT WARRANT THAT THE SOFTWARE WILL MEET ANY
+     REGULATORY REQUIREMENTS IN ANY PARTICULAR JURISDICTION, THAT IT
+     WILL OPERATE UNINTERRUPTED OR ERROR-FREE, OR THAT ANY DEFECTS WILL
+
+     BE CORRECTED. LICENSEE ASSUMES ALL RISK AS TO THE QUALITY AND
+     PERFORMANCE OF THE SOFTWARE.
+
+8.3  NOTWITHSTANDING ANYTHING TO THE CONTRARY HEREIN, THE AGGREGATE
+     LIABILITY OF VAULTBANK AG, ITS AFFILIATES, DIRECTORS, OFFICERS,
+     EMPLOYEES, AND AGENTS FOR ANY CLAIM RELATED TO THIS AGREEMENT OR
+     THE SOFTWARE, WHETHER IN CONTRACT, TORT (INCLUDING NEGLIGENCE),
+     STRICT LIABILITY, OR OTHERWISE, SHALL NOT EXCEED THE GREATER OF
+     (A) CHF 1,000 SWISS FRANCS, OR (B) ONE HUNDRED PERCENT OF THE
+     FEES (IF ANY) PAID BY LICENSEE TO VAULTBANK AG FOR THE SOFTWARE
+     IN THE TWELVE (12) MONTHS IMMEDIATELY PRECEDING THE EVENT GIVING
+     RISE TO THE CLAIM.
+
+8.4  IN NO EVENT SHALL VAULTBANK AG BE LIABLE FOR ANY INDIRECT, INCIDENTAL,
+     SPECIAL, CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, INCLUDING BUT
+     NOT LIMITED TO LOSS OF PROFITS, LOSS OF SAVINGS, LOSS OF DATA, LOSS
+     OF BUSINESS OPPORTUNITY, LOSS OF REPUTATION, BUSINESS INTERRUPTION,
+     COST OF SUBSTITUTE GOODS OR SERVICES, OR ANY OTHER INTANGIBLE LOSS,
+     EVEN IF VAULTBANK AG HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH
+     DAMAGES, AND IRRESPECTIVE OF THE THEORY OF LIABILITY (CONTRACT,
+     TORT, NEGLIGENCE, STRICT LIABILITY, OR OTHERWISE) AND REGARDLESS OF
+     THE FORESEEABILITY OF THE DAMAGES.
+
+8.5  THE FOREGOING LIMITATIONS SHALL APPLY TO THE MAXIMUM EXTENT
+     PERMITTED BY APPLICABLE LAW IN ALL REGULATED JURISDICTIONS.
+     SOME JURISDICTIONS DO NOT ALLOW THE EXCLUSION OR LIMITATION OF
+     CERTAIN DAMAGES, SO THE ABOVE LIMITATIONS AND EXCLUSIONS MAY NOT
+     APPLY IN THEIR ENTIRETY TO LICENSEE. IF LICENSEE RESIDES IN A
+     JURISDICTION THAT DOES NOT ALLOW THE EXCLUSION OR LIMITATION OF
+     INCIDENTAL OR CONSEQUENTIAL DAMAGES, THE PARTIES AGREE THAT THE
+     MANDATORILY APPLICABLE STATUTORY LIABILITY SHALL BE LIMITED TO
+     THE MAXIMUM EXTENT PERMITTED BY LAW.
+
+================================================================================
+9. INDEMNIFICATION
+================================================================================
+
+9.1  Licensee shall defend, indemnify, and hold harmless VaultBank AG,
+     its affiliates, directors, officers, employees, and agents from
+     and against any and all claims, demands, liabilities, damages,
+     losses, costs, and expenses (including reasonable attorneys'
+     fees) arising out of or relating to:
+
+     (a) Licensee's breach of this Agreement;
+     (b) Licensee's violation of any applicable law, regulation, or
+         regulatory requirement in any Regulated Jurisdiction;
+     (c) Licensee's unauthorised use of the Software beyond the scope
+         of the licence granted herein;
+     (d) Licensee's processing of personal data in breach of
+         applicable data protection laws; or
+     (e) Licensee's engagement in any illicit financial activity,
+         sanctions evasion, money laundering, or terrorist financing.
+
+9.2  VaultBank AG shall promptly notify Licensee in writing of any
+     such claim, demand, or action and shall reasonably cooperate with
+     Licensee in the defence thereof at Licensee's expense.
+
+================================================================================
+10. GOVERNING LAW AND DISPUTE RESOLUTION
+================================================================================
+
+10.1 This Agreement shall be governed by and construed in accordance
+     with the laws of the Swiss Confederation, without regard to its
+     conflict of laws principles. The United Nations Convention on
+     Contracts for the International Sale of Goods (CISG) shall not
+     apply.
+
+10.2 Any dispute, controversy, or claim arising out of or relating to
+     this Agreement, including its existence, validity, interpretation,
+     performance, breach, or termination, shall be resolved by binding
+     arbitration administered by the Swiss Chambers of Commerce and
+     Industry in accordance with its Swiss Rules of International
+     Arbitration ("Swiss Rules of Arbitration"), and any arbitral
+     proceedings shall be conducted in English in Zurich, Switzerland.
+
+10.3 Notwithstanding the foregoing, each party reserves the right to
+     seek injunctive or equitable relief in any court of competent
+     jurisdiction to prevent a party from breaching its confidentiality
+     obligations or engaging in unlawful activity, including money
+     laundering or sanctions violations, without proof of actual
+     damages and without bond or other security being required.
+
+10.4 This Agreement is subject to the mandatory provisions of the
+     following jurisdictions insofar as such provisions confer
+     protections on consumers or data subjects that may not be waived
+     by contract:
+
+     (a) The Consumer Rights Act 2015 (UK) and equivalent consumer
+         protection laws in the European Economic Area;
+     (b) The California Consumer Privacy Act (CCPA) and California
+         Civil Code Section 1798.199.90 (right to correct and delete
+         personal information), where applicable;
+     (c) The UAE Consumer Protection Regulations, Federal Law No. 15
+         of 2018, where applicable;
+     (d) The Singapore Consumer Protection (Fair Trading) Act
+         (Cap. 52B), where applicable; and
+     (e) The Swiss Unfair Competition Act (UCA) (SR 250.005),
+         where applicable.
+
+================================================================================
+11. MISCELLANEOUS
+================================================================================
+
+11.1  This Agreement constitutes the entire agreement between the
+      parties with respect to the subject matter hereof and supersedes
+      all prior or contemporaneous communications, representations,
+      negotiations, or agreements, whether oral or written, relating
+      to such subject matter.
+
+11.2  VaultBank AG may modify this Agreement at any time by publishing
+      the revised terms on its official website (https://vaultbank.ch)
+      or through the Software's administrative interface. Licensee's
+      continued use of the Software following such modification
+      constitutes acceptance of the revised terms.
+
+11.3  If any provision of this Agreement is held to be invalid,
+      illegal, or unenforceable, the remaining provisions shall remain
+      in full force and effect. No waiver of any provision shall be
+      deemed a further or continuing waiver of such provision or any
+      other provision.
+
+11.4  Licensee may not assign or transfer this Agreement or any rights
+      or obligations hereunder without the prior written consent of
+      VaultBank AG. VaultBank AG may assign this Agreement without
+      restriction to any affiliate or successor in interest.
+
+11.5  This Agreement shall be binding upon and inure to the benefit
+      of the parties and their respective successors and permitted
+      assigns. Nothing in this Agreement is intended to confer rights
+      on any third party, except that each affiliate and subsidiary of
+      VaultBank AG shall be third-party beneficiaries with respect to
+      the licence and compliance obligations applicable to them.
+
+11.6  The parties agree that this Agreement shall be deemed to satisfy
+      the written requirement under Article 1324 of the Swiss Code of
+      Obligations and equivalent statutory requirements in all
+      Regulated Jurisdictions.
+
+================================================================================
+                           REGULATORY COMPLIANCE SCHEDULE
+================================================================================
+
+Financial Services Regulators and Statutory Regimes Applicable to the
+VaultBank Platform:
+
+  SWITZERLAND:      FINMA (Swiss Financial Market Supervisory Authority)
+                    Swiss Banking License Act
+                    Anti-Money Laundering Act and Ordinance (AMLA/AMLO)
+                    Swiss Data Protection Act (DSGA/DPA)
+                    Swiss Financial Services Act (FinSA)
+                    Swiss Financial Institutions Act (FinIA)
+
+  UNITED STATES:    Federal Reserve Board (FRB)
+                    Office of the Comptroller of the Currency (OCC)
+                    FinCEN (Financial Crimes Enforcement Network)
+                    SEC (Securities and Exchange Commission)
+                    CFTC (Commodity Futures Trading Commission)
+                    FDIC (Federal Deposit Insurance Corporation)
+                    CFPB (Consumer Financial Protection Bureau)
+                    OFAC Sanctions Compliance
+                    Bank Secrecy Act (BSA) / USA PATRIOT Act
+
+  UAE:              Central Bank of the UAE (CBUAE)
+                    Securities and Commodities Authority (SCA)
+                    Financial Services Regulatory Authority (FSRA) DIFC
+                    Abu Dhabi Global Market (ADGM) FSRA
+                    UAE Anti-Money Laundering Law (Federal Decree-Law No. 20/2018)
+                    UAE Data Protection Law (Federal Decree-Law No. 46/2021)
+
+  UNITED KINGDOM:   Prudential Regulation Authority (PRA)
+                    Financial Conduct Authority (FCA)
+                    HM Revenue & Customs (HMRC)
+                    Proceeds of Crime Act 2002 (POCA)
+                    Terrorism Act 2000
+                    Data Protection Act 2018 / UK GDPR
+
+  SINGAPORE:        Monetary Authority of Singapore (MAS)
+                    Accounting and Corporate Regulatory Authority (ACRA)
+                    Payment Services Act 2019
+                    Personal Data Protection Act (PDPA)
+                    Corruption, Drug Trafficking and Other Offences
+                    (Confiscation of Benefits) Act
+
+  EUROPEAN UNION:   EBA (European Banking Authority)
+                    ECB (European Central Bank)
+                    European Banking Authority Guidelines
+                    PSD2 (Payment Services Directive 2)
+                    EBA RTS on Strong Customer Authentication
+                    AMLD 5 & 6 (Anti-Money Laundering Directives)
+                    GDPR (General Data Protection Regulation)
+
+  INTERNATIONAL:    Basel Committee on Banking Supervision (BCBS)
+                    Financial Action Task Force (FATF)
+                    Wolfsberg Group
+                    Bank for International Settlements (BIS)
+                    International Organization of Securities Commissions (IOSCO)
+                    SWIFT (Society for Worldwide Interbank Financial Telecommunication)
+                    PCI Security Standards Council (PCI SSC)
+                    Cloud Security Alliance (CSA)
+
+================================================================================
+
+For licensing and regulatory compliance inquiries, contact:
+  VaultBank AG Legal & Compliance Department
+  Bahnhofstrasse 69, 8001 Zurich, Switzerland
+  Email: legal@vaultbank.ch | compliance@vaultbank.ch
+  Phone: +41 44 123 4567 (Zurich) | +1 212 555 0100 (New York)
+  +971 2 555 0100 (Abu Dhabi) | +44 20 7946 0911 (London)
+  +65 6565 0100 (Singapore)
+
+© 2024-2026 VaultBank AG. All rights reserved.
+This document contains proprietary and confidential information.
+Unauthorized access, reproduction, or distribution is prohibited.
+================================================================================
+>>>>>>> 6ea03a7 (docs: add MIT LICENSE for VaultBank project)
