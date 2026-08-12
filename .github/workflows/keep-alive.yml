@@ -1,0 +1,42 @@
+name: Keep Render Backend Alive
+
+"on":
+  schedule:
+    # Run every 10 minutes to keep the Render free tier server awake
+    # Render free tier spins down after 15 minutes of inactivity
+    - cron: '*/10 * * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  ping-backend:
+    name: Ping VaultBank Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          echo "Pinging https://vaultbank-md20.onrender.com/health"
+          curl -sS -o /dev/null -w "HTTP Status: %{http_code} | Response Time: %{time_total}s\n" \
+            --max-time 60 \
+            https://vaultbank-md20.onrender.com/health
+
+      - name: Ping root endpoint
+        run: |
+          echo "Pinging https://vaultbank-md20.onrender.com/"
+          curl -sS -o /dev/null -w "HTTP Status: %{http_code} | Response Time: %{time_total}s\n" \
+            --max-time 60 \
+            https://vaultbank-md20.onrender.com/
+
+      - name: Check for cold-start delay alert
+        run: |
+          echo "Checking response time..."
+          RESPONSE_TIME=$(curl -sS -o /dev/null -w "%{time_total}" --max-time 60 https://vaultbank-md20.onrender.com/health)
+          echo "Response time: ${RESPONSE_TIME}s"
+
+          # If response time is > 30s, it likely cold-started (was asleep)
+          # Use awk (always available on GitHub runners) instead of bc
+          COLD_START=$(awk "BEGIN { print ($RESPONSE_TIME > 30) ? 1 : 0 }")
+          if [ "$COLD_START" = "1" ]; then
+            echo "::warning::Backend was cold-starting (asleep). Response took ${RESPONSE_TIME}s."
+          else
+            echo "Backend is warm and responsive (${RESPONSE_TIME}s)."
+          fi

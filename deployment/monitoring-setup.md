@@ -1,5 +1,66 @@
 # VaultBank Production Monitoring & Alerting Setup
 
+## 0. Keep-Alive Strategy (Prevent Render Free Tier Spin-Down)
+
+> **⚠️ CRITICAL:** Render's free tier automatically spins down your backend after **15 minutes of inactivity**. When a user visits after it's been idle, they experience a 30-60+ second cold-start delay (or timeouts). The keep-alive **must come from an external source** — a spun-down server cannot ping itself.
+
+### Recommended Approach: GitHub Actions Cron (Free & Reliable)
+
+The repository includes `.github/workflows/keep-alive.yml` which pings the backend every 10 minutes:
+
+```yaml
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+```
+
+**To enable it:**
+1. Push the workflow file to GitHub (it's already in `.github/workflows/keep-alive.yml`)
+2. The workflow will automatically run every 10 minutes
+3. It pings both `https://vaultbank-md20.onrender.com/health` and `https://vaultbank-md20.onrender.com/`
+4. If the response takes >30s, it emits a warning that the backend was cold-starting
+
+> **Note:** GitHub Actions cron jobs may be delayed if the repo has no recent activity, but for most cases a 10-minute interval is sufficient (Render's limit is 15 minutes).
+
+### Alternative 2: UptimeRobot (Free Tier)
+
+UptimeRobot's free tier allows monitoring up to 50 URLs every 5 minutes:
+
+1. Create a free account at https://uptimerobot.com
+2. Add a new monitor:
+   - **Type:** HTTPS
+   - **URL:** `https://vaultbank-md20.onrender.com/health`
+   - **Interval:** 5 minutes
+   - **Alert contacts:** Your email
+3. This both keeps the server awake AND notifies you if it goes down
+
+### Alternative 3: Local Script (scripts/keep-alive.js)
+
+For a development/laptop machine that's always on:
+
+```bash
+# Run once
+node scripts/keep-alive.js
+
+# Run continuously (every 10 minutes)
+node scripts/keep-alive.js --loop
+
+# Custom interval (every 5 minutes)
+node scripts/keep-alive.js --interval 5 --loop
+```
+
+### Alternative 4: Upgrade to Render Paid Plan
+
+The only 100% guaranteed solution. Render's **Starter plan ($7/month)** never spins down.
+
+### What NOT to Do
+
+- ❌ **Do not** try to self-ping from the server itself — if the server is spun down, it cannot ping itself
+- ❌ **Do not** rely on `setInterval` inside the server code — same problem
+- ❌ **Do not** use a script that only runs while your computer is off
+
+---
+
 ## 1. Sentry Integration for Error Tracking
 
 ### Backend Sentry Configuration (server/index.js additions)
@@ -318,4 +379,3 @@ module.exports = logger;
 3. Implement structured logging
 4. Test alert mechanisms
 5. Create incident response documentation
-

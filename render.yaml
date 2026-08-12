@@ -2,11 +2,20 @@ services:
   - type: web
     name: vaultbank-backend
     env: node
+    # ⚠️ IMPORTANT: The free tier automatically spins down after 15 minutes of inactivity.
+    # This causes cold-starts (30-60s delay) for users. To prevent this:
+    #   1. Keep plan: free and rely on the GitHub Actions keep-alive workflow
+    #      (.github/workflows/keep-alive.yml) which pings the server every 10 minutes.
+    #   2. OR upgrade to a paid plan (Starter $7/mo) which never spins down.
+    # The keep-alive MUST come from an external source (GitHub Actions, UptimeRobot,
+    # or the scripts/keep-alive.js script) - a self-ping on Render won't work because
+    # a spun-down server can't ping itself.
     plan: free
     runtime: nodejs20
     buildCommand: npm install
     startCommand: node index.js
     workingDirectory: server
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production

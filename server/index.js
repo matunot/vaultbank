@@ -121,6 +121,85 @@ app.use('/', accountRoutes);
 // ─── Stripe Payment Routes (Deposits, Withdrawals, Webhooks) ──────────────
 app.use(stripePaymentRoutes);
 
+// ─── Root Route ──────────────────────────────────────────────────────────────
+app.get('/', (req, res) => {
+    return res.status(200).json({
+        name: 'VaultBank API',
+        version: '1.0.0',
+        status: 'operational',
+        message: '🏦 Welcome to the VaultBank API!',
+        endpoints: {
+            health: 'GET /health',
+            apiInfo: 'GET /api',
+            auth: [
+                'POST /signup',
+                'POST /login',
+                'POST /api/auth/login (admin)',
+                'POST /api/auth/logout',
+                'GET /auth/me',
+                'GET /api/profile'
+            ],
+            transfers: [
+                'POST /api/transfers',
+                'GET /api/transfers',
+                'GET /api/transfers/history'
+            ],
+            rewards: [
+                'POST /api/rewards/earn',
+                'GET /api/rewards',
+                'GET /api/rewards/me',
+                'POST /api/rewards/redeem',
+                'GET /api/rewards/leaderboard'
+            ],
+            alerts: [
+                'GET /api/alerts',
+                'GET /api/alerts/unread-count',
+                'POST /api/alerts/create',
+                'PUT /api/alerts/:id/read',
+                'PUT /api/alerts/read-all'
+            ],
+            audit: [
+                'GET /api/audit/logs',
+                'POST /api/audit/log',
+                'GET /api/audit/stats'
+            ],
+            business: [
+                'POST /api/business/create',
+                'GET /api/business/me',
+                'POST /api/business/payroll',
+                'POST /api/business/invoice',
+                'GET /api/business/:id/analytics'
+            ],
+            investments: [
+                'POST /api/investments/add',
+                'GET /api/investments/me',
+                'GET /api/investments',
+                'PUT /api/investments/:id',
+                'DELETE /api/investments/:id'
+            ],
+            admin: [
+                'GET /api/admin/stats',
+                'GET /api/admin/users',
+                'PUT /api/admin/users/:id/suspend',
+                'GET /api/admin/transactions',
+                'GET /api/admin/aml-alerts'
+            ],
+            payments: [
+                'POST /api/payments/upi/initiate',
+                'POST /api/payments/paypal/initiate',
+                'GET /api/payments/history'
+            ],
+            aml: [
+                'GET /api/aml/flags',
+                'PUT /api/aml/:flagId/approve',
+                'PUT /api/aml/:flagId/reject'
+            ]
+        },
+        docs: 'See DEPLOYMENT_README.md for full documentation',
+        timestamp: new Date().toISOString()
+    });
+});
+
 // ─── API Info ────────────────────────────────────────────────────────────────
 app.get('/api', (req, res) => {
     return res.status(200).json({
