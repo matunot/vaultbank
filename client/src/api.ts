@@ -40,7 +40,15 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Normalise the endpoint so we always get exactly one slash between base & path */
+function buildUrl(endpoint: string): string {
+  const base = API_BASE.replace(/\/+$/, '');
+  const path = endpoint.replace(/^\/+/, '');
+  return `${base}/${path}`;
+}
+
 async function request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
+
   const token = localStorage.getItem('vaultbank_token');
 
   const headers: Record<string, string> = {
@@ -55,7 +63,8 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
   // Retry on network errors (e.g. Render free-tier cold starts)
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(`${API_BASE}${endpoint}`, {
+      const response = await fetch(buildUrl(endpoint), {
+
         ...options,
         headers,
       });
