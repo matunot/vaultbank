@@ -1,8 +1,15 @@
 import { useState, useEffect, memo, useCallback } from 'react';
 import { motion, useMotionValue, useSpring, useTransform } from 'framer-motion';
 import { Eye, EyeOff, ArrowUpRight, Sparkles, Plus, Send, Receipt } from 'lucide-react';
-import { balance } from '../data';
 import RichIcon from './RichIcon';
+
+interface HeroBalanceProps {
+  balance?: number;
+  accountNumber?: string;
+  loading?: boolean;
+  income?: number;
+  expenses?: number;
+}
 
 const Counter = memo(function Counter({ value }: { value: number }) {
   const [display, setDisplay] = useState(0);
@@ -23,12 +30,16 @@ const Counter = memo(function Counter({ value }: { value: number }) {
   );
 });
 
-const HeroBalance = memo(function HeroBalance() {
+const HeroBalance = memo(function HeroBalance({ balance = 0, accountNumber, loading, income = 0, expenses = 0 }: HeroBalanceProps) {
   const [show, setShow] = useState(true);
   const mx = useMotionValue(0);
   const my = useMotionValue(0);
   const rx = useSpring(useTransform(my, [-0.5, 0.5], [4, -4]), { stiffness: 300, damping: 30 });
   const ry = useSpring(useTransform(mx, [-0.5, 0.5], [-4, 4]), { stiffness: 300, damping: 30 });
+
+  const displayBalance = Number.isFinite(balance) ? balance : 0;
+  const displayIncome = Number.isFinite(income) ? income : 0;
+  const displayExpenses = Number.isFinite(expenses) ? expenses : 0;
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
@@ -66,7 +77,7 @@ const HeroBalance = memo(function HeroBalance() {
                 </motion.button>
               </div>
               <div className="font-display text-4xl lg:text-6xl text-gold leading-none">
-                {show ? <Counter value={balance.total} /> : '••••••••••'}
+                {loading ? 'Loading...' : (show ? <Counter value={displayBalance} /> : '••••••••••')}
               </div>
               <div className="flex items-center gap-3 mt-3">
                 <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass-btn border border-emerald-500/20">
@@ -78,21 +89,21 @@ const HeroBalance = memo(function HeroBalance() {
             </div>
 
             <div className="hidden md:grid grid-cols-2 gap-3">
-              <div className="glass-panel px-4 py-3 rounded-xl min-w-[110px]">
+              <div className="glass-panel px-4 py-3 rounded-xl min-w-27.5">
                 <div className="text-[10px] text-white/40 tracking-wider">INCOME</div>
-                <div className="text-lg font-bold text-emerald-400 mt-0.5">${balance.income.toLocaleString()}</div>
+                <div className="text-lg font-bold text-emerald-400 mt-0.5">${displayIncome.toLocaleString()}</div>
               </div>
-              <div className="glass-panel px-4 py-3 rounded-xl min-w-[110px]">
+              <div className="glass-panel px-4 py-3 rounded-xl min-w-27.5">
                 <div className="text-[10px] text-white/40 tracking-wider">SPENT</div>
-                <div className="text-lg font-bold text-rose-400 mt-0.5">${balance.spent.toLocaleString()}</div>
+                <div className="text-lg font-bold text-rose-400 mt-0.5">${displayExpenses.toLocaleString()}</div>
               </div>
             </div>
           </div>
 
           <div className="flex items-end justify-between mb-6">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-9 rounded-md bg-gradient-to-br from-amber-300 via-yellow-400 to-amber-600 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+              <div className="w-12 h-9 rounded-md bg-linear-to-br from-amber-300 via-yellow-400 to-amber-600 relative overflow-hidden">
+                <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/40 to-transparent" />
                 <div className="absolute inset-1 border border-amber-800/40 rounded-sm" />
                 <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 gap-px p-1 opacity-40">
                   {Array.from({ length: 9 }).map((_, i) => <div key={i} className="bg-amber-900/30 rounded-[1px]" />)}
@@ -100,12 +111,12 @@ const HeroBalance = memo(function HeroBalance() {
               </div>
               <div>
                 <div className="text-xs text-white/50">VAULT · OBSIDIAN GOLD</div>
-                <div className="text-sm font-mono tracking-widest text-amber-200/80 mt-0.5">•••• •••• •••• 4827</div>
+                <div className="text-sm font-mono tracking-widest text-amber-200/80 mt-0.5">{accountNumber || '•••• •••• •••• 4827'}</div>
               </div>
             </div>
             <div className="text-right">
               <div className="text-[10px] text-white/40 tracking-wider">AVAILABLE</div>
-              <div className="text-xl font-bold text-white">${balance.available.toLocaleString()}</div>
+              <div className="text-xl font-bold text-white">${displayBalance.toLocaleString()}</div>
             </div>
           </div>
 
@@ -122,7 +133,7 @@ const HeroBalance = memo(function HeroBalance() {
                 whileTap={{ scale: 0.97 }}
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm transition-all ${
                   b.primary
-                    ? 'bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500 text-amber-950 glow-amber'
+                    ? 'bg-linear-to-r from-amber-400 via-yellow-400 to-amber-500 text-amber-950 glow-amber'
                     : 'glass-btn text-white/80 hover:text-white'
                 }`}
               >

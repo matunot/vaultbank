@@ -7,7 +7,10 @@ interface Transaction {
   id: number; name: string; cat: string; amount: number; date: string; icon: string; gem: string;
 }
 
-interface Props { transactions: Transaction[]; }
+interface Props {
+  transactions: Transaction[];
+  loading?: boolean;
+}
 
 const catIcons: Record<string, { icon: React.ComponentType<any>; variant: 'gold' | 'emerald' | 'ruby' | 'sapphire' | 'amethyst' | 'amber' | 'cyan' }> = {
   'Dining': { icon: Coffee, variant: 'ruby' },
@@ -44,7 +47,7 @@ const TxItem = memo(function TxItem({ tx, index }: { tx: Transaction; index: num
           </span>
         </div>
       </div>
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-2 shrink-0">
         <RichIcon
           icon={positive ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
           variant={positive ? 'emerald' : 'ruby'}
@@ -58,7 +61,7 @@ const TxItem = memo(function TxItem({ tx, index }: { tx: Transaction; index: num
   );
 });
 
-const Transactions = memo(function Transactions({ transactions }: Props) {
+const Transactions = memo(function Transactions({ transactions, loading = false }: Props) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 24 }}
@@ -78,10 +81,16 @@ const Transactions = memo(function Transactions({ transactions }: Props) {
         </button>
       </div>
 
-      <div className="relative z-10 space-y-2 max-h-[420px] overflow-y-auto pr-1">
-        {transactions.map((tx, i) => (
-          <TxItem key={tx.id} tx={tx} index={i} />
-        ))}
+      <div className="relative z-10 space-y-2 max-h-105 overflow-y-auto pr-1">
+        {loading ? (
+          <div className="text-sm text-white/50 py-4">Loading recent activity...</div>
+        ) : transactions.length ? (
+          transactions.map((tx, i) => (
+            <TxItem key={tx.id} tx={tx} index={i} />
+          ))
+        ) : (
+          <div className="text-sm text-white/50 py-4">No recent transactions.</div>
+        )}
       </div>
     </motion.div>
   );
