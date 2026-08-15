@@ -8,13 +8,29 @@ type ThemeName = 'obsidian' | 'royal' | 'diamond';
 
 const themeOrder: ThemeName[] = ['obsidian', 'royal', 'diamond'];
 
-const Header = memo(function Header({ theme, onThemeChange }: { theme: ThemeName; onThemeChange: (theme: ThemeName) => void }) {
+/** Derive initials from a full name, e.g. "Sofia" → "S", "Diana Prince" → "DP" */
+function getInitials(name?: string): string {
+  if (!name) return '?';
+  return name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0].toUpperCase())
+    .join('');
+}
+
+const Header = memo(function Header({ theme, onThemeChange, user }: { theme: ThemeName; onThemeChange: (theme: ThemeName) => void; user?: any }) {
   const cycleTheme = () => {
     const next = themeOrder[(themeOrder.indexOf(theme) + 1) % themeOrder.length];
     onThemeChange(next);
   };
 
   const themeLabel = theme === 'obsidian' ? 'Obsidian' : theme === 'royal' ? 'Royal' : 'Diamond';
+
+  // Real authenticated user's display name (fallback to email prefix if name missing)
+  const displayName = user?.fullName || (user?.email ? user.email.split('@')[0] : '');
+  const initials = getInitials(displayName);
 
   return (
     <motion.header
@@ -62,15 +78,19 @@ const Header = memo(function Header({ theme, onThemeChange }: { theme: ThemeName
 
           <motion.div whileHover={{ scale: 1.03 }} className="flex items-center gap-2.5 cursor-pointer pl-1">
             <div className="relative">
-              <div className="w-9 h-9 rounded-xl overflow-hidden ring-2 ring-amber-500/40 glow-amber">
-                <img src="/avatar.jpg" alt="John" className="w-full h-full object-cover" />
+              <div className="w-9 h-9 rounded-xl overflow-hidden ring-2 ring-amber-500/40 glow-amber bg-linear-to-br from-amber-400 to-amber-600 flex items-center justify-center">
+                {initials ? (
+                  <span className="text-xs font-bold text-amber-950">{initials}</span>
+                ) : (
+                  <img src="/avatar.jpg" alt="" className="w-full h-full object-cover" />
+                )}
               </div>
               <div className="absolute -bottom-0.5 -right-0.5">
                 <RichIcon icon={<Crown size={7} strokeWidth={3} />} variant="gold" size="sm" glow />
               </div>
             </div>
             <div className="hidden lg:block">
-              <p className="text-sm font-bold text-white leading-tight">John Anderson</p>
+              <p className="text-sm font-bold text-white leading-tight">{displayName}</p>
               <p className="text-[10px] text-amber-400 font-semibold tracking-wider">OBSIDIAN MEMBER</p>
             </div>
           </motion.div>

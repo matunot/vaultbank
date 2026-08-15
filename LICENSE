@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 MIT License
 
 Copyright (c) 2024-2026 VaultBank
@@ -20,7 +19,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-=======
+
 ================================================================================
                       VAULTBANK SOFTWARE LICENCE AGREEMENT
 ================================================================================
@@ -49,6 +48,7 @@ TO BE BOUND BY THE TERMS AND CONDITIONS OF THIS AGREEMENT. IF LICENSEE DOES NOT
 AGREE TO THESE TERMS, DO NOT ACCESS OR USE THE SOFTWARE IN ANY MANNER.
 
 ================================================================================
+
 1. DEFINITIONS AND INTERPRETATION
 ================================================================================
 
@@ -445,7 +445,7 @@ Regulated Jurisdictions where the Software operates.
       to such subject matter.
 
 11.2  VaultBank AG may modify this Agreement at any time by publishing
-      the revised terms on its official website (https://vaultbank.ch)
+      the revised terms on its official website (<https://vaultbank.ch>)
       or through the Software's administrative interface. Licensee's
       continued use of the Software following such modification
       constitutes acceptance of the revised terms.
@@ -540,13 +540,12 @@ VaultBank Platform:
 For licensing and regulatory compliance inquiries, contact:
   VaultBank AG Legal & Compliance Department
   Bahnhofstrasse 69, 8001 Zurich, Switzerland
-  Email: legal@vaultbank.ch | compliance@vaultbank.ch
+  Email: <legal@vaultbank.ch> | <compliance@vaultbank.ch>
   Phone: +41 44 123 4567 (Zurich) | +1 212 555 0100 (New York)
   +971 2 555 0100 (Abu Dhabi) | +44 20 7946 0911 (London)
   +65 6565 0100 (Singapore)
 
 © 2024-2026 VaultBank AG. All rights reserved.
 This document contains proprietary and confidential information.
-Unauthorized access, reproduction, or distribution is prohibited.
+Unauthorized access, reproduction, or distribution is prohibited
 ================================================================================
->>>>>>> 6ea03a7 (docs: add MIT LICENSE for VaultBank project)

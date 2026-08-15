@@ -58,7 +58,7 @@ export default function SecuritySection() {
         animate={{ opacity: 1, y: 0 }}
         className="relative rounded-3xl overflow-hidden iridescent-border"
       >
-        <div className="relative p-6 lg:p-8 overflow-hidden bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-cyan-500/10">
+        <div className="relative p-6 lg:p-8 overflow-hidden bg-linear-to-br from-indigo-500/10 via-purple-500/5 to-cyan-500/10">
           <div className="absolute inset-0 glass opacity-50" />
           <div className="absolute -top-20 -right-20 w-72 h-72 bg-indigo-500/15 rounded-full blur-3xl" />
           <div className="absolute -bottom-20 -left-20 w-72 h-72 bg-emerald-500/10 rounded-full blur-3xl" />
@@ -126,7 +126,7 @@ export default function SecuritySection() {
                   <span className="text-[10px] text-emerald-400 font-bold tracking-wider">{securityScore > 80 ? 'EXCELLENT' : 'GOOD'}</span>
                 </div>
               </div>
-              <p className="text-[10px] text-white/40 text-center mt-2 max-w-[160px]">
+              <p className="text-[10px] text-white/40 text-center mt-2 max-w-40">
                 Toggle advanced locks below to increase score
               </p>
             </div>
@@ -176,7 +176,7 @@ export default function SecuritySection() {
                     <RichIcon icon={<Shield className="w-5 h-5" />} variant={toggle.variant} size="md" glow={toggle.value} />
                     <button
                       onClick={() => toggle.setter(!toggle.value)}
-                      className={`w-12 h-7 rounded-full transition-colors relative flex-shrink-0 ${toggle.value ? 'bg-emerald-500 shadow-md shadow-emerald-500/20' : 'bg-white/10'}`}
+                      className={`w-12 h-7 rounded-full transition-colors relative shrink-0 ${toggle.value ? 'bg-emerald-500 shadow-md shadow-emerald-500/20' : 'bg-white/10'}`}
                     >
                       <motion.div
                         animate={{ x: toggle.value ? 22 : 2 }}
@@ -201,7 +201,7 @@ export default function SecuritySection() {
                 {securityScoreFactors.map((factor) => {
                   const isActive = factor.name === 'Hardware Token 2FA' ? twoFactor : factor.name === 'Biometric Access' ? bioLock : factor.name === 'Simulated Stealth Mode' ? stealthMode : true;
                   return (
-                    <div key={factor.name} className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 flex items-center gap-4">
+                    <div key={factor.name} className="p-4 rounded-2xl bg-white/2 border border-white/5 flex items-center gap-4">
                       <RichIcon
                         icon={isActive ? <CheckCircle2 className="w-4 h-4 text-emerald-400" /> : <AlertTriangle className="w-4 h-4 text-rose-400" />}
                         variant={isActive ? 'emerald' : 'ruby'} size="sm"
@@ -252,7 +252,7 @@ export default function SecuritySection() {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.05 }}
                     whileHover={{ x: 4 }}
-                    className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/15 transition-all"
+                    className="flex items-center gap-4 p-4 rounded-2xl bg-white/2 border border-white/5 hover:border-white/15 transition-all"
                   >
                     <RichIcon icon={<Icon className="w-5 h-5" />} variant={sess.current ? 'emerald' : 'sapphire'} size="md" glow={sess.current} />
                     <div className="flex-1 min-w-0">
@@ -302,7 +302,7 @@ export default function SecuritySection() {
               <motion.button
                 whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 onClick={() => setShowAddContact(true)}
-                className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-400 to-indigo-500 text-white font-bold text-xs shadow-lg"
+                className="px-4 py-2 rounded-xl bg-linear-to-r from-blue-400 to-indigo-500 text-white font-bold text-xs shadow-lg"
               >
                 <Plus className="w-4 h-4" /> Add Nominee
               </motion.button>
@@ -370,7 +370,7 @@ export default function SecuritySection() {
                   initial={{ opacity: 0, x: -16 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: i * 0.05 }}
-                  className="flex items-start gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5"
+                  className="flex items-start gap-4 p-4 rounded-2xl bg-white/2 border border-white/5"
                 >
                   <RichIcon
                     icon={<Lock size={15} />}
@@ -415,7 +415,7 @@ export default function SecuritySection() {
               </div>
 
               <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 text-left mb-6 flex items-start gap-2.5">
-                <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+                <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                 <p>Never share this phrase with anyone, including Vault personnel. Write it down and store it in a physical safe.</p>
               </div>
 
@@ -425,7 +425,7 @@ export default function SecuritySection() {
                   'timber', 'vital', 'anchor', 'emerald', 'sapphire', 'obsidian',
                   'zurich', 'glacier', 'alpine', 'tunnel', 'discreet', 'shield',
                 ].map((word, index) => (
-                  <div key={word} className="p-3 rounded-xl bg-white/[0.03] border border-white/5 text-center flex items-center gap-2">
+                  <div key={word} className="p-3 rounded-xl bg-white/3 border border-white/5 text-center flex items-center gap-2">
                     <span className="text-[10px] text-white/30 font-bold">{index + 1}</span>
                     <span className="text-sm font-semibold text-white/80">{word}</span>
                   </div>
@@ -434,7 +434,7 @@ export default function SecuritySection() {
 
               <button
                 onClick={() => setShowKeyModal(false)}
-                className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm glow-amber flex items-center justify-center gap-2"
+                className="w-full py-3 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm glow-amber flex items-center justify-center gap-2"
               >
                 <CheckCircle2 className="w-4 h-4" /> Seed Phrase Verified
               </button>
@@ -495,7 +495,7 @@ export default function SecuritySection() {
 
                 <button
                   type="submit"
-                  className="w-full py-4 mt-3 rounded-xl bg-gradient-to-r from-blue-400 to-indigo-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2"
+                  className="w-full py-4 mt-3 rounded-xl bg-linear-to-r from-blue-400 to-indigo-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2"
                 >
                   <Plus className="w-4 h-4" /> Add Nominee
                 </button>

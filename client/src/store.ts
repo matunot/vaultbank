@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { cards as initialCards, transactions as initialTransactions, savingsGoals as initialGoals, budgetCategories as initialBudget, contacts as initialContacts, investments as initialInvestments } from './data';
+import { api } from './api';
 
 export interface Transaction {
   id: number;
@@ -60,8 +61,11 @@ export interface Investment {
 }
 
 export function useAppStore() {
-  const [balance, setBalance] = useState(252897.40);
-  const [available, setAvailable] = useState(24562.80);
+  const storedAccount = api.getAccount();
+  const initialBalance = storedAccount?.balance ?? 0;
+  const initialAvailable = storedAccount?.availableBalance ?? initialBalance;
+  const [balance, setBalance] = useState(initialBalance);
+  const [available, setAvailable] = useState(initialAvailable);
   const [cards, setCards] = useState<Card[]>(initialCards);
   const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
   const [goals, setGoals] = useState<Goal[]>(initialGoals);

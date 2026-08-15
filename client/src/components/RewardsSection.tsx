@@ -51,7 +51,7 @@ export default function RewardsSection() {
                   initial={{ width: 0 }}
                   animate={{ width: `${progress}%` }}
                   transition={{ duration: 1.5, ease: 'easeOut' }}
-                  className="h-full rounded-full bg-gradient-to-r from-amber-400 via-yellow-400 to-amber-500"
+                  className="h-full rounded-full bg-linear-to-r from-amber-400 via-yellow-400 to-amber-500"
                   style={{ boxShadow: '0 0 12px rgba(212,175,55,0.6)' }}
                 />
               </div>
@@ -75,10 +75,10 @@ export default function RewardsSection() {
                 transition={{ delay: 0.15 + i * 0.1 }}
                 className={`relative p-5 rounded-2xl border transition-all ${
                   isCurrent 
-                    ? 'bg-gradient-to-br from-amber-500/20 to-amber-700/10 border-amber-500/40 shadow-lg shadow-amber-500/10' 
+                    ? 'bg-linear-to-br from-amber-500/20 to-amber-700/10 border-amber-500/40 shadow-lg shadow-amber-500/10' 
                     : isUnlocked 
-                      ? 'bg-white/[0.04] border-white/10' 
-                      : 'bg-white/[0.02] border-white/5'
+                      ? 'bg-white/4 border-white/10' 
+                      : 'bg-white/2 border-white/5'
                 }`}
               >
                 {isCurrent && (
@@ -124,9 +124,9 @@ export default function RewardsSection() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.25 + i * 0.06 }}
                 whileHover={{ x: 4 }}
-                className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5 hover:border-amber-500/20 transition-colors"
+                className="flex items-center gap-3 p-3 rounded-xl bg-white/3 border border-white/5 hover:border-amber-500/20 transition-colors"
               >
-                <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/20 flex items-center justify-center flex-shrink-0">
+                <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-500/20 flex items-center justify-center shrink-0">
                   <Sparkles className="w-4 h-4 text-amber-300" />
                 </div>
                 <span className="text-sm text-white flex-1">{b}</span>
@@ -147,9 +147,9 @@ export default function RewardsSection() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.3 + i * 0.06 }}
                 whileHover={{ x: 4 }}
-                className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5 hover:border-amber-500/20 transition-colors"
+                className="flex items-center gap-3 p-3 rounded-xl bg-white/3 border border-white/5 hover:border-amber-500/20 transition-colors"
               >
-                <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center text-xl flex-shrink-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center text-xl shrink-0">
                   {r.icon}
                 </div>
                 <div className="flex-1 min-w-0">

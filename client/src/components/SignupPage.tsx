@@ -124,13 +124,13 @@ export default function SignupPage({ onSignup, onSwitchToLogin }: Props) {
         <motion.div
           animate={{ rotate: -360 }}
           transition={{ duration: 65, repeat: Infinity, ease: 'linear' }}
-          className="absolute w-[620px] h-[620px] rounded-full"
+          className="absolute w-155 h-155 rounded-full"
           style={{ border: '1px solid rgba(212,175,55,0.06)' }}
         />
         <motion.div
           animate={{ rotate: 360 }}
           transition={{ duration: 50, repeat: Infinity, ease: 'linear' }}
-          className="absolute w-[460px] h-[460px] rounded-full"
+          className="absolute w-115 h-115 rounded-full"
           style={{ border: '1px solid rgba(255,255,255,0.04)' }}
         />
         <motion.div
@@ -146,7 +146,7 @@ export default function SignupPage({ onSignup, onSwitchToLogin }: Props) {
         initial={{ opacity: 0, y: 40, scale: 0.95 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-        className="relative z-10 w-full max-w-[420px]"
+        className="relative z-10 w-full max-w-105"
       >
         {/* Brand */}
         <motion.div

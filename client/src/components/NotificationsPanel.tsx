@@ -92,12 +92,12 @@ export default function NotificationsPanel() {
                       transition={{ delay: i * 0.05 }}
                       className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                         notif.read 
-                          ? 'bg-white/[0.02] border-white/5' 
+                          ? 'bg-white/2 border-white/5' 
                           : colorMap[notif.type]
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <Icon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${notif.read ? 'text-white/40' : ''}`} />
+                        <Icon className={`w-5 h-5 shrink-0 mt-0.5 ${notif.read ? 'text-white/40' : ''}`} />
                         <div className="flex-1">
                           <p className={`text-sm font-semibold ${notif.read ? 'text-white/60' : 'text-white'}`}>
                             {notif.title}
@@ -106,7 +106,7 @@ export default function NotificationsPanel() {
                           <p className="text-[10px] text-white/30 mt-2">{notif.time}</p>
                         </div>
                         {!notif.read && (
-                          <div className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" />
+                          <div className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
                         )}
                       </div>
                     </motion.div>

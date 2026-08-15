@@ -15,6 +15,7 @@ import QuickContacts from './QuickContacts';
 import AchievementsPanel from './AchievementsPanel';
 import SmartInsights from './SmartInsights';
 import { useAppStore } from '../store';
+import { useAccountData } from '../hooks/useAccountData';
 
 const Section = memo(({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) => (
   <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}>
@@ -26,10 +27,16 @@ Section.displayName = 'Section';
 
 interface Props {
   onOpenModal: (modal: string) => void;
+  userName?: string;
+  accountNumber?: string;
 }
 
-const DashboardSection = memo(function DashboardSection({ onOpenModal }: Props) {
+const DashboardSection = memo(function DashboardSection({ onOpenModal, userName = 'Guest', accountNumber }: Props) {
   const store = useAppStore();
+  const { balance, account, loading } = useAccountData();
+  const income = store.transactions.filter((t) => t.amount > 0).reduce((sum, t) => sum + t.amount, 0);
+  const displayAccountNumber = accountNumber || account?.accountNumber;
+  const displayBalance = balance?.total ?? 0;
 
   return (
     <div className="space-y-5">
@@ -39,7 +46,7 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal }: Props) 
           <div>
             <div className="flex items-center gap-3 mb-1">
               <h1 className="font-display text-3xl lg:text-5xl text-white tracking-tight">
-                Good <span className="text-gold">evening</span>, John
+                Good <span className="text-gold">evening</span>, {userName}
               </h1>
               <motion.div animate={{ rotate: 360 }} transition={{ duration: 12, repeat: Infinity, ease: 'linear' }} className="hidden md:block">
                 <Sparkles className="w-5 h-5 lg:w-6 lg:h-6 text-amber-400/60" />
@@ -60,7 +67,14 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal }: Props) 
         </div>
       </Section>
 
-      <Section delay={0.1}><HeroBalance /></Section>
+      <Section delay={0.1}>
+        <HeroBalance
+          balance={displayBalance}
+          accountNumber={displayAccountNumber}
+          loading={loading}
+          income={income}
+        />
+      </Section>
 
       <Section delay={0.15}>
         <QuickActions

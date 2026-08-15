@@ -34,7 +34,7 @@ export default function TransferSection() {
               whileHover={{ scale: 1.04, y: -2 }}
               whileTap={{ scale: 0.97 }}
               onClick={() => setShowModal(true)}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-cyan-400 via-blue-500 to-indigo-500 text-white font-bold shadow-lg glow-blue"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl bg-linear-to-r from-cyan-400 via-blue-500 to-indigo-500 text-white font-bold shadow-lg glow-blue"
             >
               <Send className="w-4 h-4" /> New Transfer
             </motion.button>
@@ -60,7 +60,7 @@ export default function TransferSection() {
               transition={{ delay: 0.15 + i * 0.06 }}
               whileHover={{ y: -4, scale: 1.03 }}
               onClick={() => setShowModal(true)}
-              className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-cyan-500/30 hover:bg-white/[0.06] transition-all"
+              className="flex flex-col items-center gap-2 p-4 rounded-2xl bg-white/3 border border-white/5 hover:border-cyan-500/30 hover:bg-white/6 transition-all"
             >
               <div className="relative">
                 <img src={c.img} alt={c.name} className="w-14 h-14 rounded-full object-cover ring-2 ring-white/10" />
@@ -69,7 +69,7 @@ export default function TransferSection() {
                 )}
               </div>
               <div className="text-center">
-                <p className="text-xs font-medium text-white truncate max-w-[80px]">{c.name}</p>
+                <p className="text-xs font-medium text-white truncate max-w-20">{c.name}</p>
                 <p className="text-[10px] text-white/40">{c.handle}</p>
               </div>
             </motion.button>

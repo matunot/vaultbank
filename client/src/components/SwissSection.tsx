@@ -59,7 +59,7 @@ export default function SwissSection() {
       >
         <div className="relative p-6 lg:p-10 overflow-hidden">
           {/* Swiss flag accent */}
-          <div className="absolute inset-0 bg-gradient-to-br from-red-600/10 via-transparent to-red-600/5" />
+          <div className="absolute inset-0 bg-linear-to-br from-red-600/10 via-transparent to-red-600/5" />
           <div className="absolute inset-0 glass opacity-50" />
           {/* Mountain decoration */}
           <div className="absolute -top-10 -right-10 opacity-10">
@@ -129,13 +129,13 @@ export default function SwissSection() {
             <div className="flex gap-3 mt-6 flex-wrap">
               <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
                 onClick={() => setShowOpen(true)}
-                className="flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white font-bold text-sm shadow-lg shadow-red-500/30"
+                className="flex items-center gap-2 px-5 py-3 rounded-xl bg-linear-to-r from-red-500 to-red-600 text-white font-bold text-sm shadow-lg shadow-red-500/30"
               >
                 <Plus className="w-4 h-4" /> Open Numbered Account
               </motion.button>
               <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
                 onClick={() => setShowAnonSend(true)}
-                className="flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm glow-amber"
+                className="flex items-center gap-2 px-5 py-3 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm glow-amber"
               >
                 <Fingerprint className="w-4 h-4" /> Anonymous Transfer
               </motion.button>
@@ -208,7 +208,7 @@ export default function SwissSection() {
                         </div>
                       </div>
 
-                      <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/8 mb-4">
+                      <div className="p-4 rounded-2xl bg-white/3 border border-white/8 mb-4">
                         <div className="flex items-center justify-between mb-2">
                           <p className="text-[10px] text-white/40 tracking-wider font-semibold">ACCOUNT NUMBER</p>
                           <div className="flex items-center gap-2">
@@ -226,15 +226,15 @@ export default function SwissSection() {
                       </div>
 
                       <div className="grid grid-cols-3 gap-2">
-                        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-center">
+                        <div className="p-2.5 rounded-xl bg-white/2 border border-white/5 text-center">
                           <p className="text-[9px] text-white/40 tracking-wider">PRIVACY</p>
                           <p className="text-xs font-bold text-red-300 mt-0.5">{acc.privacy}</p>
                         </div>
-                        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-center">
+                        <div className="p-2.5 rounded-xl bg-white/2 border border-white/5 text-center">
                           <p className="text-[9px] text-white/40 tracking-wider">INTEREST</p>
                           <p className="text-xs font-bold text-emerald-400 mt-0.5">{acc.interest}%</p>
                         </div>
-                        <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-center">
+                        <div className="p-2.5 rounded-xl bg-white/2 border border-white/5 text-center">
                           <p className="text-[9px] text-white/40 tracking-wider">CURRENCY</p>
                           <p className="text-xs font-bold text-white mt-0.5">{acc.currency}</p>
                         </div>
@@ -342,7 +342,7 @@ export default function SwissSection() {
                 </div>
                 <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
                   onClick={() => setShowAnonSend(true)}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm flex items-center gap-2 glow-amber"
+                  className="px-5 py-2.5 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm flex items-center gap-2 glow-amber"
                 >
                   <Fingerprint className="w-4 h-4" /> Send Anonymously
                 </motion.button>
@@ -360,7 +360,7 @@ export default function SwissSection() {
                     className={`relative p-4 rounded-2xl cursor-pointer border transition-all overflow-hidden ${
                       selectedTier === p.tier
                         ? 'border-amber-500/40 bg-amber-500/5'
-                        : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/15'
+                        : 'border-white/5 bg-white/2 hover:bg-white/4 hover:border-white/15'
                     }`}
                   >
                     {p.tier === 'Untraceable' && (
@@ -379,7 +379,7 @@ export default function SwissSection() {
                       <div className="mt-3 space-y-1">
                         {p.features.map((f, j) => (
                           <div key={j} className="flex items-start gap-1.5 text-[10px] text-white/60">
-                            <Check className="w-2.5 h-2.5 text-emerald-400 mt-0.5 flex-shrink-0" />{f}
+                            <Check className="w-2.5 h-2.5 text-emerald-400 mt-0.5 shrink-0" />{f}
                           </div>
                         ))}
                       </div>
@@ -409,7 +409,7 @@ export default function SwissSection() {
                     transition={{ delay: i * 0.06 }}
                     whileHover={{ x: 4 }}
                     onClick={() => { setAnonRecipient(s.address); setShowAnonSend(true); }}
-                    className="flex items-center gap-3 p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] hover:border-white/15 cursor-pointer transition-all"
+                    className="flex items-center gap-3 p-4 rounded-2xl bg-white/2 border border-white/5 hover:bg-white/4 hover:border-white/15 cursor-pointer transition-all"
                   >
                     <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: `${s.color}20`, border: `1px solid ${s.color}40` }}>
                       <Fingerprint className="w-5 h-5" style={{ color: s.color }} />
@@ -453,7 +453,7 @@ export default function SwissSection() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.05 }}
                       whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.04)' }}
-                      className="flex items-center gap-3 p-4 rounded-2xl bg-white/[0.02] border border-white/5 transition-all"
+                      className="flex items-center gap-3 p-4 rounded-2xl bg-white/2 border border-white/5 transition-all"
                     >
                       <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl" style={{ background: `${tier?.color}20`, border: `1px solid ${tier?.color}40` }}>
                         {tier?.icon}
@@ -503,7 +503,7 @@ export default function SwissSection() {
                   </span>
                 )}
                 <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-2xl flex-shrink-0">
+                  <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-2xl shrink-0">
                     {s.icon}
                   </div>
                   <div className="flex-1">
@@ -572,7 +572,7 @@ export default function SwissSection() {
                             className={`p-3 rounded-xl border transition-all ${
                               selectedTier === p.tier
                                 ? 'border-amber-500/40 bg-amber-500/10 scale-[1.02]'
-                                : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.04]'
+                                : 'border-white/5 bg-white/2 hover:bg-white/4'
                             }`}
                           >
                             <div className="text-xl">{p.icon}</div>
@@ -612,7 +612,7 @@ export default function SwissSection() {
                     </div>
 
                     {/* Fee Summary */}
-                    <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20">
+                    <div className="p-4 rounded-2xl bg-linear-to-br from-amber-500/10 to-transparent border border-amber-500/20">
                       <div className="grid grid-cols-3 gap-3 text-center">
                         <div><p className="text-[9px] text-white/40 tracking-wider">AMOUNT</p><p className="text-base font-bold text-white">${parseFloat(anonAmount || '0').toLocaleString()}</p></div>
                         <div><p className="text-[9px] text-white/40 tracking-wider">FEE ({tierObj?.fee}%)</p><p className="text-base font-bold text-rose-300">${anonFee.toFixed(2)}</p></div>
@@ -621,7 +621,7 @@ export default function SwissSection() {
                     </div>
 
                     <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-start gap-2">
-                      <ShieldCheck className="w-4 h-4 text-emerald-400 flex-shrink-0 mt-0.5" />
+                      <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
                       <div className="text-xs text-emerald-200/80 leading-relaxed">
                         <span className="font-bold text-emerald-200">{tierObj?.tier}</span> mode • Routes through {tierObj?.tier === 'Untraceable' ? '7' : tierObj?.tier === 'Stealth' ? '5' : tierObj?.tier === 'Private' ? '3' : '1'} nodes • Expected: {tierObj?.speed}
                       </div>
@@ -630,7 +630,7 @@ export default function SwissSection() {
                     <button
                       onClick={handleAnonSend}
                       disabled={!anonRecipient || !anonAmount}
-                      className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold flex items-center justify-center gap-2 glow-amber disabled:opacity-50"
+                      className="w-full py-4 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold flex items-center justify-center gap-2 glow-amber disabled:opacity-50"
                     >
                       <Fingerprint className="w-4 h-4" /> Execute Anonymous Transfer
                     </button>
@@ -724,7 +724,7 @@ export default function SwissSection() {
                   <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">JURISDICTION</label>
                   <div className="grid grid-cols-2 gap-2">
                     {['Zurich', 'Geneva', 'Lugano', 'Basel'].map(city => (
-                      <button key={city} className="p-3 rounded-xl bg-white/[0.03] border border-white/5 hover:border-red-500/30 transition-colors text-sm text-white/80 hover:text-white flex items-center justify-center gap-2">
+                      <button key={city} className="p-3 rounded-xl bg-white/3 border border-white/5 hover:border-red-500/30 transition-colors text-sm text-white/80 hover:text-white flex items-center justify-center gap-2">
                         <Globe className="w-3.5 h-3.5 text-red-400" /> {city}
                       </button>
                     ))}
@@ -748,11 +748,11 @@ export default function SwissSection() {
                 <input placeholder="Initial deposit (min CHF 250,000)" className="w-full glass-input rounded-xl px-4 py-3 text-sm text-white" />
 
                 <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-200/80 flex items-start gap-2">
-                  <Sparkles className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                   Your dedicated Swiss banker will contact you within 4 hours
                 </div>
 
-                <button onClick={() => setShowOpen(false)} className="w-full py-3 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-white font-bold text-sm flex items-center justify-center gap-2">
+                <button onClick={() => setShowOpen(false)} className="w-full py-3 rounded-xl bg-linear-to-r from-red-500 to-red-600 text-white font-bold text-sm flex items-center justify-center gap-2">
                   <ShieldCheck className="w-4 h-4" /> Begin KYC Process
                 </button>
               </div>

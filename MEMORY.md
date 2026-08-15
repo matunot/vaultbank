@@ -8,7 +8,7 @@
 ## 🌐 Live URLs — ALWAYS UP TO DATE
 
 | Service | URL | Status |
-|---------|-----|--------|
+| --------- | ----- | -------- |
 | **Backend (Render)** | `https://vaultbank-md20.onrender.com` | 🟢 Live |
 | Backend Health | `https://vaultbank-md20.onrender.com/health` | 🟢 HTTP 200 |
 | **Frontend (Vercel)** | `https://vaultbank-hha0sj6he-matus-projects-c3e42681.vercel.app` | 🟢 Live |
@@ -34,6 +34,7 @@ Admin: admin@vaultbank.com / admin123
 **Root cause:** NOT the backend (it was healthy). It was **CORS blocking** — the server only allowed specific origins (localhost, 3 Vercel URLs, vaultbank.com). Any other origin (custom domain, new Vercel preview, different local port) was blocked by the browser.
 
 **Fix (already applied, must deploy to Render/Vercel):**
+
 1. `server/index.js` — CORS changed from allowlist to `origin: true` (allow all origins)
 2. `client/src/api.ts` — Added 2 retries (1.5s apart) for network/cold-start errors + friendly error message
 3. `client/tsconfig.json` — Removed deprecated `baseUrl` (TS 7 removed it), fixed `@/*` path mapping
@@ -48,7 +49,7 @@ Admin: admin@vaultbank.com / admin123
 ## 🤖 Automation & Robots
 
 | Workflow | File | Schedule | What it does |
-|----------|------|----------|--------------|
+| ---------- | ------ | ---------- | -------------- |
 | Keep-Alive / Health Bot | `.github/workflows/keep-alive.yml` | Every 10 min | Pings health + tests real login, flags cold starts |
 | Auto-Deploy | `.github/workflows/deploy.yml` | On push to main | Builds, tests, deploys via hooks |
 | Monitoring Setup Doc | `deployment/monitoring-setup.md` | — | Full monitoring guide (Sentry, UptimeRobot, alerting) |

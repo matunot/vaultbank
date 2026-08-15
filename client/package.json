@@ -2,7 +2,6 @@
   "name": "react-vite-tailwind",
   "private": true,
   "version": "0.0.3",
-
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -11,8 +10,8 @@
   },
   "dependencies": {
     "clsx": "2.1.1",
-    "framer-motion": "^13.0.0",
-    "lucide-react": "^1.30.0",
+    "framer-motion": "^13.1.0",
+    "lucide-react": "^1.31.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwind-merge": "^3.6.0"
@@ -27,5 +26,8 @@
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
     "vite-plugin-singlefile": "^2.3.3"
+  },
+  "engines": {
+    "node": ">=24.0.0"
   }
 }

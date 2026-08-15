@@ -51,7 +51,7 @@ export default function InvestmentsSection({ investments, onOpenTrade }: Investm
               onClick={onOpenTrade}
               whileHover={{ scale: 1.04 }} 
               whileTap={{ scale: 0.97 }} 
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-emerald-950 font-bold text-sm flex items-center gap-2 glow-emerald"
+              className="px-5 py-2.5 rounded-xl bg-linear-to-r from-emerald-400 to-teal-400 text-emerald-950 font-bold text-sm flex items-center gap-2 glow-emerald"
             >
               <Plus className="w-4 h-4" /> New Trade
             </motion.button>
@@ -90,7 +90,7 @@ export default function InvestmentsSection({ investments, onOpenTrade }: Investm
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.08 + 0.2 }}
                 whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-all cursor-pointer"
+                className="flex items-center gap-4 p-4 rounded-2xl bg-white/2 border border-white/5 hover:border-white/10 transition-all cursor-pointer"
               >
                 <RichIcon
                   icon={<span className="font-display text-xs font-bold">{inv.ticker}</span>}
@@ -156,7 +156,7 @@ export default function InvestmentsSection({ investments, onOpenTrade }: Investm
                   initial={{ width: 0 }}
                   animate={{ width: `${asset.pct}%` }}
                   transition={{ delay: 0.6 + i * 0.1, duration: 1 }}
-                  className={`h-full rounded-full bg-gradient-to-r ${asset.color}`}
+                  className={`h-full rounded-full bg-linear-to-r ${asset.color}`}
                 />
               </div>
               <p className="text-xs text-white/40">${asset.val.toLocaleString()}</p>

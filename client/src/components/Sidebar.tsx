@@ -33,9 +33,9 @@ export default function Sidebar({ active, setActive, onSettings, onLogout }: Pro
       initial={{ x: -80, opacity: 0 }}
       animate={{ x: 0, opacity: 1, width: collapsed ? 88 : 260 }}
       transition={{ type: 'spring', stiffness: 200, damping: 25 }}
-      className="h-screen glass-sidebar flex flex-col relative z-20 flex-shrink-0"
+      className="h-screen glass-sidebar flex flex-col relative z-20 shrink-0"
     >
-      <div className="h-[2px] bg-gradient-to-r from-amber-400 via-purple-500 to-cyan-400" />
+      <div className="h-0.5 bg-linear-to-r from-amber-400 via-purple-500 to-cyan-400" />
 
       {/* Logo */}
       <div className="p-5 lg:p-6 flex items-center gap-3 relative">
@@ -91,7 +91,7 @@ export default function Sidebar({ active, setActive, onSettings, onLogout }: Pro
                   transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                 />
               )}
-              <div className="relative z-10 flex-shrink-0">
+              <div className="relative z-10 shrink-0">
                 <RichIcon
                   icon={<Icon size={17} strokeWidth={isActive ? 2.5 : 2} />}
                   variant={isActive ? (variantMap[item.icon] || 'gold') : 'gold'}
@@ -117,7 +117,7 @@ export default function Sidebar({ active, setActive, onSettings, onLogout }: Pro
               {isActive && (
                 <motion.div
                   layoutId="active-dot"
-                  className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 rounded-r-full bg-gradient-to-b from-amber-300 to-amber-600"
+                  className="absolute left-0 top-1/2 -translate-y-1/2 w-0.75 h-6 rounded-r-full bg-linear-to-b from-amber-300 to-amber-600"
                   style={{ boxShadow: '0 0 12px rgba(212,175,55,0.6)' }}
                   transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                 />

@@ -100,7 +100,7 @@ export default function HistorySection() {
           </div>
         </div>
 
-        <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+        <div className="space-y-2 max-h-150 overflow-y-auto pr-1">
           <AnimatePresence mode="popLayout">
             {filtered.map((tx, i) => {
               const positive = tx.amount > 0;
@@ -115,7 +115,7 @@ export default function HistorySection() {
                   exit={{ opacity: 0, x: 16 }}
                   transition={{ delay: i * 0.03, duration: 0.3 }}
                   whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.04)' }}
-                  className="flex items-center gap-4 p-4 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/10 cursor-pointer transition-all"
+                  className="flex items-center gap-4 p-4 rounded-2xl bg-white/2 border border-white/5 hover:border-white/10 cursor-pointer transition-all"
                 >
                   <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-xl border border-white/10">
                     {tx.icon}
@@ -124,7 +124,7 @@ export default function HistorySection() {
                     <p className="font-semibold text-white truncate">{tx.name}</p>
                     <p className="text-xs text-white/40 mt-0.5">{tx.cat} · {tx.date}</p>
                   </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
+                  <div className="flex items-center gap-3 shrink-0">
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
                       positive ? 'bg-emerald-500/15 border border-emerald-500/20' : 'bg-rose-500/10 border border-rose-500/15'
                     }`}>

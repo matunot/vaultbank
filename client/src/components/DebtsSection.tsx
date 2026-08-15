@@ -198,7 +198,7 @@ export default function DebtsSection() {
                 <span className="text-[10px] text-emerald-400 font-bold tracking-wider">{debtHealth > 70 ? 'EXCELLENT' : debtHealth > 50 ? 'GOOD' : 'FAIR'}</span>
               </div>
             </div>
-            <p className="text-[10px] text-white/40 text-center mt-2 max-w-[160px]">
+            <p className="text-[10px] text-white/40 text-center mt-2 max-w-40">
               Based on payoff rate, DTI, and credit score
             </p>
           </div>
@@ -206,7 +206,7 @@ export default function DebtsSection() {
 
         <div className="flex gap-3 mt-6 relative z-10">
           <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
-            className="flex-1 px-5 py-3 rounded-xl bg-gradient-to-r from-blue-400 to-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-2 glow-blue"
+            className="flex-1 px-5 py-3 rounded-xl bg-linear-to-r from-blue-400 to-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-2 glow-blue"
           >
             <Send className="w-4 h-4" /> Make Payment
           </motion.button>
@@ -226,7 +226,7 @@ export default function DebtsSection() {
         transition={{ delay: 0.1 }}
         className="relative rounded-3xl overflow-hidden iridescent-border"
       >
-        <div className="relative p-6 lg:p-8 bg-gradient-to-br from-rose-500/10 via-orange-500/5 to-amber-500/10">
+        <div className="relative p-6 lg:p-8 bg-linear-to-br from-rose-500/10 via-orange-500/5 to-amber-500/10">
           <div className="absolute inset-0 glass opacity-40" />
           <div className="absolute -top-10 -right-10 w-40 h-40 bg-rose-500/20 rounded-full blur-3xl" />
 
@@ -254,7 +254,7 @@ export default function DebtsSection() {
                   transition={{ delay: 0.15 + i * 0.1 }}
                   whileHover={{ y: -6, scale: 1.02 }}
                   onClick={() => { setSelectedOffer(loan.name); setShowApply(true); }}
-                  className="relative p-5 rounded-2xl bg-gradient-to-br from-white/[0.08] to-white/[0.02] border border-white/10 hover:border-amber-500/40 cursor-pointer overflow-hidden group"
+                  className="relative p-5 rounded-2xl bg-linear-to-br from-white/8 to-white/2 border border-white/10 hover:border-amber-500/40 cursor-pointer overflow-hidden group"
                 >
                   <div className="absolute inset-0 shimmer opacity-40 group-hover:opacity-70 transition-opacity" />
                   <div className="relative z-10">
@@ -288,13 +288,13 @@ export default function DebtsSection() {
                     <div className="space-y-1.5 mb-4">
                       {loan.features.map((f, j) => (
                         <div key={j} className="flex items-center gap-1.5 text-xs text-white/60">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                          <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
                           {f}
                         </div>
                       ))}
                     </div>
 
-                    <button className="w-full py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 text-amber-950 font-bold text-sm flex items-center justify-center gap-2 glow-amber group-hover:shadow-lg group-hover:shadow-amber-500/30 transition-shadow">
+                    <button className="w-full py-2.5 rounded-xl bg-linear-to-r from-amber-400 to-orange-500 text-amber-950 font-bold text-sm flex items-center justify-center gap-2 glow-amber group-hover:shadow-lg group-hover:shadow-amber-500/30 transition-shadow">
                       Apply Now <ArrowRight className="w-4 h-4" />
                     </button>
                   </div>
@@ -326,7 +326,7 @@ export default function DebtsSection() {
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.25 + i * 0.08 }}
                 whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.05)' }}
-                className="p-5 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-white/10 transition-all"
+                className="p-5 rounded-2xl bg-white/3 border border-white/5 hover:border-white/10 transition-all"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div className="flex items-center gap-3">
@@ -422,7 +422,7 @@ export default function DebtsSection() {
                 whileHover={{ y: -4, scale: 1.01 }}
                 onClick={() => { setSelectedOffer(offer.name); setLoanAmount(String(Math.min(parseFloat(loanAmount) || 25000, offer.maxAmount))); }}
                 className={`relative p-5 rounded-2xl cursor-pointer overflow-hidden group border ${
-                  selectedOffer === offer.name ? 'border-amber-500/40 bg-amber-500/5' : 'border-white/5 bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/10'
+                  selectedOffer === offer.name ? 'border-amber-500/40 bg-amber-500/5' : 'border-white/5 bg-white/2 hover:bg-white/4 hover:border-white/10'
                 }`}
               >
                 {offer.badge && (
@@ -439,7 +439,7 @@ export default function DebtsSection() {
                     <p className="text-[10px] text-white/40">{offer.term}</p>
                   </div>
                 </div>
-                <p className="text-xs text-white/50 leading-relaxed mb-4 min-h-[36px]">{offer.desc}</p>
+                <p className="text-xs text-white/50 leading-relaxed mb-4 min-h-9">{offer.desc}</p>
 
                 <div className="grid grid-cols-3 gap-2 mb-4 pt-3 border-t border-white/5">
                   <div>
@@ -460,7 +460,7 @@ export default function DebtsSection() {
                   <div className="space-y-1 mb-3">
                     {offer.features.slice(0, 3).map((f, j) => (
                       <div key={j} className="flex items-center gap-1 text-[10px] text-white/50">
-                        <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400 flex-shrink-0" />{f}
+                        <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400 shrink-0" />{f}
                       </div>
                     ))}
                   </div>
@@ -530,19 +530,19 @@ export default function DebtsSection() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/15 to-transparent border border-emerald-500/25">
+                  <div className="p-4 rounded-2xl bg-linear-to-br from-emerald-500/15 to-transparent border border-emerald-500/25">
                     <Sparkles className="w-5 h-5 text-emerald-400 mb-2" />
                     <p className="text-[10px] text-white/40 tracking-wider">MONTHS SAVED</p>
                     <p className="text-3xl font-display text-emerald-300 mt-1">{extraImpact.monthsSaved}</p>
                     <p className="text-[10px] text-white/40 mt-1">months off your debt</p>
                   </div>
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/15 to-transparent border border-amber-500/25">
+                  <div className="p-4 rounded-2xl bg-linear-to-br from-amber-500/15 to-transparent border border-amber-500/25">
                     <DollarSign className="w-5 h-5 text-amber-400 mb-2" />
                     <p className="text-[10px] text-white/40 tracking-wider">INTEREST SAVED</p>
                     <p className="text-3xl font-display text-amber-300 mt-1">${Math.round(extraImpact.interestSaved).toLocaleString()}</p>
                     <p className="text-[10px] text-white/40 mt-1">saved in interest</p>
                   </div>
-                  <div className="col-span-2 p-4 rounded-2xl bg-white/[0.03] border border-white/5">
+                  <div className="col-span-2 p-4 rounded-2xl bg-white/3 border border-white/5">
                     <div className="flex items-center justify-between">
                       <div>
                         <p className="text-[10px] text-white/40 tracking-wider">NEW PAYOFF TIME</p>
@@ -581,28 +581,28 @@ export default function DebtsSection() {
                     <input type="range" min="2" max="15" step="0.1" value={consolidateRate} onChange={(e) => setConsolidateRate(e.target.value)} className="w-full accent-cyan-400 mt-2" />
                   </div>
                   <div className="p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 text-xs text-cyan-300/80 flex items-start gap-2">
-                    <Activity className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                    <Activity className="w-4 h-4 shrink-0 mt-0.5" />
                     <span>Consolidating all {activeDebts.length} active debts into one payment. Current weighted rate: <span className="font-bold text-cyan-200">{((activeDebts.reduce((sum, d) => sum + (d.remaining * d.rate), 0) / totalRemaining)).toFixed(2)}%</span></span>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/15 to-transparent border border-emerald-500/25">
+                  <div className="p-4 rounded-2xl bg-linear-to-br from-emerald-500/15 to-transparent border border-emerald-500/25">
                     <TrendingUp className="w-5 h-5 text-emerald-400 mb-2" />
                     <p className="text-[10px] text-white/40 tracking-wider">MONTHLY SAVINGS</p>
                     <p className="text-3xl font-display text-emerald-300 mt-1">${Math.round(consolidationSavings.monthlySavings).toLocaleString()}</p>
                     <p className="text-[10px] text-white/40 mt-1">saved per month</p>
                   </div>
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500/15 to-transparent border border-amber-500/25">
+                  <div className="p-4 rounded-2xl bg-linear-to-br from-amber-500/15 to-transparent border border-amber-500/25">
                     <Award className="w-5 h-5 text-amber-400 mb-2" />
                     <p className="text-[10px] text-white/40 tracking-wider">TOTAL SAVED</p>
                     <p className="text-3xl font-display text-amber-300 mt-1">${Math.round(consolidationSavings.totalInterestSavings).toLocaleString()}</p>
                     <p className="text-[10px] text-white/40 mt-1">over 7 years</p>
                   </div>
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
+                  <div className="p-4 rounded-2xl bg-white/3 border border-white/5">
                     <p className="text-[10px] text-white/40 tracking-wider">CURRENT PAYMENT</p>
                     <p className="text-lg font-bold text-white/60 mt-1">${Math.round(consolidationSavings.currentMonthly).toLocaleString()}</p>
                   </div>
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
+                  <div className="p-4 rounded-2xl bg-white/3 border border-white/5">
                     <p className="text-[10px] text-white/40 tracking-wider">NEW PAYMENT</p>
                     <p className="text-lg font-bold text-cyan-300 mt-1">${Math.round(consolidationSavings.newMonthly).toLocaleString()}</p>
                   </div>
@@ -625,7 +625,7 @@ export default function DebtsSection() {
                       />
                     </div>
                   </div>
-                  <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
+                  <div className="p-4 rounded-2xl bg-white/3 border border-white/5">
                     <p className="text-xs text-white/40 mb-3">DEBT BREAKDOWN</p>
                     {activeDebts.map(d => (
                       <div key={d.id} className="flex items-center justify-between text-sm py-1.5 border-b border-white/5 last:border-0">
@@ -675,7 +675,7 @@ export default function DebtsSection() {
             <CheckCircle2 className="w-5 h-5 text-emerald-400" /> Paid in Full
           </h3>
           {completedDebts.map((debt) => (
-            <div key={debt.id} className="flex items-center gap-4 p-3 rounded-xl bg-white/[0.02] border border-emerald-500/20">
+            <div key={debt.id} className="flex items-center gap-4 p-3 rounded-xl bg-white/2 border border-emerald-500/20">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: `${debt.color}20` }}>
                 {debt.icon}
               </div>
@@ -708,7 +708,7 @@ export default function DebtsSection() {
             >
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/10 border border-blue-500/30 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-xl bg-linear-to-br from-blue-500/20 to-indigo-500/10 border border-blue-500/30 flex items-center justify-center">
                     {selectedOfferObj ? <span className="text-xl">{selectedOfferObj.icon}</span> : <Plus className="w-5 h-5 text-blue-300" />}
                   </div>
                   <div>
@@ -722,7 +722,7 @@ export default function DebtsSection() {
               </div>
 
               {selectedOfferObj && (
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-500/10 to-transparent border border-blue-500/20 mb-4">
+                <div className="p-4 rounded-2xl bg-linear-to-br from-blue-500/10 to-transparent border border-blue-500/20 mb-4">
                   <div className="grid grid-cols-3 gap-3 text-center">
                     <div><p className="text-[9px] text-white/40 tracking-wider">UP TO</p><p className="text-lg font-bold text-white">${selectedOfferObj.maxAmount.toLocaleString()}</p></div>
                     <div><p className="text-[9px] text-white/40 tracking-wider">RATE FROM</p><p className="text-lg font-bold text-amber-400">{selectedOfferObj.rate}</p></div>
@@ -780,7 +780,7 @@ export default function DebtsSection() {
                 <div className="flex gap-2 pt-2">
                   <button onClick={() => setShowApply(false)} className="flex-1 py-3 rounded-xl glass-btn text-sm font-bold text-white/70">Cancel</button>
                   <button onClick={() => setShowApply(false)}
-                    className="flex-1 py-3 rounded-xl bg-gradient-to-r from-blue-400 to-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-2 glow-blue"
+                    className="flex-1 py-3 rounded-xl bg-linear-to-r from-blue-400 to-indigo-500 text-white font-bold text-sm flex items-center justify-center gap-2 glow-blue"
                   >
                     Submit <ArrowRight className="w-4 h-4" />
                   </button>

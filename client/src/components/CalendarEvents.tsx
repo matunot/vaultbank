@@ -33,7 +33,7 @@ export default function CalendarEvents() {
                 ? 'bg-amber-500/5 border-amber-500/20 hover:bg-amber-500/10' 
                 : event.type === 'holiday'
                   ? 'bg-purple-500/5 border-purple-500/20 hover:bg-purple-500/10'
-                  : 'bg-white/[0.02] border-white/5 hover:bg-white/[0.04]'
+                  : 'bg-white/2 border-white/5 hover:bg-white/4'
             }`}
           >
             <div className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center ${

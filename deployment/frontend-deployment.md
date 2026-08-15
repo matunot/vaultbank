@@ -250,7 +250,6 @@ Create `netlify.toml` for Netlify deployment:
 
 ### For Vercel
 
-
 ```bash
 # Install Vercel CLI
 npm i -g vercel
@@ -265,7 +264,6 @@ vercel env add REACT_APP_SENTRY_DSN production
 
 ### For Netlify
 
-
 ```bash
 # Install Netlify CLI
 npm install -g netlify-cli
@@ -279,7 +277,6 @@ netlify env:set REACT_APP_SENTRY_DSN <production_dsn>
 ```
 
 ### For AWS S3 + CloudFront
-
 
 ```bash
 # Build the app
@@ -303,7 +300,6 @@ npx webpack-bundle-analyzer build/static/js/*.js
 
 1. **Code Splitting**
 
-
 ```javascript
 // Lazy load components
 const AdminDashboard = React.lazy(() => import("./components/AdminDashboard"));
@@ -320,13 +316,11 @@ const Analytics = React.lazy(() => import("./components/Analytics"));
 
 1. **Image Optimization**
 
-
 - Use WebP format for images
 - Implement lazy loading for images
 - Use appropriate image sizes for different screen densities
 
 1. **Service Worker (PWA)**
-
 
 ```javascript
 // Register service worker for caching

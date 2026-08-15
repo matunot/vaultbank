@@ -96,7 +96,7 @@ export default function SavingsGoals({ goals, onAddToGoal }: SavingsGoalsProps) 
                   style={{ background: goal.color, boxShadow: `0 0 10px ${goal.color}60` }}
                 >
                   {hovered === i && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-[shimmer-sweep_1s_ease-in-out_infinite]" />
+                    <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/30 to-transparent animate-[shimmer-sweep_1s_ease-in-out_infinite]" />
                   )}
                 </motion.div>
               </div>

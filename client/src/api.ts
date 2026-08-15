@@ -12,7 +12,17 @@ interface AuthResponse {
     id: string;
     email: string;
     full_name?: string;
+    fullName?: string;
     role?: string;
+  };
+  account?: {
+    id: string;
+    accountNumber: string;
+    accountType: string;
+    balance: number;
+    availableBalance?: number;
+    currency: string;
+    status?: string;
   };
   message?: string;
 }
@@ -40,7 +50,6 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Normalise the endpoint so we always get exactly one slash between base & path */
 function buildUrl(endpoint: string): string {
   const base = API_BASE.replace(/\/+$/, '');
   const path = endpoint.replace(/^\/+/, '');
@@ -48,55 +57,34 @@ function buildUrl(endpoint: string): string {
 }
 
 async function request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
-
   const token = localStorage.getItem('vaultbank_token');
-
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...((options.headers as Record<string, string>) || {}),
   };
-
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
-
-  // Retry on network errors (e.g. Render free-tier cold starts)
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const response = await fetch(buildUrl(endpoint), {
-
-        ...options,
-        headers,
-      });
-
+      const response = await fetch(buildUrl(endpoint), { ...options, headers });
       const data = await response.json();
-
       if (!response.ok) {
         throw new ApiError(data.message || 'Request failed', response.status);
       }
-
       return data as T;
     } catch (error) {
       if (error instanceof ApiError) throw error;
-
-      // Network error (TypeError: Failed to fetch) — retry a couple times
       console.warn(`[API] Network error for ${endpoint} (attempt ${attempt + 1}/${MAX_RETRIES + 1}):`, error);
-
       if (attempt < MAX_RETRIES) {
         await delay(RETRY_DELAY_MS);
       }
     }
   }
-
-  // All retries exhausted — throw a clear, user-friendly error
-  throw new ApiError(
-    'Cannot reach the server. Please check your internet connection and try again.',
-    0
-  );
+  throw new ApiError('Cannot reach the server. Please check your internet connection and try again.', 0);
 }
 
 export const api = {
-  // ─── Authentication ──────────────────────────────────────────
   async login(email: string, password: string): Promise<AuthResponse> {
     try {
       const result = await request<AuthResponse>('login', {
@@ -105,7 +93,8 @@ export const api = {
       });
       if (result.token) {
         localStorage.setItem('vaultbank_token', result.token);
-        localStorage.setItem('vaultbank_user', JSON.stringify(result.user));
+        if (result.user) localStorage.setItem('vaultbank_user', JSON.stringify(result.user));
+        if (result.account) localStorage.setItem('vaultbank_account', JSON.stringify(result.account));
       }
       return result;
     } catch (error) {
@@ -121,7 +110,8 @@ export const api = {
       });
       if (result.token) {
         localStorage.setItem('vaultbank_token', result.token);
-        localStorage.setItem('vaultbank_user', JSON.stringify(result.user));
+        if (result.user) localStorage.setItem('vaultbank_user', JSON.stringify(result.user));
+        if (result.account) localStorage.setItem('vaultbank_account', JSON.stringify(result.account));
       }
       return result;
     } catch (error) {
@@ -137,7 +127,8 @@ export const api = {
       });
       if (result.token) {
         localStorage.setItem('vaultbank_token', result.token);
-        localStorage.setItem('vaultbank_user', JSON.stringify(result.user));
+        if (result.user) localStorage.setItem('vaultbank_user', JSON.stringify(result.user));
+        if (result.account) localStorage.setItem('vaultbank_account', JSON.stringify(result.account));
       }
       return result;
     } catch (error) {
@@ -148,6 +139,7 @@ export const api = {
   logout(): void {
     localStorage.removeItem('vaultbank_token');
     localStorage.removeItem('vaultbank_user');
+    localStorage.removeItem('vaultbank_account');
   },
 
   getToken(): string | null {
@@ -159,30 +151,40 @@ export const api = {
     return user ? JSON.parse(user) : null;
   },
 
+  getAccount(): any | null {
+    const account = localStorage.getItem('vaultbank_account');
+    return account ? JSON.parse(account) : null;
+  },
+
   isAuthenticated(): boolean {
     return !!localStorage.getItem('vaultbank_token');
   },
 
-  // ─── Account & Profile ───────────────────────────────────────
   async getProfile(): Promise<ApiResponse> {
-    return request<ApiResponse>('api/profile');
+    return request<ApiResponse>('api/auth/me');
   },
 
   async getAccounts(): Promise<ApiResponse> {
     return request<ApiResponse>('api/accounts');
   },
 
-  // ─── Transfers ───────────────────────────────────────────────
+  async fetchAccount(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/account');
+  },
+
+  async getAccountBalance(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/account/balance');
+  },
+
+  async getAccountTransactions(limit = 50): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/account/transactions?limit=${limit}`);
+  },
+
   async getTransfers(): Promise<ApiResponse> {
     return request<ApiResponse>('api/transfers');
   },
 
-  async createTransfer(data: {
-    toAccountId?: string;
-    amount: number;
-    currency?: string;
-    description?: string;
-  }): Promise<ApiResponse> {
+  async createTransfer(data: { toAccountId?: string; amount: number; currency?: string; description?: string }): Promise<ApiResponse> {
     return request<ApiResponse>('api/transfers', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -193,7 +195,6 @@ export const api = {
     return request<ApiResponse>('api/transfers/history');
   },
 
-  // ─── Rewards ─────────────────────────────────────────────────
   async getRewards(): Promise<ApiResponse> {
     return request<ApiResponse>('api/rewards/me');
   },
@@ -209,7 +210,6 @@ export const api = {
     });
   },
 
-  // ─── Alerts/Notifications ────────────────────────────────────
   async getAlerts(): Promise<ApiResponse> {
     return request<ApiResponse>('api/alerts');
   },
@@ -226,7 +226,6 @@ export const api = {
     return request<ApiResponse>('api/alerts/read-all', { method: 'PUT' });
   },
 
-  // ─── Investments ─────────────────────────────────────────────
   async getInvestments(): Promise<ApiResponse> {
     return request<ApiResponse>('api/investments/me');
   },
@@ -238,18 +237,11 @@ export const api = {
     });
   },
 
-  // ─── Payments ────────────────────────────────────────────────
   async getPaymentMethods(): Promise<ApiResponse> {
     return request<ApiResponse>('api/payments/methods');
   },
 
-  async initiatePayment(data: {
-    method: string;
-    amount: number;
-    currency?: string;
-    to?: string;
-    metadata?: any;
-  }): Promise<ApiResponse> {
+  async initiatePayment(data: { method: string; amount: number; currency?: string; to?: string; metadata?: any }): Promise<ApiResponse> {
     return request<ApiResponse>('api/payments/transfer', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -264,7 +256,6 @@ export const api = {
     return request<ApiResponse>('api/payments/wallet/balance');
   },
 
-  // ─── Admin ───────────────────────────────────────────────────
   async getAdminStats(): Promise<ApiResponse> {
     return request<ApiResponse>('api/admin/stats');
   },
@@ -277,7 +268,6 @@ export const api = {
     return request<ApiResponse>('api/admin/transactions');
   },
 
-  // ─── Health Check ────────────────────────────────────────────
   async healthCheck(): Promise<ApiResponse> {
     return request<ApiResponse>('health');
   },

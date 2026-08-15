@@ -6,6 +6,7 @@ import {
   Fingerprint, Key, Mail, Phone, MapPin, Calendar, Camera,
   Save,
 } from 'lucide-react';
+import { api } from '../api';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -20,9 +21,12 @@ type SettingsTab = 'profile' | 'appearance' | 'security' | 'notifications' | 'ad
 export default function SettingsModal({ isOpen, onClose, onLogout, theme, onThemeChange }: SettingsModalProps) {
   const [tab, setTab] = useState<SettingsTab>('profile');
   const [saved, setSaved] = useState(false);
-  const [name, setName] = useState('John Anderson');
-  const [email, setEmail] = useState('john@vault.bank');
-  const [phone, setPhone] = useState('+41 79 884 2193');
+  const currentUser = api.getUser();
+  const currentAccount = api.getAccount();
+  const [name, setName] = useState(currentUser?.full_name || currentUser?.fullName || 'Guest');
+  const [email, setEmail] = useState(currentUser?.email || '');
+  const [phone, setPhone] = useState(currentUser?.phone || '');
+  const accountNumber = currentAccount?.accountNumber || '';
 
   // Appearance
   const [fontSize, setFontSize] = useState('medium');

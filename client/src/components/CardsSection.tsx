@@ -117,7 +117,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
               initial={{ width: 0 }}
               animate={{ width: `${(totalBalance / totalLimit) * 100}%` }}
               transition={{ duration: 1.2, ease: 'easeOut' }}
-              className="h-full rounded-full bg-gradient-to-r from-amber-400 to-yellow-500"
+              className="h-full rounded-full bg-linear-to-r from-amber-400 to-yellow-500"
               style={{ boxShadow: '0 0 12px rgba(212,175,55,0.5)' }}
             />
           </div>
@@ -126,7 +126,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
               <motion.button
                 whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                 onClick={() => setShowNewCard(true)}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm flex items-center gap-2 glow-amber"
+                className="px-5 py-2.5 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm flex items-center gap-2 glow-amber"
               >
                 <Plus className="w-4 h-4" /> New Card
               </motion.button>
@@ -168,7 +168,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
             animate={{ rotateY: flipped ? 180 : 0 }}
             transition={{ duration: 0.6, type: 'spring', stiffness: 100, damping: 20 }}
             style={{ transformStyle: 'preserve-3d' }}
-            className="w-full aspect-[1.586/1] max-h-[320px] mx-auto cursor-pointer"
+            className="w-full aspect-[1.586/1] max-h-80 mx-auto cursor-pointer"
             onClick={() => setFlipped(!flipped)}
           >
             {/* Front */}
@@ -200,8 +200,8 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
               <div className="relative z-10 h-full p-6 flex flex-col justify-between">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-11 h-8 rounded-md bg-gradient-to-br from-amber-300 to-amber-600 relative overflow-hidden shadow-lg">
-                      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+                    <div className="w-11 h-8 rounded-md bg-linear-to-br from-amber-300 to-amber-600 relative overflow-hidden shadow-lg">
+                      <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/40 to-transparent" />
                       <div className="absolute inset-1 border border-amber-800/40 rounded-sm" />
                       <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 gap-px p-0.5 opacity-40">
                         {Array.from({ length: 9 }).map((_, j) => <div key={j} className="bg-amber-900/30 rounded-[1px]" />)}
@@ -330,7 +330,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
-          className="flex items-center justify-between p-4 rounded-2xl bg-white/[0.03] border border-white/5 mt-5"
+          className="flex items-center justify-between p-4 rounded-2xl bg-white/3 border border-white/5 mt-5"
         >
           <div>
             <p className="text-[10px] text-white/40 tracking-wider">{card?.type.toUpperCase()}</p>
@@ -411,7 +411,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
               initial={{ opacity: 0, x: -12 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.35 + i * 0.06 }}
-              className="flex items-center gap-3 p-3 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/10 transition-all"
+              className="flex items-center gap-3 p-3 rounded-2xl bg-white/2 border border-white/5 hover:border-white/10 transition-all"
             >
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm ${
                 tx.amount > 0 ? 'bg-emerald-500/15 border border-emerald-500/20' : 'bg-rose-500/10 border border-rose-500/15'
@@ -488,7 +488,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
             { icon: '✈️', title: 'Travel Insurance', desc: 'Up to $500K coverage on every trip' },
             { icon: '⭐', title: 'Concierge Service', desc: '24/7 premium concierge access' },
           ].map((b, i) => (
-            <div key={i} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-amber-500/20 transition-all">
+            <div key={i} className="p-4 rounded-2xl bg-white/3 border border-white/5 hover:bg-white/6 hover:border-amber-500/20 transition-all">
               <div className="text-2xl mb-2">{b.icon}</div>
               <p className="font-bold text-white text-sm">{b.title}</p>
               <p className="text-xs text-white/50 mt-1">{b.desc}</p>
@@ -565,7 +565,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
                         <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">CONFIRM NEW PIN</label>
                         <input type="password" maxLength={4} className="w-full glass-input rounded-xl px-4 py-3 text-center text-2xl tracking-widest text-white" placeholder="• • • •" />
                       </div>
-                      <button onClick={() => setShowPinModal(false)} className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-white font-bold text-sm glow-emerald">
+                      <button onClick={() => setShowPinModal(false)} className="w-full py-3 rounded-xl bg-linear-to-r from-emerald-400 to-teal-400 text-white font-bold text-sm glow-emerald">
                         Update PIN
                       </button>
                     </motion.div>
@@ -592,7 +592,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
             >
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-xl bg-linear-to-br from-amber-400 to-yellow-500 flex items-center justify-center">
                     <CreditCard className="w-5 h-5 text-amber-950" />
                   </div>
                   <div>
@@ -613,7 +613,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
                     { name: 'Platinum', color: 'bg-slate-300 border-white', key: 'platinum' },
                     { name: 'Carbon Fiber', color: 'bg-zinc-800 border-zinc-600', key: 'carbon' },
                   ].map((c) => (
-                    <button key={c.key} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-amber-500/40 text-left transition-all">
+                    <button key={c.key} className="p-4 rounded-2xl bg-white/3 border border-white/5 hover:border-amber-500/40 text-left transition-all">
                       <div className={`w-10 h-7 rounded mb-2 ${c.color} border`} />
                       <p className="text-sm font-bold text-white">{c.name}</p>
                     </button>
@@ -631,7 +631,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
 
                 <button
                   onClick={() => setShowNewCard(false)}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm glow-amber"
+                  className="w-full py-3 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm glow-amber"
                 >
                   Confirm Order
                 </button>
@@ -687,7 +687,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney }: Props) 
                   ))}
                 </div>
                 <button onClick={() => setLimitEdit(false)}
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-400 to-indigo-500 text-white font-bold text-sm glow-blue"
+                  className="w-full py-3 rounded-xl bg-linear-to-r from-blue-400 to-indigo-500 text-white font-bold text-sm glow-blue"
                 >Save New Limit</button>
               </div>
             </motion.div>

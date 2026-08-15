@@ -125,7 +125,7 @@ export default function RichIcon({
       <div
         className={`
           ${s.wrapper} rounded-xl
-          bg-gradient-to-br ${v.bg}
+          bg-linear-to-br ${v.bg}
           border ${v.border}
           flex items-center justify-center
           relative overflow-hidden
@@ -139,13 +139,13 @@ export default function RichIcon({
         }}
       >
         {/* Glass reflection */}
-        <div className="absolute inset-0 bg-gradient-to-br from-white/20 via-transparent to-transparent opacity-50" />
+        <div className="absolute inset-0 bg-linear-to-br from-white/20 via-transparent to-transparent opacity-50" />
 
         {/* Shimmer sweep */}
         <motion.div
           animate={{ x: ['-150%', '150%'] }}
           transition={{ duration: 3, repeat: Infinity, repeatDelay: 4, ease: 'easeInOut' }}
-          className={`absolute inset-0 bg-gradient-to-r ${v.shimmer}`}
+          className={`absolute inset-0 bg-linear-to-r ${v.shimmer}`}
           style={{ width: '40%', transform: 'skewX(-15deg)' }}
         />
 
@@ -194,7 +194,7 @@ export function RichIconInline({
   void size;
   return (
     <div
-      className={`inline-flex items-center justify-center rounded-lg bg-gradient-to-br ${v.bg} border ${v.border} ${v.text} p-1.5 ${className}`}
+      className={`inline-flex items-center justify-center rounded-lg bg-linear-to-br ${v.bg} border ${v.border} ${v.text} p-1.5 ${className}`}
       style={{
         boxShadow: `inset 0 1px 0 rgba(255,255,255,0.15)`,
       }}

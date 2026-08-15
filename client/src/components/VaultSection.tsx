@@ -185,7 +185,7 @@ export default function VaultSection() {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="absolute inset-0 bg-gradient-to-br from-slate-900/40 via-slate-800/30 to-amber-900/20 backdrop-blur-[1px] rounded-3xl z-10 flex flex-col items-center justify-center gap-2 pointer-events-none"
+                    className="absolute inset-0 bg-linear-to-br from-slate-900/40 via-slate-800/30 to-amber-900/20 backdrop-blur-[1px] rounded-3xl z-10 flex flex-col items-center justify-center gap-2 pointer-events-none"
                   >
                     <motion.div
                       animate={{ scale: [1, 1.05, 1] }}
@@ -311,7 +311,7 @@ export default function VaultSection() {
                       initial={{ opacity: 0, x: -10 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: i * 0.05 }}
-                      className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5"
+                      className="flex items-center gap-3 p-3 rounded-xl bg-white/3 border border-white/5"
                     >
                       <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
                         a.amount > 0 ? 'bg-emerald-500/15 border border-emerald-500/20' : 'bg-rose-500/15 border border-rose-500/20'
@@ -390,7 +390,7 @@ export default function VaultSection() {
                         <ArrowUpRight className="w-4 h-4" /> Withdraw
                       </button>
                     </div>
-                    <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/5">
+                    <div className="p-4 rounded-2xl bg-white/3 border border-white/5">
                       <p className="text-xs text-white/40 mb-2">QUICK AMOUNTS</p>
                       <div className="grid grid-cols-4 gap-2">
                         {['$50', '$100', '$500', '$1000'].map(v => (
@@ -404,7 +404,7 @@ export default function VaultSection() {
                         ))}
                       </div>
                     </div>
-                    <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 to-transparent border border-emerald-500/20">
+                    <div className="p-4 rounded-2xl bg-linear-to-br from-emerald-500/10 to-transparent border border-emerald-500/20">
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-[10px] text-emerald-300/60 tracking-wider">PROJECTED EARNINGS</p>
@@ -499,8 +499,8 @@ export default function VaultSection() {
                   onClick={() => setAction(null)}
                   className={`w-full py-4 mt-3 rounded-xl font-bold flex items-center justify-center gap-2 ${
                     action === 'deposit'
-                      ? 'bg-gradient-to-r from-emerald-400 to-teal-400 text-emerald-950 glow-emerald'
-                      : 'bg-gradient-to-r from-rose-400 to-orange-400 text-rose-950 glow-rose'
+                      ? 'bg-linear-to-r from-emerald-400 to-teal-400 text-emerald-950 glow-emerald'
+                      : 'bg-linear-to-r from-rose-400 to-orange-400 text-rose-950 glow-rose'
                   }`}
                 >
                   <Check className="w-4 h-4" />
@@ -595,7 +595,7 @@ export default function VaultSection() {
                 )}
                 <button
                   onClick={() => setShowCreate(false)}
-                  className="w-full py-4 mt-3 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-emerald-950 font-bold glow-emerald flex items-center justify-center gap-2"
+                  className="w-full py-4 mt-3 rounded-xl bg-linear-to-r from-emerald-400 to-teal-400 text-emerald-950 font-bold glow-emerald flex items-center justify-center gap-2"
                 >
                   <Check className="w-4 h-4" /> Create Vault
                 </button>

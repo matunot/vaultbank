@@ -31,8 +31,8 @@ export default function AchievementsPanel() {
             whileHover={ach.unlocked ? { y: -4, scale: 1.02 } : {}}
             className={`relative p-4 rounded-2xl border transition-all ${
               ach.unlocked 
-                ? 'bg-gradient-to-br from-amber-50/10 to-transparent border-amber-500/20 cursor-pointer' 
-                : 'bg-white/[0.02] border-white/5'
+                ? 'bg-linear-to-br from-amber-50/10 to-transparent border-amber-500/20 cursor-pointer' 
+                : 'bg-white/2 border-white/5'
             }`}
           >
             <div className="text-2xl mb-2">{ach.icon}</div>
@@ -76,7 +76,7 @@ export default function AchievementsPanel() {
             initial={{ width: 0 }}
             animate={{ width: '67%' }}
             transition={{ delay: 0.8, duration: 1 }}
-            className="h-full rounded-full bg-gradient-to-r from-amber-400 to-yellow-500"
+            className="h-full rounded-full bg-linear-to-r from-amber-400 to-yellow-500"
             style={{ boxShadow: '0 0 10px rgba(212,175,55,0.5)' }}
           />
         </div>

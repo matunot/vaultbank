@@ -28,7 +28,7 @@ export default function BudgetSection() {
               initial={{ width: 0 }}
               animate={{ width: `${(totalSpent / totalBudget) * 100}%` }}
               transition={{ duration: 1.2, ease: 'easeOut' }}
-              className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-amber-400 to-rose-400"
+              className="h-full rounded-full bg-linear-to-r from-emerald-400 via-amber-400 to-rose-400"
               style={{ boxShadow: '0 0 10px rgba(245,158,11,0.4)' }}
             />
           </div>
@@ -57,7 +57,7 @@ export default function BudgetSection() {
                 </div>
               )}
             </div>
-            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm flex items-center gap-2 glow-amber">
+            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="px-5 py-2.5 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm flex items-center gap-2 glow-amber">
               <Plus className="w-4 h-4" /> New Budget
             </motion.button>
           </div>
@@ -103,7 +103,7 @@ export default function BudgetSection() {
                   animate={{ width: `${Math.min(pct, 100)}%` }}
                   transition={{ delay: 0.3 + i * 0.1, duration: 1, ease: 'easeOut' }}
                   className={`h-full rounded-full ${
-                    danger ? 'bg-gradient-to-r from-rose-600 to-rose-400' : warning ? 'bg-gradient-to-r from-amber-500 to-amber-400' : 'bg-gradient-to-r from-emerald-500 to-emerald-400'
+                    danger ? 'bg-linear-to-r from-rose-600 to-rose-400' : warning ? 'bg-linear-to-r from-amber-500 to-amber-400' : 'bg-linear-to-r from-emerald-500 to-emerald-400'
                   }`}
                   style={{ boxShadow: danger ? '0 0 12px rgba(239,68,68,0.5)' : warning ? '0 0 12px rgba(245,158,11,0.5)' : '0 0 12px rgba(16,185,129,0.5)' }}
                 />

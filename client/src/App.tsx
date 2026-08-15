@@ -12,6 +12,7 @@ import DashboardSection from './components/DashboardSection';
 import ErrorBoundary from './components/ErrorBoundary';
 import { TransferModal, DepositModal, PayBillModal, ConvertModal, WireModal, MobileModal, TradeModal } from './components/Modals';
 import { useAppStore } from './store';
+import { api } from './api';
 
 // Lazy load heavy sections
 const CardsSection = lazy(() => import('./components/CardsSection'));
@@ -28,7 +29,7 @@ const SecuritySection = lazy(() => import('./components/SecuritySection'));
 
 // Loading fallback
 const SectionLoader = () => (
-  <div className="flex items-center justify-center min-h-[400px]">
+  <div className="flex items-center justify-center min-h-100">
     <div className="relative">
       <div className="w-12 h-12 rounded-full border-2 border-amber-500/20 border-t-amber-500 animate-spin" />
       <div className="absolute inset-0 flex items-center justify-center">
@@ -39,13 +40,17 @@ const SectionLoader = () => (
 );
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(() => api.isAuthenticated());
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [theme, setTheme] = useState<'obsidian' | 'royal' | 'diamond'>('obsidian');
   const [active, setActive] = useState('home');
   const [modal, setModal] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const store = useAppStore();
+  const currentUser = api.getUser();
+  const currentAccount = api.getAccount();
+  const userName = currentUser ? (currentUser.full_name || currentUser.fullName || 'Guest') : 'Guest';
+  const firstName = userName.split(' ')[0] || 'Guest';
 
   const openModal = useCallback((name: string) => setModal(name), []);
   const closeModal = useCallback(() => setModal(null), []);
@@ -75,7 +80,7 @@ export default function App() {
       <div className="fixed inset-0 pointer-events-none will-change-transform z-0">
         <div className="diamond-aura gold -top-32 left-[12%] w-136 h-136" />
         <div className="diamond-aura diamond top-[8%] right-[6%] w-120 h-120" style={{ animationDelay: '1.5s' }} />
-        <div className="diamond-aura purple -bottom-40 right-[22%] w-144 h-144" style={{ animationDelay: '3s' }} />
+        <div className="diamond-aura purple -bottom-40 right-[22%] w-xl h-144" style={{ animationDelay: '3s' }} />
         <div className="diamond-aura gold bottom-[8%] left-[2%] w-88 h-88" style={{ animationDelay: '4.5s' }} />
       </div>
 
@@ -98,7 +103,7 @@ export default function App() {
               >
                 <ErrorBoundary>
                   <Suspense fallback={<SectionLoader />}>
-                    {active === 'home' && <DashboardSection onOpenModal={openModal} />}
+                    {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
                     {active === 'vault' && <VaultSection />}
                     {active === 'swiss' && <SwissSection />}
                     {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} />}

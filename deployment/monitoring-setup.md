@@ -15,6 +15,7 @@ on:
 ```
 
 **To enable it:**
+
 1. Push the workflow file to GitHub (it's already in `.github/workflows/keep-alive.yml`)
 2. The workflow will automatically run every 10 minutes
 3. It pings both `https://vaultbank-md20.onrender.com/health` and `https://vaultbank-md20.onrender.com/`
@@ -26,7 +27,7 @@ on:
 
 UptimeRobot's free tier allows monitoring up to 50 URLs every 5 minutes:
 
-1. Create a free account at https://uptimerobot.com
+1. Create a free account at <https://uptimerobot.com>
 2. Add a new monitor:
    - **Type:** HTTPS
    - **URL:** `https://vaultbank-md20.onrender.com/health`
