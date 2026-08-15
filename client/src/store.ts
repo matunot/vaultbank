@@ -64,8 +64,8 @@ export function useAppStore() {
   const storedAccount = api.getAccount();
   const initialBalance = storedAccount?.balance ?? 0;
   const initialAvailable = storedAccount?.availableBalance ?? initialBalance;
-  const [balance, setBalance] = useState(initialBalance);
-  const [available, setAvailable] = useState(initialAvailable);
+  const [balance, setBalance] = useState<number>(initialBalance);
+  const [available, setAvailable] = useState<number>(initialAvailable);
   const [cards, setCards] = useState<Card[]>(initialCards);
   const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
   const [goals, setGoals] = useState<Goal[]>(initialGoals);

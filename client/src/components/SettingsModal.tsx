@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   X, User, Bell, Shield, Sun, Moon, LogOut,
   Check, Eye, EyeOff, Download, Trash2, Monitor, Smartphone,
-  Fingerprint, Key, Mail, Phone, MapPin, Calendar, Camera,
+  Fingerprint, Key, Mail, Phone, Calendar, Camera,
   Save,
 } from 'lucide-react';
 import { api } from '../api';
@@ -165,10 +165,10 @@ export default function SettingsModal({ isOpen, onClose, onLogout, theme, onThem
                         </div>
                       </div>
                       <div>
-                        <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">LOCATION</label>
+                        <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">ACCOUNT NUMBER</label>
                         <div className="relative">
-                          <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30" />
-                          <input defaultValue="Zürich, Switzerland" className="w-full glass-input rounded-xl pl-10 pr-4 py-3 text-sm text-white" disabled />
+                          <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/30" />
+                          <input value={accountNumber} className="w-full glass-input rounded-xl pl-10 pr-4 py-3 text-sm text-white font-mono" disabled />
                         </div>
                       </div>
                     </div>
