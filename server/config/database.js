@@ -730,74 +730,112 @@ const Transaction = {
 // SEED INITIAL DATA (Real PostgreSQL)
 // ============================================================
 const seedDemoData = async () => {
-    await db.ensureConnection();
-    
-    // Check if users already exist
-    const { rows: existingUsers } = await db.query('SELECT COUNT(*) as count FROM users');
-    if (parseInt(existingUsers[0].count) > 0) {
-        console.info('ℹ️  Users already exist, skipping seed');
+    // Demo mode: users are already in demoStore — nothing to do
+    if (isDemo) {
+        console.info('ℹ️  Demo mode active, seed data already in memory');
         return;
     }
 
-    console.info('🌱 Seeding initial data into PostgreSQL...');
+    await db.ensureConnection();
+
+    console.info('🌱 Ensuring seed users exist in PostgreSQL...');
+
+    // Check if demo/admin users already exist
+    const { rows: existingUsers } = await db.query(
+        `SELECT email FROM users WHERE email IN ($1, $2)`,
+        ['demo@vaultbank.com', 'admin@vaultbank.com']
+    );
+    const existingEmails = new Set(existingUsers.map(u => u.email));
 
     // Demo user (password: "password")
-    const demoPassHash = await bcrypt.hash('password', 12);
-    const { rows: [demoUser] } = await db.query(`
-        INSERT INTO users (email, password_hash, full_name, phone, role, subscription, kyc_status, status, email_verified)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (email) DO NOTHING
-        RETURNING *
-    `, ['demo@vaultbank.com', demoPassHash, 'Demo User', '+1234567890', 'user', 'basic', 'verified', 'active', true]);
+    let demoUser = null;
+    if (!existingEmails.has('demo@vaultbank.com')) {
+        const demoPassHash = await bcrypt.hash('password', 12);
+        const result = await db.query(`
+            INSERT INTO users (email, password_hash, full_name, phone, role, subscription, kyc_status, status, email_verified)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (email) DO NOTHING
+            RETURNING *
+        `, ['demo@vaultbank.com', demoPassHash, 'Demo User', '+1234567890', 'user', 'basic', 'verified', 'active', true]);
+        demoUser = result.rows[0] || null;
+    } else {
+        const { rows } = await db.query('SELECT * FROM users WHERE email = $1', ['demo@vaultbank.com']);
+        demoUser = rows[0] || null;
+    }
+    console.log('Demo user:', demoUser ? `✅ found (${demoUser.email})` : '⚠️ not found');
 
     // Admin user (password: "admin123")
-    const adminPassHash = await bcrypt.hash('admin123', 12);
-    const { rows: [adminUser] } = await db.query(`
-        INSERT INTO users (email, password_hash, full_name, phone, role, subscription, kyc_status, status, email_verified)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-        ON CONFLICT (email) DO NOTHING
-        RETURNING *
-    `, ['admin@vaultbank.com', adminPassHash, 'Admin User', '+1234567891', 'super_admin', 'business', 'verified', 'active', true]);
+    let adminUser = null;
+    if (!existingEmails.has('admin@vaultbank.com')) {
+        const adminPassHash = await bcrypt.hash('admin123', 12);
+        const result = await db.query(`
+            INSERT INTO users (email, password_hash, full_name, phone, role, subscription, kyc_status, status, email_verified)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            ON CONFLICT (email) DO NOTHING
+            RETURNING *
+        `, ['admin@vaultbank.com', adminPassHash, 'Admin User', '+1234567891', 'super_admin', 'business', 'verified', 'active', true]);
+        adminUser = result.rows[0] || null;
+    } else {
+        const { rows } = await db.query('SELECT * FROM users WHERE email = $1', ['admin@vaultbank.com']);
+        adminUser = rows[0] || null;
+    }
+    console.log('Admin user:', adminUser ? `✅ found (${adminUser.email})` : '⚠️ not found');
 
+    // Seed demo account + rewards (only if demo user was newly created or account missing)
     if (demoUser) {
-        // Demo account
-        await db.query(`
-            INSERT INTO accounts (user_id, account_number, account_type, account_name, currency, balance, available_balance, status, interest_rate)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            ON CONFLICT (account_number) DO NOTHING
-        `, [demoUser.id, 'VB-1000-2000-3000', 'checking', 'Primary Account', 'USD', 5230.50, 5230.50, 'active', 0.0100]);
+        const { rows: accountRows } = await db.query(
+            `SELECT id FROM accounts WHERE account_number = $1`,
+            ['VB-1000-2000-3000']
+        );
+        if (accountRows.length === 0) {
+            await db.query(`
+                INSERT INTO accounts (user_id, account_number, account_type, account_name, currency, balance, available_balance, status, interest_rate)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ON CONFLICT (account_number) DO NOTHING
+            `, [demoUser.id, 'VB-1000-2000-3000', 'checking', 'Primary Account', 'USD', 5230.50, 5230.50, 'active', 0.0100]);
+        }
 
-        // Rewards for demo user
-        await db.query(`
-            INSERT INTO rewards (user_id, points, tier, lifetime_points)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT DO NOTHING
-        `, [demoUser.id, 100, 'bronze', 100]);
-
-        // Welcome notification
-        await db.query(`
-            INSERT INTO notifications (user_id, type, title, message, read)
-            VALUES ($1, $2, $3, $4, $5)
-        `, [demoUser.id, 'success', 'Welcome to VaultBank!', 'Your account has been created successfully. Start by adding funds to your account.', false]);
+        const { rows: rewardRows } = await db.query(
+            `SELECT id FROM rewards WHERE user_id = $1`,
+            [demoUser.id]
+        );
+        if (rewardRows.length === 0) {
+            await db.query(`
+                INSERT INTO rewards (user_id, points, tier, lifetime_points)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT DO NOTHING
+            `, [demoUser.id, 100, 'bronze', 100]);
+        }
     }
 
+    // Seed admin account + rewards
     if (adminUser) {
-        // Admin account
-        await db.query(`
-            INSERT INTO accounts (user_id, account_number, account_type, account_name, currency, balance, available_balance, status, interest_rate)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            ON CONFLICT (account_number) DO NOTHING
-        `, [adminUser.id, 'VB-9999-8888-7777', 'business', 'Admin Business Account', 'USD', 0, 0, 'active', 0.0000]);
+        const { rows: accountRows } = await db.query(
+            `SELECT id FROM accounts WHERE account_number = $1`,
+            ['VB-9999-8888-7777']
+        );
+        if (accountRows.length === 0) {
+            await db.query(`
+                INSERT INTO accounts (user_id, account_number, account_type, account_name, currency, balance, available_balance, status, interest_rate)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ON CONFLICT (account_number) DO NOTHING
+            `, [adminUser.id, 'VB-9999-8888-7777', 'business', 'Admin Business Account', 'USD', 0, 0, 'active', 0.0000]);
+        }
 
-        // Rewards for admin
-        await db.query(`
-            INSERT INTO rewards (user_id, points, tier, lifetime_points)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT DO NOTHING
-        `, [adminUser.id, 2500, 'gold', 2500]);
+        const { rows: rewardRows } = await db.query(
+            `SELECT id FROM rewards WHERE user_id = $1`,
+            [adminUser.id]
+        );
+        if (rewardRows.length === 0) {
+            await db.query(`
+                INSERT INTO rewards (user_id, points, tier, lifetime_points)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT DO NOTHING
+            `, [adminUser.id, 2500, 'gold', 2500]);
+        }
     }
 
-    console.info('✅ Initial data seeded successfully into PostgreSQL');
+    console.info('✅ Seed data ensured successfully in PostgreSQL');
 };
 
 // ============================================================

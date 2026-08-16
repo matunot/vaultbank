@@ -25,7 +25,7 @@ const pool = process.env.DATABASE_URL ? new Pool({
         : false,
     max: 10,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000,
+    connectionTimeoutMillis: 30000,
 }) : null;
 
 if (pool) {
@@ -48,7 +48,8 @@ async function ensureConnection() {
         console.info('✅ PostgreSQL database connection established');
     } catch (err) {
         console.error('❌ Failed to connect to PostgreSQL:', err.message);
-        // Don't throw — allow demo fallback in the calling code
+        // Throw so calling code can fall back to demo mode
+        throw err;
     }
 }
 

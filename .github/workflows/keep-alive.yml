@@ -6,6 +6,10 @@ name: Keep Render Backend Alive + Health Bot
     - cron: '*/10 * * * *'
   workflow_dispatch: # Allow manual triggering
 
+permissions:
+  issues: write
+  contents: read
+
 jobs:
   ping-backend:
     name: Ping VaultBank Backend
@@ -60,88 +64,74 @@ jobs:
 
       - name: Open GitHub Issue if backend is down
         if: steps.health.outputs.status != '200' || steps.login_test.outputs.status != '200'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data: existing } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: ['🚨 outage'],
-            });
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEALTH_STATUS="${{ steps.health.outputs.status }}"
+          LOGIN_STATUS="${{ steps.login_test.outputs.status }}"
 
-            const healthStatus = '${{ steps.health.outputs.status }}';
-            const loginStatus = '${{ steps.login_test.outputs.status }}';
+          # Check if an outage issue is already open
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" --state open --label "🚨 outage" --json title 2>/dev/null || echo "[]")
+          ALREADY_OPEN=$(echo "$EXISTING" | grep -c "VaultBank Backend Outage" || true)
 
-            // Only open a NEW issue if an outage issue isn't already open
-            const alreadyOpen = existing.some(issue =>
-              issue.title.includes('🚨 VaultBank Backend Outage')
-            );
+          if [ "$ALREADY_OPEN" -gt 0 ]; then
+            echo "⚠️ Outage issue already open — skipping duplicate."
+          else
+            BODY="## 🚨 VaultBank Backend Outage Detected
 
-            if (alreadyOpen) {
-              console.log('⚠️ Outage issue already open — skipping duplicate.');
-            } else {
-              const body = [
-                '## 🚨 VaultBank Backend Outage Detected',
-                '',
-                'The health-bot detected that the backend is DOWN or misbehaving.',
-                '',
-                '| Check | Status |',
-                '|-------|--------|',
-                `| Health Check | \`${healthStatus || 'N/A'}\` |`,
-                `| Login Test | \`${loginStatus || 'N/A'}\` |`,
-                '',
-                '**Possible causes:**',
-                '- Render free tier might have exceeded its monthly hours',
-                '- Backend deployment failed or is crashing',
-                '- Database (Neon) connection issue',
-                '- Rate limiting (too many requests)',
-                '',
-                '**Next steps:**',
-                '1. Check Render dashboard: https://dashboard.render.com',
-                '2. View backend logs for errors',
-                '3. Check Neon database status: https://console.neon.tech',
-                '',
-                'This issue was auto-created by the keep-alive health bot 🤖',
-              ].join('\n');
+            The health-bot detected that the backend is DOWN or misbehaving.
 
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: '🚨 VaultBank Backend Outage Detected',
-                body,
-                labels: ['🚨 outage'],
-              });
+            | Check | Status |
+            |-------|--------|
+            | Health Check | \`${HEALTH_STATUS:-N/A}\` |
+            | Login Test | \`${LOGIN_STATUS:-N/A}\` |
 
-              console.log('✅ Outage issue created.');
-            }
+            **Possible causes:**
+            - Render free tier might have exceeded its monthly hours
+            - Backend deployment failed or is crashing
+            - Database (Neon) connection issue
+            - Rate limiting (too many requests)
+
+            **Next steps:**
+            1. Check Render dashboard: https://dashboard.render.com
+            2. View backend logs for errors
+            3. Check Neon database status: https://console.neon.tech
+
+            This issue was auto-created by the keep-alive health bot 🤖"
+
+            gh issue create --repo "${{ github.repository }}" \
+              --title "🚨 VaultBank Backend Outage Detected" \
+              --body "$BODY" \
+              --label "🚨 outage"
+            echo "✅ Outage issue created."
+          fi
 
       - name: Close outage issue when backend recovers
         if: steps.health.outputs.status == '200' && steps.login_test.outputs.status == '200'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const { data: openIssues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: ['🚨 outage'],
-            });
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Find any open outage issues
+          ISSUES=$(gh issue list --repo "${{ github.repository }}" --state open --label "🚨 outage" --json number,title 2>/dev/null || echo "[]")
 
-            for (const issue of openIssues) {
-              if (issue.title.includes('🚨 VaultBank Backend Outage')) {
-                await github.rest.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issue.number,
-                  body: '✅ Health-bot: Backend is healthy again. Closing this outage issue.',
-                });
-                await github.rest.issues.update({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: issue.number,
-                  state: 'closed',
-                });
-                console.log(`✅ Closed outage issue #${issue.number}`);
-              }
-            }
+          if [ -n "$ISSUES" ] && [ "$ISSUES" != "[]" ]; then
+            echo "$ISSUES" | gh run --help > /dev/null 2>&1 || true
+            # Extract and close issues matching outage title
+            echo "$ISSUES" | python3 -c "
+            import json, sys
+            try:
+              issues = json.load(sys.stdin)
+            except:
+              issues = []
+            for issue in issues:
+              if 'VaultBank Backend Outage' in issue.get('title', ''):
+                print(issue['number'])
+            " | while read num; do
+              if [ -n "$num" ]; then
+                gh issue close --repo "${{ github.repository }}" "$num" --comment "✅ Health-bot: Backend is healthy again. Closing this outage issue."
+                echo "✅ Closed outage issue #$num"
+              fi
+            done
+          else
+            echo "No open outage issues to close."
+          fi
