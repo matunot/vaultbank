@@ -20,6 +20,7 @@ const amlRoutes = require('./routes/aml');
 const reportsRoutes = require('./routes/reports');
 const accountRoutes = require('./routes/accounts');
 const stripePaymentRoutes = require('./routes/stripe-payments');
+const anomaliesRoutes = require('./routes/anomalies');
 
 // Import middleware
 const { generalLimiter } = require('./middleware/rateLimiter');
@@ -27,6 +28,7 @@ const { logAction } = require('./middleware/audit');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const startTime = Date.now();
 
 // ─── Security Middleware ────────────────────────────────────────────────────
 app.use(helmet({
@@ -69,13 +71,35 @@ app.use((req, res, next) => {
 app.get('/health', (req, res) => {
     return res.status(200).json({
         status: 'ok',
-        uptime: process.uptime(),
+        uptime: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         version: '1.0.0',
         environment: process.env.NODE_ENV || 'development',
-        memory: process.memoryUsage(),
+        memory: typeof process.memoryUsage === 'function' ? process.memoryUsage() : {},
         message: '🏦 VaultBank API is running!'
     });
+});
+
+// ─── Input Sanitization ──────────────────────────────────────────────────────
+// Sanitize all request bodies and query parameters BEFORE routes so XSS
+// payloads are stripped from every endpoint, including auth.
+app.use((req, res, next) => {
+    const sanitize = (obj) => {
+        if (!obj || typeof obj !== 'object') return;
+        for (const key in obj) {
+            if (typeof obj[key] === 'string') {
+                // Remove potential XSS/script injection
+                obj[key] = obj[key]
+                    .trim()
+                    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+            } else if (typeof obj[key] === 'object') {
+                sanitize(obj[key]);
+            }
+        }
+    };
+    sanitize(req.body);
+    sanitize(req.query);
+    next();
 });
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
@@ -90,7 +114,6 @@ app.use('/', adminRoutes);
 app.use('/', paymentsRoutes);
 app.use('/', amlRoutes);
 // Register anomalies route
-const anomaliesRoutes = require('./routes/anomalies');
 app.use('/', anomaliesRoutes);
 // Register compliance reports route
 app.use('/', reportsRoutes);
@@ -256,26 +279,6 @@ app.get('/api', (req, res) => {
     });
 });
 
-// ─── Input Sanitization ──────────────────────────────────────────────────────
-app.use((req, res, next) => {
-    const sanitize = (obj) => {
-        if (!obj || typeof obj !== 'object') return;
-        for (const key in obj) {
-            if (typeof obj[key] === 'string') {
-                // Remove potential XSS/script injection
-                obj[key] = obj[key]
-                    .trim()
-                    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
-            } else if (typeof obj[key] === 'object') {
-                sanitize(obj[key]);
-            }
-        }
-    };
-    sanitize(req.body);
-    sanitize(req.query);
-    next();
-});
-
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use((req, res) => {
     return res.status(404).json({
@@ -328,12 +331,11 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // ─── Ensure Database Connection ───────────────────────────────────────────────
 const { ensureConnection } = require('./config/db');
-const dbConfig = require('./config/db');
 const { seedDemoData } = require('./config/database');
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 async function startServer() {
-    // Wait for MongoDB to start
+    // Wait for PostgreSQL database connection
     try {
         await ensureConnection();
         console.info('✅ Database connection established');
