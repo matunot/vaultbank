@@ -43,7 +43,7 @@ const validatePassword = (password) => {
 // ============================================================
 // POST /api/auth/signup — Register new user
 // ============================================================
-router.post('/api/auth/signup', async (req, res) => {
+const handleSignup = async (req, res) => {
     try {
         const { email, password, fullName, phone } = req.body;
 
@@ -144,12 +144,16 @@ router.post('/api/auth/signup', async (req, res) => {
             message: 'Registration failed. Please try again.'
         });
     }
-});
+};
+
+// Register both the canonical and legacy (no /api/auth prefix) signup routes
+router.post('/api/auth/signup', handleSignup);
+router.post('/signup', handleSignup);
 
 // ============================================================
 // POST /api/auth/login — Sign in
 // ============================================================
-router.post('/api/auth/login', async (req, res) => {
+const handleLogin = async (req, res) => {
     try {
         const { email, password } = req.body;
 
@@ -274,7 +278,11 @@ router.post('/api/auth/login', async (req, res) => {
             message: 'Login failed. Please try again.'
         });
     }
-});
+};
+
+// Register both the canonical and legacy (no /api/auth prefix) login routes
+router.post('/api/auth/login', handleLogin);
+router.post('/login', handleLogin);
 
 // ============================================================
 // POST /api/auth/admin/login — Admin login
@@ -535,25 +543,71 @@ router.post('/api/auth/logout', authenticateToken, async (req, res) => {
 // ============================================================
 // Legacy route aliases (backward compatibility)
 // ============================================================
-router.post('/signup', async (req, res) => {
-    // Forward to the main signup handler
-    req.url = '/api/auth/signup';
-    router.handle(req, res);
-});
+// GET /auth/me and GET /api/profile forward to the profile handler.
+// These use a direct handler reference (not router.handle) to avoid
+// the "argument callback is required" error from re-dispatching.
+const handleMe = async (req, res) => {
+    try {
+        const user = await findUserById(req.user.id);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'User not found.'
+            });
+        }
 
-router.post('/login', async (req, res) => {
-    req.url = '/api/auth/login';
-    router.handle(req, res);
-});
+        const account = await findAccountByUserId(user.id);
+        const rewards = await getRewards(user.id);
 
-router.get('/auth/me', authenticateToken, async (req, res) => {
-    req.url = '/api/auth/me';
-    router.handle(req, res);
-});
+        res.json({
+            success: true,
+            user: {
+                id: user.id,
+                email: user.email,
+                fullName: user.full_name,
+                phone: user.phone,
+                dateOfBirth: user.date_of_birth,
+                address: user.address,
+                role: user.role,
+                subscription: user.subscription,
+                kycStatus: user.kyc_status,
+                emailVerified: user.email_verified,
+                phoneVerified: user.phone_verified,
+                twoFAEnabled: user.two_fa_enabled,
+                stripeCustomerId: user.stripe_customer_id,
+                createdAt: user.created_at,
+                lastLoginAt: user.last_login_at
+            },
+            account: account ? {
+                id: account.id,
+                accountNumber: account.account_number,
+                accountType: account.account_type,
+                accountName: account.account_name,
+                balance: parseFloat(account.balance),
+                availableBalance: parseFloat(account.available_balance),
+                heldBalance: parseFloat(account.held_balance),
+                currency: account.currency,
+                status: account.status,
+                dailyTransferLimit: parseFloat(account.daily_transfer_limit),
+                monthlyTransferLimit: parseFloat(account.monthly_transfer_limit),
+                openedAt: account.opened_at
+            } : null,
+            rewards: {
+                points: rewards.points,
+                tier: rewards.tier,
+                lifetimePoints: rewards.lifetime_points
+            }
+        });
+    } catch (error) {
+        console.error('Get profile error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Failed to fetch profile.'
+        });
+    }
+};
 
-router.get('/api/profile', authenticateToken, async (req, res) => {
-    req.url = '/api/auth/me';
-    router.handle(req, res);
-});
+router.get('/auth/me', authenticateToken, handleMe);
+router.get('/api/profile', authenticateToken, handleMe);
 
 module.exports = router;

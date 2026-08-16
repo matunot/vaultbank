@@ -19,7 +19,62 @@ try {
 }
 
 const db = require('./db');
- const isDemo = db.isDemo;
+const isDemo = db.isDemo;
+
+// ============================================================
+// UNIQUE ACCOUNT NUMBER GENERATION
+// ============================================================
+/**
+ * Generates a unique VaultBank account number in the format:
+ *   VB-XXXX-XXXX-XXXX-C
+ * where the final C is a check digit (0-9) computed from the
+ * numeric portion. Every new account gets a genuinely unique
+ * number — collisions are detected and the number is regenerated.
+ */
+function generateRawAccountNumber() {
+    const group = () => Math.floor(1000 + Math.random() * 9000); // 1000-9999
+    const a = group();
+    const b = group();
+    const c = group();
+    const numeric = `${a}${b}${c}`; // 12-digit string
+    // Simple Luhn-like check digit so the number is self-validating
+    let sum = 0;
+    for (let i = 0; i < numeric.length; i++) {
+        const digit = parseInt(numeric[i], 10);
+        if (i % 2 === 0) {
+            const doubled = digit * 2;
+            sum += doubled > 9 ? doubled - 9 : doubled;
+        } else {
+            sum += digit;
+        }
+    }
+    const checkDigit = (10 - (sum % 10)) % 10;
+    return `VB-${a}-${b}-${c}-${checkDigit}`;
+}
+
+const accountNumberExists = async (accountNumber) => {
+    if (isDemo) {
+        return demoStore.accounts.some(a => a.account_number === accountNumber);
+    }
+    try {
+        await db.ensureConnection();
+        const account = await db.Account.findOne({ account_number: accountNumber });
+        return !!account;
+    } catch (err) {
+        console.error('accountNumberExists error:', err.message);
+        return false;
+    }
+};
+
+const generateUniqueAccountNumber = async () => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+        const candidate = generateRawAccountNumber();
+        const exists = await accountNumberExists(candidate);
+        if (!exists) return candidate;
+    }
+    // Extremely unlikely fallback: append timestamp to guarantee uniqueness
+    return `VB-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+};
 
 // ============================================================
 // DEMO STORE (Fallback when no DATABASE_URL)
@@ -205,12 +260,11 @@ const createUser = async ({ email, password, fullName, phone }) => {
         };
         demoStore.users.push(user);
 
+        const uniqueAccountNumber = await generateUniqueAccountNumber();
         const account = {
             id: 'account-' + Date.now(),
             user_id: user.id,
-            account_number: 'VB-' + Math.floor(1000 + Math.random() * 9000) + '-' +
-                            Math.floor(1000 + Math.random() * 9000) + '-' +
-                            Math.floor(1000 + Math.random() * 9000),
+            account_number: uniqueAccountNumber,
             account_type: 'checking',
             account_name: 'Primary Account',
             currency: 'USD',
@@ -256,11 +310,8 @@ const createUser = async ({ email, password, fullName, phone }) => {
 
     const userId = user.id;
 
-    // Auto-create bank account
-    const accountNumber = 'VB-' +
-        Math.floor(1000 + Math.random() * 9000) + '-' +
-        Math.floor(1000 + Math.random() * 9000) + '-' +
-        Math.floor(1000 + Math.random() * 9000);
+    // Auto-create bank account with guaranteed-unique account number
+    const accountNumber = await generateUniqueAccountNumber();
 
     await db.Account.create({
         user_id: userId,
@@ -348,12 +399,11 @@ const findAccountByNumber = async (accountNumber) => {
 
 const createAccount = async (userId, accountType = 'checking', currency = 'USD') => {
     if (isDemo) {
+        const uniqueAccountNumber = await generateUniqueAccountNumber();
         const account = {
             id: 'account-' + Date.now(),
             user_id: userId,
-            account_number: 'VB-' + Math.floor(1000 + Math.random() * 9000) + '-' +
-                            Math.floor(1000 + Math.random() * 9000) + '-' +
-                            Math.floor(1000 + Math.random() * 9000),
+            account_number: uniqueAccountNumber,
             account_type: accountType,
             account_name: accountType.charAt(0).toUpperCase() + accountType.slice(1) + ' Account',
             currency,
@@ -369,10 +419,7 @@ const createAccount = async (userId, accountType = 'checking', currency = 'USD')
         return account;
     }
     await db.ensureConnection();
-    const accountNumber = 'VB-' +
-        Math.floor(1000 + Math.random() * 9000) + '-' +
-        Math.floor(1000 + Math.random() * 9000) + '-' +
-        Math.floor(1000 + Math.random() * 9000);
+    const accountNumber = await generateUniqueAccountNumber();
     const account = await db.Account.create({
         user_id: userId,
         account_number: accountNumber,
@@ -448,10 +495,11 @@ const getTransactions = async (userId, { limit = 50, offset = 0, type, startDate
     if (startDate) filter.created_at = { ...filter.created_at, $gte: new Date(startDate) };
     if (endDate) filter.created_at = { ...filter.created_at, $lte: new Date(endDate) };
 
-    const txns = await db.Transaction.find(filter)
-        .sort({ created_at: -1 })
-        .skip(offset)
-        .limit(limit);
+    // The PostgreSQL compat layer (db.Transaction.find) already applies
+    // ORDER BY created_at DESC, LIMIT and OFFSET via the options object.
+    // Do NOT chain .sort()/.skip()/.limit() — those are Mongoose-only and
+    // will throw on the plain-array result returned by the pg layer.
+    const txns = await db.Transaction.find(filter, { limit, skip: offset });
     return txns;
 };
 
@@ -498,12 +546,11 @@ const getTransfers = async (userId, { limit = 50, offset = 0 } = {}) => {
         return transfers.slice(offset, offset + limit);
     }
     await db.ensureConnection();
+    // The pg compat layer (db.Transfer.find) applies ORDER BY created_at DESC,
+    // LIMIT and OFFSET via the options object — do not chain Mongoose methods.
     const transfers = await db.Transfer.find({
         $or: [{ from_user_id: userId }, { to_user_id: userId }]
-    })
-        .sort({ created_at: -1 })
-        .skip(offset)
-        .limit(limit);
+    }, { limit, skip: offset });
 
     // Enrich with user names
     const enriched = await Promise.all(transfers.map(async (t) => {
@@ -571,9 +618,9 @@ const getNotifications = async (userId, { limit = 20, unreadOnly = false } = {})
     await db.ensureConnection();
     const filter = { user_id: userId };
     if (unreadOnly) filter.read = false;
-    const notifs = await db.Notification.find(filter)
-        .sort({ created_at: -1 })
-        .limit(limit);
+    // The pg compat layer (db.Notification.find) applies ORDER BY created_at DESC
+    // and LIMIT via the options object — do not chain Mongoose methods.
+    const notifs = await db.Notification.find(filter, { limit });
     return notifs;
 };
 
@@ -858,6 +905,8 @@ module.exports = {
     findAccountByNumber,
     createAccount,
     updateAccountBalance,
+    generateUniqueAccountNumber,
+    generateRawAccountNumber,
 
     // Transaction functions
     createTransaction,

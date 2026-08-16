@@ -15,7 +15,7 @@ import QuickContacts from './QuickContacts';
 import AchievementsPanel from './AchievementsPanel';
 import SmartInsights from './SmartInsights';
 import { useAppStore } from '../store';
-import { useAccountData } from '../hooks/useAccountData';
+import { useAccountData, TransactionData } from '../hooks/useAccountData';
 
 const Section = memo(({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) => (
   <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}>
@@ -31,10 +31,25 @@ interface Props {
   accountNumber?: string;
 }
 
+function mapTransaction(tx: TransactionData, index: number) {
+  return {
+    id: typeof tx.id === 'number' ? tx.id : index,
+    name: tx.description || 'Transaction',
+    cat: (tx.category || 'Other').charAt(0).toUpperCase() + (tx.category || 'other').slice(1),
+    amount: tx.type === 'debit' ? -Math.abs(tx.amount) : Math.abs(tx.amount),
+    date: tx.date ? new Date(tx.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Today',
+    icon: tx.type === 'credit' ? (tx.category === 'income' ? '💰' : '⬇️') : '💸',
+    gem: tx.type === 'credit' ? 'emerald' : 'ruby',
+  };
+}
+
 const DashboardSection = memo(function DashboardSection({ onOpenModal, userName = 'Guest', accountNumber }: Props) {
   const store = useAppStore();
-  const { balance, account, loading } = useAccountData();
-  const income = store.transactions.filter((t) => t.amount > 0).reduce((sum, t) => sum + t.amount, 0);
+  const { balance, account, transactions: apiTransactions, loading } = useAccountData();
+  const realTransactions = apiTransactions.length
+    ? apiTransactions.map(mapTransaction)
+    : store.transactions;
+  const income = realTransactions.filter((t) => t.amount > 0).reduce((sum, t) => sum + t.amount, 0);
   const displayAccountNumber = accountNumber || account?.accountNumber;
   const displayBalance = balance?.total ?? 0;
 
@@ -89,7 +104,7 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal, userName 
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div className="lg:col-span-2">
-          <Section delay={0.2}><Transactions transactions={store.transactions} /></Section>
+          <Section delay={0.2}><Transactions transactions={realTransactions} loading={loading} /></Section>
         </div>
         <Section delay={0.25}><SpendingPanel /></Section>
       </div>

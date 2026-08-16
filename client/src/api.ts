@@ -3,7 +3,10 @@
  * Handles all communication with the backend server
  */
 
-const API_BASE = 'https://vaultbank-md20.onrender.com';
+// Use local dev server during development, production URL otherwise.
+// Local dev: Vite proxies /api to localhost:5000. To connect to a local backend
+// directly, set VITE_API_URL=http://localhost:5000.
+const API_BASE = (import.meta.env?.VITE_API_URL as string) || (import.meta.env?.DEV ? '' : 'https://vaultbank-md20.onrender.com');
 
 interface AuthResponse {
   success: boolean;
