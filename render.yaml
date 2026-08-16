@@ -11,7 +11,7 @@ services:
     # or the scripts/keep-alive.js script) - a self-ping on Render won't work because
     # a spun-down server can't ping itself.
     plan: free
-    runtime: nodejs20
+    runtime: nodejs24
     buildCommand: npm install
     startCommand: node index.js
     workingDirectory: server
