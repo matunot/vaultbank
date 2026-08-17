@@ -14,7 +14,6 @@ import CalendarEvents from './CalendarEvents';
 import QuickContacts from './QuickContacts';
 import AchievementsPanel from './AchievementsPanel';
 import SmartInsights from './SmartInsights';
-import { useAppStore } from '../store';
 import { useAccountData, TransactionData } from '../hooks/useAccountData';
 
 const Section = memo(({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) => (
@@ -31,7 +30,17 @@ interface Props {
   accountNumber?: string;
 }
 
-function mapTransaction(tx: TransactionData, index: number) {
+interface MappedTransaction {
+  id: number;
+  name: string;
+  cat: string;
+  amount: number;
+  date: string;
+  icon: string;
+  gem: string;
+}
+
+function mapTransaction(tx: TransactionData, index: number): MappedTransaction {
   return {
     id: typeof tx.id === 'number' ? tx.id : index,
     name: tx.description || 'Transaction',
@@ -44,14 +53,24 @@ function mapTransaction(tx: TransactionData, index: number) {
 }
 
 const DashboardSection = memo(function DashboardSection({ onOpenModal, userName = 'Guest', accountNumber }: Props) {
-  const store = useAppStore();
-  const { balance, account, transactions: apiTransactions, loading } = useAccountData();
-  const realTransactions = apiTransactions.length
-    ? apiTransactions.map(mapTransaction)
-    : store.transactions;
-  const income = realTransactions.filter((t) => t.amount > 0).reduce((sum, t) => sum + t.amount, 0);
-  const displayAccountNumber = accountNumber || account?.accountNumber;
-  const displayBalance = balance?.total ?? 0;
+  const { account, transactions, balance, loading } = useAccountData();
+
+  const realTransactions: MappedTransaction[] = transactions.map(mapTransaction);
+
+  // Derive real income/expenses from genuine transactions only
+  const income = realTransactions
+    .filter((t) => t.amount > 0)
+    .reduce((sum, t) => sum + t.amount, 0);
+  const expenses = realTransactions
+    .filter((t) => t.amount < 0)
+    .reduce((sum, t) => sum + Math.abs(t.amount), 0);
+
+  // Real authenticated user's first name
+  const firstName = userName ? userName.trim().split(/\s+/)[0] : '';
+  // Derived real-time date info
+  const now = new Date();
+  const dayLabel = now.toLocaleDateString('en-US', { weekday: 'long' });
+  const dateLabel = now.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
 
   return (
     <div className="space-y-5">
@@ -61,21 +80,21 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal, userName 
           <div>
             <div className="flex items-center gap-3 mb-1">
               <h1 className="font-display text-3xl lg:text-5xl text-white tracking-tight">
-                Good <span className="text-gold">evening</span>, {userName}
+                Good <span className="text-gold">evening</span>, {firstName}
               </h1>
               <motion.div animate={{ rotate: 360 }} transition={{ duration: 12, repeat: Infinity, ease: 'linear' }} className="hidden md:block">
                 <Sparkles className="w-5 h-5 lg:w-6 lg:h-6 text-amber-400/60" />
               </motion.div>
             </div>
             <p className="text-sm text-white/40">
-              Tuesday, December 24 · Your portfolio is up <span className="text-emerald-400 font-semibold">14.2%</span> this month
+              {dayLabel}, {dateLabel} · {realTransactions.length} transaction{realTransactions.length === 1 ? '' : 's'} this account
             </p>
           </div>
           <motion.button
             whileHover={{ scale: 1.03, y: -2 }}
             whileTap={{ scale: 0.97 }}
             onClick={() => onOpenModal('send')}
-            className="hidden lg:flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm shadow-lg glow-amber"
+            className="hidden lg:flex items-center gap-2 px-5 py-2.5 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm shadow-lg glow-amber"
           >
             <Send className="w-4 h-4" /> Quick Send
           </motion.button>
@@ -84,10 +103,11 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal, userName 
 
       <Section delay={0.1}>
         <HeroBalance
-          balance={displayBalance}
-          accountNumber={displayAccountNumber}
+          balance={balance?.total ?? 0}
+          accountNumber={accountNumber || account?.accountNumber}
           loading={loading}
           income={income}
+          expenses={expenses}
         />
       </Section>
 
@@ -106,18 +126,18 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal, userName 
         <div className="lg:col-span-2">
           <Section delay={0.2}><Transactions transactions={realTransactions} loading={loading} /></Section>
         </div>
-        <Section delay={0.25}><SpendingPanel /></Section>
+        <SpendingPanel />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Section delay={0.3}><SavingsGoals goals={store.goals} onAddToGoal={store.addToGoal} /></Section>
-        <Section delay={0.35}><BudgetPanel budget={store.budget} /></Section>
+        <Section delay={0.3}><SavingsGoals goals={[]} onAddToGoal={() => {}} /></Section>
+        <Section delay={0.35}><BudgetPanel budget={[]} /></Section>
         <Section delay={0.4}><CurrencyConverter /></Section>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
         <div className="lg:col-span-2">
-          <Section delay={0.45}><CardsPanel cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /></Section>
+          <Section delay={0.45}><CardsPanel cards={[]} onLockCard={() => {}} formatMoney={(amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)} /></Section>
         </div>
         <Section delay={0.5}><InvestmentsPanel /></Section>
         <Section delay={0.55}><CalendarEvents /></Section>

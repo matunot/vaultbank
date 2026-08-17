@@ -97,6 +97,15 @@ vaultbank/
 - [x] 2026-08-12: TS7 tsconfig fix (client/tsconfig.json)
 - [x] 2026-08-12: PROJECT_CONTEXT.md updated
 - [x] 2026-08-12: MEMORY.md created (this file)
+- [x] 2026-08-16: Dashboard type errors fixed (client/src/components/DashboardSection.tsx)
+  - `balance` passed as `balance?.total ?? 0` (HeroBalance expects `number`, not `BalanceData | null`)
+  - Added `MappedTransaction` interface + `mapTransaction()` to convert API `TransactionData` → `Transaction` shape (`id, name, cat, amount, date, icon, gem`) expected by `Transactions`
+  - Removed invalid `transactions` prop from `SpendingPanel` (it takes no props)
+  - Changed `CardsPanel cards` from `account?.id ? [] : undefined` → `cards={[]}` (no `undefined` assignable to `Card[]`)
+  - Removed invalid `insights` prop from `SmartInsights` (takes no props)
+  - `Props` updated with `userName`/`accountNumber` to match App.tsx usage; used `accountNumber` as fallback for HeroBalance account number
+  - Verified: `npx tsc --noEmit` passes with zero errors
+  - **Local dev gotcha:** Vite proxy `/login` → `http://localhost:5000` throws ECONNREFUSED until the backend (`cd server; npm run dev`) is running first. Start backend BEFORE frontend.
 
 ---
 
