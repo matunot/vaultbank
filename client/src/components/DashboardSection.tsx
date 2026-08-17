@@ -14,6 +14,7 @@ import CalendarEvents from './CalendarEvents';
 import QuickContacts from './QuickContacts';
 import AchievementsPanel from './AchievementsPanel';
 import SmartInsights from './SmartInsights';
+import { useAppStore } from '../store';
 import { useAccountData, TransactionData } from '../hooks/useAccountData';
 
 const Section = memo(({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) => (
@@ -53,9 +54,12 @@ function mapTransaction(tx: TransactionData, index: number): MappedTransaction {
 }
 
 const DashboardSection = memo(function DashboardSection({ onOpenModal, userName = 'Guest', accountNumber }: Props) {
+  const store = useAppStore();
   const { account, transactions, balance, loading } = useAccountData();
 
-  const realTransactions: MappedTransaction[] = transactions.map(mapTransaction);
+  const realTransactions: MappedTransaction[] = transactions.length
+    ? transactions.map(mapTransaction)
+    : (store.transactions as MappedTransaction[]);
 
   // Derive real income/expenses from genuine transactions only
   const income = realTransactions
@@ -130,14 +134,14 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal, userName 
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Section delay={0.3}><SavingsGoals goals={[]} onAddToGoal={() => {}} /></Section>
-        <Section delay={0.35}><BudgetPanel budget={[]} /></Section>
+        <Section delay={0.3}><SavingsGoals goals={store.goals} onAddToGoal={store.addToGoal} /></Section>
+        <Section delay={0.35}><BudgetPanel budget={store.budget} /></Section>
         <Section delay={0.4}><CurrencyConverter /></Section>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
         <div className="lg:col-span-2">
-          <Section delay={0.45}><CardsPanel cards={[]} onLockCard={() => {}} formatMoney={(amount: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount)} /></Section>
+          <Section delay={0.45}><CardsPanel cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /></Section>
         </div>
         <Section delay={0.5}><InvestmentsPanel /></Section>
         <Section delay={0.55}><CalendarEvents /></Section>
