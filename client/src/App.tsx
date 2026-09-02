@@ -1,6 +1,6 @@
-import { useState, useCallback, lazy, Suspense } from 'react';
+import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield } from 'lucide-react';
+import { Shield, PartyPopper } from 'lucide-react';
 
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
@@ -10,7 +10,7 @@ import Header from './components/Header';
 import MarketTicker from './components/MarketTicker';
 import DashboardSection from './components/DashboardSection';
 import ErrorBoundary from './components/ErrorBoundary';
-import { TransferModal, DepositModal, PayBillModal, ConvertModal, WireModal, MobileModal, TradeModal } from './components/Modals';
+import { TransferModal, DepositModal, PayBillModal, ConvertModal, WireModal, MobileModal, TradeModal, WithdrawModal } from './components/Modals';
 import { useAppStore } from './store';
 import { api } from './api';
 
@@ -55,6 +55,21 @@ export default function App() {
   const openModal = useCallback((name: string) => setModal(name), []);
   const closeModal = useCallback(() => setModal(null), []);
 
+  // Handle the REAL return from Stripe Checkout (?deposit=success / cancelled)
+  const [depositBanner, setDepositBanner] = useState<string | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('deposit') === 'success') {
+      setDepositBanner('Deposit confirmed — REAL funds have been added to your account.');
+      window.history.replaceState({}, '', window.location.pathname);
+      setTimeout(() => setDepositBanner(null), 8000);
+    } else if (params.get('deposit') === 'cancelled') {
+      setDepositBanner('Deposit cancelled — no money was moved.');
+      window.history.replaceState({}, '', window.location.pathname);
+      setTimeout(() => setDepositBanner(null), 6000);
+    }
+  }, []);
+
   const handleSend = useCallback(async (recipient: string, amount: number, note?: string) => {
     await store.sendMoney(recipient, amount, note);
     closeModal();
@@ -91,6 +106,23 @@ export default function App() {
 
         <main className="flex-1 overflow-y-auto h-screen min-w-0">
           <Header theme={theme} onThemeChange={setTheme} />
+
+          {/* Stripe deposit return banner */}
+          <AnimatePresence>
+            {depositBanner && (
+              <motion.div
+                initial={{ opacity: 0, y: -16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -16 }}
+                className="px-5 lg:px-8 pt-4"
+              >
+                <div className="flex items-center gap-3 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
+                  <PartyPopper className="w-5 h-5 text-emerald-300 shrink-0" />
+                  <p className="text-sm font-semibold text-emerald-200">{depositBanner}</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <div className="px-5 lg:px-8 pb-12">
             <AnimatePresence mode="wait">
@@ -138,10 +170,13 @@ export default function App() {
         <TransferModal isOpen={true} onClose={closeModal} onSend={handleSend} />
       )}
       {modal === 'deposit' && (
-        <DepositModal isOpen={true} onClose={closeModal} onDeposit={store.depositMoney} />
+        <DepositModal isOpen={true} onClose={closeModal} />
       )}
       {modal === 'bill' && (
         <PayBillModal isOpen={true} onClose={closeModal} onPayBill={store.payBill} />
+      )}
+      {modal === 'withdraw' && (
+        <WithdrawModal isOpen={true} onClose={closeModal} />
       )}
       {modal === 'convert' && (
         <ConvertModal isOpen={true} onClose={closeModal} />

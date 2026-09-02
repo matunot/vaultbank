@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Plus, Receipt, ArrowRightLeft, Globe, Smartphone, CheckCircle2, Loader2, TrendingUp, UserSearch } from 'lucide-react';
+import { X, Send, Plus, Receipt, ArrowRightLeft, Globe, Smartphone, CheckCircle2, Loader2, TrendingUp, UserSearch, CreditCard, Zap, Banknote } from 'lucide-react';
 import RichIcon from './RichIcon';
 import Avatar from './Avatar';
 import { api } from '../api';
@@ -235,22 +235,89 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
   );
 }
 
-export function DepositModal({ isOpen, onClose, onDeposit }: ModalProps & { onDeposit: (amount: number) => Promise<void> }) {
+export function DepositModal({ isOpen, onClose }: ModalProps) {
+  const [mode, setMode] = useState<'card' | 'instant'>('card');
   const [amount, setAmount] = useState('');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [stripeMode, setStripeMode] = useState<'live' | 'demo' | null>(null);
+
+  // Detect whether real Stripe keys are configured (LIVE vs SANDBOX)
+  useEffect(() => {
+    if (!isOpen) return;
+    api.stripeBalance()
+      .then(r => setStripeMode(r.mode === 'live' ? 'live' : 'demo'))
+      .catch(() => setStripeMode('demo'));
+  }, [isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount) return;
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) return;
     setStatus('loading');
-    await onDeposit(parseFloat(amount));
-    setStatus('success');
-    setTimeout(() => { setStatus('idle'); setAmount(''); onClose(); }, 1800);
+    setErrorMsg('');
+    try {
+      if (mode === 'card') {
+        // REAL money in — Stripe Checkout (card payment processed by Stripe)
+        const res = await api.stripeDeposit({ amount: amt });
+        if (res.success && res.checkoutUrl) {
+          window.location.href = res.checkoutUrl;
+          return;
+        }
+        throw new Error(res.message || 'Could not start Stripe checkout.');
+      }
+      // Instant internal deposit — real backend balance update
+      const res = await api.accountDeposit({ amount: amt, description: 'Instant deposit' });
+      if (!res.success) throw new Error(res.message || 'Deposit failed.');
+      setStatus('success');
+      setTimeout(() => { setStatus('idle'); setAmount(''); onClose(); }, 1600);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Deposit failed.');
+      setStatus('error');
+    }
   };
 
   return (
-    <BaseModal isOpen={isOpen} onClose={onClose} icon={Plus} title="Deposit Funds" subtitle="ADD MONEY INSTANTLY">
+    <BaseModal isOpen={isOpen} onClose={onClose} icon={Plus} title="Deposit Funds" subtitle="REAL MONEY IN">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {/* LIVE / SANDBOX badge */}
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-white/40 tracking-wider font-semibold">PAYMENT RAIL</span>
+          {stripeMode && (
+            <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold border ${
+              stripeMode === 'live'
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+            }`}>
+              {stripeMode === 'live' ? '● LIVE — REAL MONEY' : '○ SANDBOX — TEST MODE'}
+            </span>
+          )}
+        </div>
+
+        {/* Mode toggle */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setMode('card')}
+            className={`p-3 rounded-xl border text-left transition-colors ${
+              mode === 'card' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
+            }`}
+          >
+            <p className="text-xs font-bold text-white flex items-center gap-1.5"><CreditCard className="w-3.5 h-3.5" /> Card via Stripe</p>
+            <p className="text-[9px] text-white/40 mt-1">Real card payment · secure checkout</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('instant')}
+            className={`p-3 rounded-xl border text-left transition-colors ${
+              mode === 'instant' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
+            }`}
+          >
+            <p className="text-xs font-bold text-white flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" /> Instant</p>
+            <p className="text-[9px] text-white/40 mt-1">Internal credit · no card needed</p>
+          </button>
+        </div>
+
         <div>
           <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
           <div className="relative">
@@ -276,23 +343,131 @@ export function DepositModal({ isOpen, onClose, onDeposit }: ModalProps & { onDe
             </button>
           ))}
         </div>
-        <SubmitButton status={status} idleText="Deposit Now" color="emerald" />
+
+        {status === 'error' && (
+          <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">{errorMsg}</p>
+        )}
+
+        <SubmitButton status={status} idleText={mode === 'card' ? 'Pay with Card — Real Money' : 'Deposit Instantly'} color="emerald" />
       </form>
     </BaseModal>
   );
 }
 
-export function PayBillModal({ isOpen, onClose, onPayBill }: ModalProps & { onPayBill: (name: string, amount: number) => Promise<void> }) {
+export function WithdrawModal({ isOpen, onClose }: ModalProps) {
+  const [amount, setAmount] = useState('');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
+  const [stripeMode, setStripeMode] = useState<'live' | 'demo' | null>(null);
+
+  // Detect whether real Stripe keys are configured (LIVE vs SANDBOX)
+  useEffect(() => {
+    if (!isOpen) return;
+    api.stripeBalance()
+      .then(r => setStripeMode(r.mode === 'live' ? 'live' : 'demo'))
+      .catch(() => setStripeMode('demo'));
+  }, [isOpen]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const amt = parseFloat(amount);
+    if (!amt || amt <= 0) return;
+    setStatus('loading');
+    setErrorMsg('');
+    try {
+      // REAL payout — Stripe sends the money to the user's linked bank
+      const res = await api.stripeWithdraw({ amount: amt });
+      if (!res.success) throw new Error(res.message || 'Withdrawal failed.');
+      setSuccessMsg(res.message || `Withdrawal of $${amt.toFixed(2)} initiated.`);
+      setStatus('success');
+      setTimeout(() => { setStatus('idle'); setAmount(''); onClose(); }, 2400);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Withdrawal failed.');
+      setStatus('error');
+    }
+  };
+
+  return (
+    <BaseModal isOpen={isOpen} onClose={onClose} icon={Banknote} title="Withdraw Funds" subtitle="REAL PAYOUT TO YOUR BANK">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* LIVE / SANDBOX badge */}
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-white/40 tracking-wider font-semibold">PAYOUT RAIL</span>
+          {stripeMode && (
+            <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold border ${
+              stripeMode === 'live'
+                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+            }`}>
+              {stripeMode === 'live' ? '● LIVE — REAL PAYOUT' : '○ SANDBOX — TEST MODE'}
+            </span>
+          )}
+        </div>
+
+        <div>
+          <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-400 font-display text-2xl">$</span>
+            <input
+              type="number"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder="0.00"
+              className="w-full bg-white/5 border border-white/10 rounded-xl p-4 pl-10 text-2xl font-display text-white focus:outline-none focus:border-rose-500/40 transition-colors"
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-2">
+          {['50', '100', '250', '500', '1000', '2500'].map(v => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setAmount(v)}
+              className="py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white/60 hover:text-white hover:border-rose-500/30 transition-colors"
+            >
+              ${v}
+            </button>
+          ))}
+        </div>
+
+        <p className="text-[10px] text-white/30 leading-relaxed">
+          Payouts are sent to your linked bank account via Stripe. Processing time: 1–2 business days.
+        </p>
+
+        {status === 'error' && (
+          <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">{errorMsg}</p>
+        )}
+        {status === 'success' && (
+          <p className="text-xs text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 flex items-center gap-1.5">
+            <CheckCircle2 className="w-3.5 h-3.5" /> {successMsg}
+          </p>
+        )}
+
+        <SubmitButton status={status} idleText="Withdraw — Real Payout" color="rose" />
+      </form>
+    </BaseModal>
+  );
+}
+
+export function PayBillModal({ isOpen, onClose, onPayBill }: ModalProps & { onPayBill: (name: string, amount: number) => Promise<boolean | void> }) {
   const [name, setName] = useState('Netflix');
   const [amount, setAmount] = useState('15.99');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus('loading');
-    await onPayBill(name, parseFloat(amount));
-    setStatus('success');
-    setTimeout(() => { setStatus('idle'); onClose(); }, 1800);
+    setErrorMsg('');
+    try {
+      await onPayBill(name, parseFloat(amount));
+      setStatus('success');
+      setTimeout(() => { setStatus('idle'); onClose(); }, 1800);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Payment failed.');
+      setStatus('error');
+    }
   };
 
   return (
@@ -325,6 +500,9 @@ export function PayBillModal({ isOpen, onClose, onPayBill }: ModalProps & { onPa
             />
           </div>
         </div>
+        {status === 'error' && (
+          <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">{errorMsg}</p>
+        )}
         <SubmitButton status={status} idleText="Pay Bill" color="rose" />
       </form>
     </BaseModal>

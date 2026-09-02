@@ -114,8 +114,8 @@ router.post('/api/stripe/deposit', authenticateToken, async (req, res) => {
                 quantity: 1,
             }],
             mode: 'payment',
-            success_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/dashboard?deposit=success&session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${process.env.CLIENT_URL || 'http://localhost:3000'}/dashboard?deposit=cancelled`,
+            success_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/?deposit=success&session_id={CHECKOUT_SESSION_ID}`,
+            cancel_url: `${process.env.CLIENT_URL || 'http://localhost:5173'}/?deposit=cancelled`,
             metadata: {
                 userId: req.user.id,
                 accountId: account.id,

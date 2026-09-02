@@ -114,6 +114,20 @@ vaultbank/
 - [x] 2026-09-02: **Fake demo people removed** — TransferModal/TransferSection/QuickContacts now show real recipients from actual transfer history (`GET /api/transfers`); new `Avatar.tsx` (initials) replaces pravatar stock photos; `contacts` removed from data.ts usage & store
 - [x] 2026-09-02: **PaymentsSection is real** — real balance hero, real Recent Payments list, real send flow (user search → transfer), QR shows real account number; provider cards no longer show fake balances ("link to sync")
 - [x] 2026-09-02: `npx tsc --noEmit` passes 0 errors; backend `node --check` OK; endpoint tested live on port 5000
+- [x] 2026-09-02: **REAL MONEY LAYER (frontend wired to payment rails)**
+  - `api.ts` +5 methods: `stripeDeposit` (Checkout session), `stripeWithdraw` (payout), `stripeBalance` (LIVE/DEMO mode), `accountDeposit`, `accountWithdraw`
+  - `store.ts`: `depositMoney` + `payBill` now call the REAL backend (`/api/account/deposit|withdraw`) and sync balance from server response — no more fake setTimeout
+  - `DepositModal`: two rails — **Card via Stripe** (redirects to real Stripe Checkout) + **Instant** (internal credit); shows ● LIVE / ○ SANDBOX badge from `/api/stripe/balance`
+  - **NEW `WithdrawModal`**: real bank payout via `/api/stripe/withdraw` (1-2 business days), wired into PaymentsSection quick action
+  - `App.tsx`: handles `?deposit=success|cancelled` return from Stripe → animated banner + URL cleanup
+  - Backend `success_url`/`cancel_url` fixed to `/?deposit=...` (SPA-safe)
+  - `tsc` 0 errors + `vite build` OK + `/api/stripe/balance` tested live: returns real balance $4,980.50, mode "demo"
+- [ ] ⚠️ **USER ACTION NEEDED — Stripe keys to activate real money:**
+  1. Stripe dashboard → copy `sk_test_...` secret + create webhook `https://vaultbank-md20.onrender.com/api/stripe/webhook` (event: `checkout.session.completed`) → copy `whsec_...`
+  2. Render dashboard → Environment → add `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `CLIENT_URL=https://<vercel-url>`
+  3. Test deposit with card `4242 4242 4242 4242` (any future date, any CVC)
+  4. Go live: activate Stripe account → swap to `sk_live_` keys
+  - Withdrawals additionally need Stripe Connect (`user.stripe_connect_account_id`) — see stripe-payments.js withdraw route
 
 ---
 

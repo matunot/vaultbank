@@ -124,8 +124,26 @@ export function useAppStore() {
     setGoals(prev => prev.map(g => g.id === goalId ? { ...g, current: Math.min(g.current + amount, g.target) } : g));
   }, []);
 
+  // Apply a REAL server-returned balance to local state + localStorage
+  const syncBalanceFromServer = useCallback((bal?: { available?: number; current?: number } | null) => {
+    const newBalance = bal?.current ?? bal?.available;
+    if (typeof newBalance === 'number') {
+      setBalance(newBalance);
+      setAvailable(newBalance);
+      try {
+        const acct = api.getAccount();
+        if (acct) {
+          localStorage.setItem('vaultbank_account', JSON.stringify({ ...acct, balance: newBalance, availableBalance: newBalance }));
+        }
+      } catch { /* non-critical */ }
+    }
+  }, []);
+
+  // REAL deposit — instant internal deposit via the backend
   const depositMoney = useCallback(async (amount: number) => {
-    await new Promise(r => setTimeout(r, 1000));
+    const res = await api.accountDeposit({ amount, description: 'Account deposit' });
+    if (!res.success) throw new Error(res.message || 'Deposit failed.');
+    syncBalanceFromServer(res.balance);
     const newTx: Transaction = {
       id: Date.now(),
       name: 'Deposit',
@@ -136,12 +154,14 @@ export function useAppStore() {
       gem: 'emerald',
     };
     setTransactions(prev => [newTx, ...prev]);
-    setBalance(prev => prev + amount);
-    setAvailable(prev => prev + amount);
-  }, []);
+    return true;
+  }, [syncBalanceFromServer]);
 
+  // REAL bill payment — a real withdrawal recorded by the backend
   const payBill = useCallback(async (name: string, amount: number) => {
-    await new Promise(r => setTimeout(r, 1000));
+    const res = await api.accountWithdraw({ amount, description: `Bill payment: ${name}` });
+    if (!res.success) throw new Error(res.message || 'Payment failed.');
+    syncBalanceFromServer(res.balance);
     const newTx: Transaction = {
       id: Date.now(),
       name,
@@ -152,10 +172,9 @@ export function useAppStore() {
       gem: 'ruby',
     };
     setTransactions(prev => [newTx, ...prev]);
-    setBalance(prev => prev - amount);
-    setAvailable(prev => prev - amount);
     setBudget(prev => prev.map(b => b.name === 'Entertainment' ? { ...b, spent: b.spent + amount } : b));
-  }, []);
+    return true;
+  }, [syncBalanceFromServer]);
 
   const executeTrade = useCallback(async (ticker: string, type: 'buy' | 'sell', shares: number) => {
     await new Promise(r => setTimeout(r, 1200));

@@ -270,6 +270,38 @@ export const api = {
     });
   },
 
+  async accountDeposit(data: { amount: number; description?: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/account/deposit', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async accountWithdraw(data: { amount: number; description?: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/account/withdraw', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async stripeDeposit(data: { amount: number; currency?: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/stripe/deposit', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async stripeWithdraw(data: { amount: number; bankAccountId?: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/stripe/withdraw', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async stripeBalance(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/stripe/balance');
+  },
+
   async getAdminStats(): Promise<ApiResponse> {
     return request<ApiResponse>('api/admin/stats');
   },

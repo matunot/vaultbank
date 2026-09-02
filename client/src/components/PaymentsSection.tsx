@@ -4,12 +4,13 @@ import {
   Wallet, Plus, Send, Download, Copy, Check, Eye, EyeOff, QrCode,
   ArrowUpRight, ArrowDownRight, Search,
   Bitcoin, Globe, Zap, X,
-  Smartphone, Link2, ScanLine, RefreshCw, Loader2, UserSearch,
+  Smartphone, Link2, ScanLine, Loader2, UserSearch, Banknote,
 } from 'lucide-react';
 import { digitalWallets, regionalPayments, cryptoWallets, availablePaymentMethods } from '../data';
 import { useAccountData } from '../hooks/useAccountData';
 import { api } from '../api';
 import Avatar from './Avatar';
+import { WithdrawModal } from './Modals';
 
 /** A real registered VaultBank user (from the backend directory). */
 interface Recipient {
@@ -44,6 +45,15 @@ export default function PaymentsSection() {
   const [sendAmount, setSendAmount] = useState('');
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
   const [sendMsg, setSendMsg] = useState('');
+  const [showWithdraw, setShowWithdraw] = useState(false);
+
+  // Detect whether real Stripe keys are configured (LIVE vs SANDBOX)
+  const [railMode, setRailMode] = useState<'live' | 'demo' | null>(null);
+  useEffect(() => {
+    api.stripeBalance()
+      .then(r => setRailMode(r.mode === 'live' ? 'live' : 'demo'))
+      .catch(() => setRailMode('demo'));
+  }, []);
 
   const copy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
@@ -121,6 +131,15 @@ export default function PaymentsSection() {
                 <div className="flex items-center gap-2 mb-2">
                   <Wallet className="w-5 h-5 text-cyan-300" />
                   <p className="text-xs tracking-[0.3em] text-white/40 font-bold">DIGITAL PAYMENTS</p>
+                  {railMode && (
+                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
+                      railMode === 'live'
+                        ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                        : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                    }`}>
+                      {railMode === 'live' ? '● LIVE RAIL' : '○ SANDBOX'}
+                    </span>
+                  )}
                 </div>
                 <p className="font-display text-5xl lg:text-6xl text-white">
                   {hideBalances || accountLoading ? '••••••' : `$${(balance?.total ?? account?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
@@ -191,7 +210,7 @@ export default function PaymentsSection() {
           { icon: Send, label: 'Send Money', desc: 'To anyone', color: '#3b82f6', action: () => setShowSend(true) },
           { icon: Download, label: 'Request', desc: 'Get paid', color: '#10b981', action: () => setShowQR(true) },
           { icon: ScanLine, label: 'Scan & Pay', desc: 'QR payment', color: '#a855f7', action: () => setShowQR(true) },
-          { icon: RefreshCw, label: 'Exchange', desc: 'Swap currencies', color: '#f59e0b', action: () => {} },
+          { icon: Banknote, label: 'Withdraw', desc: 'To your bank', color: '#f59e0b', action: () => setShowWithdraw(true) },
         ].map((a, i) => (
           <motion.button
             key={a.label}
@@ -683,6 +702,13 @@ export default function PaymentsSection() {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Withdraw Modal — REAL bank payout ── */}
+      <AnimatePresence>
+        {showWithdraw && (
+          <WithdrawModal isOpen={true} onClose={() => setShowWithdraw(false)} />
         )}
       </AnimatePresence>
 
