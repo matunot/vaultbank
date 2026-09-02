@@ -1,0 +1,1 @@
+{"name":"vaultbank-frontend","version":"1.0.0","private":true,"dependencies":{"express":"^4.18.2"},"scripts":{"build":"npm run build --prefix client"}}
