@@ -1,4 +1,4 @@
-{
+﻿{
   "version": 2,
   "builds": [
     {
@@ -8,12 +8,6 @@
         "installCommand": "npm install --prefix client",
         "buildCommand": "npm run build --prefix client"
       }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/(.*)",
-      "dest": "/client/"
     }
   ]
 }
