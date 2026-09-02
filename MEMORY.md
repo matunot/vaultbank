@@ -107,15 +107,19 @@ vaultbank/
   - Verified: `npx tsc --noEmit` passes with zero errors
   - **Local dev gotcha:** Vite proxy `/login` → `http://localhost:5000` throws ECONNREFUSED until the backend (`cd server; npm run dev`) is running first. Start backend BEFORE frontend.
 
+- [x] 2026-09-02: Dependency bumps committed (lucide-react, @vitejs/plugin-react, joi, mongoose, simple-statistics, uuid) + docs refreshed
+- [x] 2026-09-02: `LICENSE` referenced in docs + `"license": "UNLICENSED"` set in both package.json files
+
 ---
 
 ## 📅 What's NEXT (To Do)
 
-- [ ] Push all fixes to GitHub → auto-deploy triggers
+- [x] Push all fixes to GitHub → auto-deploy triggers (repo in sync with `origin/main`)
 - [ ] Create Render Deploy Hook + set `RENDER_DEPLOY_HOOK` GitHub secret
-- [ ] Verify live sites after deployment
+- [ ] Verify live sites after latest deployment
+- [ ] Paste real Stripe/PayPal API keys into Render env (payment code auto-activates — see PROJECT_CONTEXT.md §4)
 - [ ] (Optional) Set up UptimeRobot / Sentry for extra monitoring
 
 ---
 
-*Created: 2026-08-12 | Never forget: read this first, update it often.*
+*Created: 2026-08-12 | Last updated: 2026-09-02 | Never forget: read this first, update it often.*

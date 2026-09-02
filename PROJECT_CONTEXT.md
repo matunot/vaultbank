@@ -23,7 +23,8 @@
 
 ### License Note
 
-- The user **will add the banking license** themselves later. **Do not ask about it.**
+- **License is added** (2026-08-30): see [`LICENSE`](./LICENSE) at repo root — MIT notice followed by the proprietary **VaultBank AG Software Licence Agreement** (Swiss law, multi-jurisdiction). Respect its restrictions when sharing/distributing code.
+- `package.json` files are `"private": true` + `"license": "UNLICENSED"` — do NOT publish to npm.
 - **No unnecessary setup** — speed is prioritized.
 - Treat everything as production-grade.
 
@@ -136,21 +137,13 @@ Health:    OK (GET /health → 200)
 
 ## 4. ⏭️ What's NEXT (To Do)
 
-### Priority 1: Deploy Backend to Render
+### ✅ Deployments — DONE (moved from old Priorities 1 & 2)
 
-- [ ] Create new Web Service on Render (free tier)
-- [ ] Root directory: `server`
-- [ ] Build command: `npm install`
-- [ ] Start command: `node index.js`
-- [ ] Add env vars from `server/.env` (especially `DATABASE_URL`)
-- [ ] Deploy and note the Render URL
+- [x] Backend deployed on Render (`https://vaultbank-md20.onrender.com`, health → 200)
+- [x] Frontend deployed on Vercel (production + `vaultbank-mu.vercel.app` alias)
+- [x] Frontend → backend wired via hardcoded `API_BASE` in `client/src/api.ts` (no `VITE_API_URL` needed)
 
-### Priority 2: Connect Frontend to Backend
-
-- [ ] Set `VITE_API_URL` in Vercel to Render backend URL
-- [ ] Redeploy frontend on Vercel
-
-### Priority 3: Real Money Integration ✅ CODE READY — WAITING FOR USER KEYS
+### Priority 1: Real Money Integration ✅ CODE READY — WAITING FOR USER KEYS
 
 **Status: The payment code is fully built and production-ready. It activates automatically when the user pastes real API keys into Render.**
 
@@ -173,7 +166,7 @@ Health:    OK (GET /health → 200)
 
 **Legal note:** Real money requires a banking license or Stripe Connect/partner. User handles license.
 
-### Priority 4: Enhancements (Optional)
+### Priority 2: Enhancements (Optional)
 
 - [ ] Email verification (SMTP)
 - [ ] Phone verification (SMS)
@@ -188,7 +181,7 @@ Health:    OK (GET /health → 200)
 
 1. **REAL bank, not a demo** — everything must be production-grade
 2. **NO unnecessary setup** — user wants speed, only add what's needed
-3. **License is sensitive** — user adds it themselves, DO NOT ask about it
+3. **License added** — see `LICENSE` at repo root (MIT notice + VaultBank AG banking licence agreement). Don't re-license or publish to npm
 4. **No external API assumptions** — internal transfers work without any third-party API
 5. **PostgreSQL first** — if a function works on PostgreSQL, it's correct; if it uses Mongoose methods (`.lean()`, `.toObject()`, `.findByIdAndUpdate()` with `$set`), it's WRONG
 
@@ -317,4 +310,4 @@ Admin: admin@vaultbank.com / admin123
 
 ---
 
-*Created: 2026-08-10 | Last updated: 2026-08-11 | Status: Production-ready core banking*
+*Created: 2026-08-10 | Last updated: 2026-09-02 | Status: Production-ready core banking, all deployed*
