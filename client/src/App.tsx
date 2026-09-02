@@ -135,7 +135,7 @@ export default function App() {
 
       {/* Modals - only render when open for performance */}
       {modal === 'send' && (
-        <TransferModal isOpen={true} onClose={closeModal} onSend={handleSend} contacts={store.contacts} />
+        <TransferModal isOpen={true} onClose={closeModal} onSend={handleSend} />
       )}
       {modal === 'deposit' && (
         <DepositModal isOpen={true} onClose={closeModal} onDeposit={store.depositMoney} />

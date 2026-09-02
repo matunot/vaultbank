@@ -259,6 +259,17 @@ export const api = {
     return request<ApiResponse>('api/payments/wallet/balance');
   },
 
+  async searchUsers(q: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/account/users/search?q=${encodeURIComponent(q)}`);
+  },
+
+  async sendMoney(data: { recipientEmail?: string; recipientAccountNumber?: string; amount: number; description?: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/account/transfer', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   async getAdminStats(): Promise<ApiResponse> {
     return request<ApiResponse>('api/admin/stats');
   },

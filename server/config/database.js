@@ -397,6 +397,70 @@ const findAccountByNumber = async (accountNumber) => {
     return account || null;
 };
 
+// ============================================================
+// USER SEARCH — find REAL registered VaultBank users
+// Powers the Send Money recipient lookup by name, email, or
+// account number. Never returns password hashes or balances.
+// ============================================================
+const searchUsers = async (searchQuery, excludeUserId = null, limit = 8) => {
+    const q = (searchQuery || '').trim();
+    if (q.length < 2) return [];
+
+    if (isDemo) {
+        const lower = q.toLowerCase();
+        return demoStore.users
+            .filter(u => u.id !== excludeUserId)
+            .filter(u => {
+                const name = (u.full_name || u.fullName || '').toLowerCase();
+                const email = (u.email || '').toLowerCase();
+                const account = demoStore.accounts.find(a => a.user_id === u.id);
+                const accNum = ((account && account.account_number) || '').toLowerCase();
+                return name.includes(lower) || email.includes(lower) || accNum.includes(lower);
+            })
+            .slice(0, limit)
+            .map(u => {
+                const account = demoStore.accounts.find(a => a.user_id === u.id);
+                return {
+                    id: u.id,
+                    full_name: u.full_name || u.fullName || u.email,
+                    email: u.email,
+                    account_number: (account && account.account_number) || null,
+                    account_type: (account && account.account_type) || null,
+                    currency: (account && account.currency) || 'USD',
+                };
+            });
+    }
+
+    try {
+        await db.ensureConnection();
+        const like = `%${q}%`;
+        const params = [like];
+        let excludeClause = '';
+        if (excludeUserId) {
+            params.push(excludeUserId);
+            excludeClause = `AND u.id <> $${params.length}`;
+        }
+        params.push(limit);
+        const result = await db.query(
+            `SELECT u.id, u.full_name, u.email,
+                    a.account_number, a.account_type, a.currency
+             FROM users u
+             LEFT JOIN accounts a ON a.user_id = u.id AND a.status = 'active'
+             WHERE u.status = 'active'
+               ${excludeClause}
+               AND (u.full_name ILIKE $1 OR u.email ILIKE $1 OR a.account_number ILIKE $1)
+             ORDER BY u.full_name ASC
+             LIMIT $${params.length}`,
+            params
+        );
+        return result.rows || [];
+    } catch (err) {
+        console.error('searchUsers error:', err.message);
+        return [];
+    }
+};
+
+
 const createAccount = async (userId, accountType = 'checking', currency = 'USD') => {
     if (isDemo) {
         const uniqueAccountNumber = await generateUniqueAccountNumber();
@@ -896,6 +960,7 @@ module.exports = {
     // User functions
     findUserByEmail,
     findUserById,
+    searchUsers,
     createUser,
     updateUser,
     updateLastLogin,

@@ -1,12 +1,23 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wallet, Plus, Send, Download, Copy, Check, Eye, EyeOff, QrCode,
   ArrowUpRight, ArrowDownRight, Search,
   Bitcoin, Globe, Zap, X,
-  Smartphone, Link2, ScanLine, RefreshCw,
+  Smartphone, Link2, ScanLine, RefreshCw, Loader2, UserSearch,
 } from 'lucide-react';
 import { digitalWallets, regionalPayments, cryptoWallets, availablePaymentMethods } from '../data';
+import { useAccountData } from '../hooks/useAccountData';
+import { api } from '../api';
+import Avatar from './Avatar';
+
+/** A real registered VaultBank user (from the backend directory). */
+interface Recipient {
+  id?: string;
+  name: string;
+  email?: string;
+  accountNumber?: string | null;
+}
 
 type PaymentTab = 'digital' | 'regional' | 'crypto';
 
@@ -21,21 +32,70 @@ export default function PaymentsSection() {
   const [search, setSearch] = useState('');
   const [hideBalances, setHideBalances] = useState(false);
 
+  // REAL account data from the backend
+  const { account, transactions, balance, loading: accountLoading } = useAccountData();
+  const recentPayments = transactions.slice(0, 6);
+
+  // REAL send-money state (live user search + real transfer)
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<Recipient | null>(null);
+  const [results, setResults] = useState<Recipient[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [sendAmount, setSendAmount] = useState('');
+  const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [sendMsg, setSendMsg] = useState('');
+
   const copy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopied(id);
     setTimeout(() => setCopied(null), 2000);
   };
 
-  // Totals
-  const digitalTotal = digitalWallets.reduce((s, w) => s + w.balance, 0);
-  const cryptoTotal = cryptoWallets.reduce((s, c) => s + c.usdValue, 0);
-  const grandTotal = digitalTotal + cryptoTotal;
-  const connectedCount = availablePaymentMethods.filter(m => m.connected).length;
+  // LIVE search over REAL registered VaultBank users (debounced)
+  useEffect(() => {
+    if (!showSend || selected) return;
+    const q = query.trim();
+    if (q.length < 2) { setResults([]); setSearching(false); return; }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.searchUsers(q);
+        setResults(res.success && Array.isArray(res.users) ? res.users : []);
+      } catch { setResults([]); }
+      finally { setSearching(false); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, showSend, selected]);
 
-  // Send modal state
-  const [sendAmount, setSendAmount] = useState('');
-  const [sendTo, setSendTo] = useState('');
+  const resetSend = () => {
+    setShowSend(false);
+    setSelected(null);
+    setQuery('');
+    setResults([]);
+    setSendAmount('');
+    setSendStatus('idle');
+    setSendMsg('');
+  };
+
+  const executeSend = async () => {
+    const recipient = selected ? (selected.accountNumber || selected.email || selected.name) : query.trim();
+    if (!recipient || !sendAmount || parseFloat(sendAmount) <= 0) return;
+    setSendStatus('sending');
+    setSendMsg('');
+    try {
+      const isEmail = recipient.includes('@');
+      const res = isEmail
+        ? await api.sendMoney({ recipientEmail: recipient, amount: parseFloat(sendAmount) })
+        : await api.sendMoney({ recipientAccountNumber: recipient, amount: parseFloat(sendAmount) });
+      if (!res.success) throw new Error(res.message || 'Transfer failed.');
+      setSendStatus('success');
+      setSendMsg(`Real transfer of $${parseFloat(sendAmount).toFixed(2)} completed.`);
+      setTimeout(resetSend, 2200);
+    } catch (err: any) {
+      setSendStatus('error');
+      setSendMsg(err?.message || 'Transfer failed.');
+    }
+  };
 
   const filteredMethods = availablePaymentMethods.filter(m =>
     m.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -63,10 +123,10 @@ export default function PaymentsSection() {
                   <p className="text-xs tracking-[0.3em] text-white/40 font-bold">DIGITAL PAYMENTS</p>
                 </div>
                 <p className="font-display text-5xl lg:text-6xl text-white">
-                  ${hideBalances ? '••••••' : grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  {hideBalances || accountLoading ? '••••••' : `$${(balance?.total ?? account?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
                 </p>
                 <p className="text-sm text-white/40 mt-1.5">
-                  Across {connectedCount} connected methods
+                  REAL balance · {account?.accountNumber ? `VaultBank •• ${account.accountNumber.slice(-4)}` : 'VaultBank account'}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -94,31 +154,31 @@ export default function PaymentsSection() {
               </div>
             </div>
 
-            {/* Quick stats */}
+            {/* Quick stats — REAL data */}
             <div className="grid grid-cols-3 gap-4">
               <div className="glass-btn rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <Smartphone className="w-3.5 h-3.5 text-cyan-300" />
-                  <p className="text-[10px] text-white/40 tracking-wider">DIGITAL</p>
+                  <Wallet className="w-3.5 h-3.5 text-cyan-300" />
+                  <p className="text-[10px] text-white/40 tracking-wider">AVAILABLE</p>
                 </div>
-                <p className="text-xl font-bold text-white">${hideBalances ? '••••' : digitalTotal.toLocaleString()}</p>
-                <p className="text-[10px] text-white/40 mt-0.5">{digitalWallets.length} wallets</p>
+                <p className="text-xl font-bold text-white">{hideBalances ? '••••' : `$${(balance?.available ?? 0).toLocaleString()}`}</p>
+                <p className="text-[10px] text-white/40 mt-0.5">real funds</p>
               </div>
               <div className="glass-btn rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <Globe className="w-3.5 h-3.5 text-emerald-300" />
-                  <p className="text-[10px] text-white/40 tracking-wider">REGIONAL</p>
+                  <ArrowUpRight className="w-3.5 h-3.5 text-emerald-300" />
+                  <p className="text-[10px] text-white/40 tracking-wider">PAYMENTS</p>
                 </div>
-                <p className="text-xl font-bold text-white">{regionalPayments.length}</p>
-                <p className="text-[10px] text-white/40 mt-0.5">payment systems</p>
+                <p className="text-xl font-bold text-white">{transactions.length}</p>
+                <p className="text-[10px] text-white/40 mt-0.5">real transactions</p>
               </div>
               <div className="glass-btn rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Bitcoin className="w-3.5 h-3.5 text-amber-300" />
-                  <p className="text-[10px] text-white/40 tracking-wider">CRYPTO</p>
+                  <p className="text-[10px] text-white/40 tracking-wider">PROVIDERS</p>
                 </div>
-                <p className="text-xl font-bold text-white">${hideBalances ? '••••' : cryptoTotal.toLocaleString()}</p>
-                <p className="text-[10px] text-white/40 mt-0.5">{cryptoWallets.length} coins</p>
+                <p className="text-xl font-bold text-white">{availablePaymentMethods.length}</p>
+                <p className="text-[10px] text-white/40 mt-0.5">available to link</p>
               </div>
             </div>
           </div>
@@ -151,6 +211,42 @@ export default function PaymentsSection() {
           </motion.button>
         ))}
       </div>
+
+      {/* REAL recent payments — actual transactions from the backend */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="glass-panel rounded-3xl p-6">
+        <h3 className="font-display text-xl text-white">Recent Payments</h3>
+        <p className="text-xs text-white/40 mt-0.5 mb-5">Real transactions from your VaultBank account</p>
+        {accountLoading ? (
+          <div className="flex items-center gap-2 text-white/40 text-sm py-4">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading real payments…
+          </div>
+        ) : recentPayments.length === 0 ? (
+          <div className="py-4 text-sm text-white/40">No real payments yet — make a deposit or send money and it will show up here.</div>
+        ) : (
+          <div className="space-y-2">
+            {recentPayments.map((t) => {
+              const positive = t.type === 'credit' || t.amount > 0;
+              const amt = Math.abs(t.amount);
+              return (
+                <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl bg-white/[0.03] border border-white/5">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${positive ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-rose-500/10 border border-rose-500/20'}`}>
+                    {positive ? <ArrowDownRight className="w-4 h-4 text-emerald-300" /> : <ArrowUpRight className="w-4 h-4 text-rose-300" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{t.description || t.category}</p>
+                    <p className="text-[11px] text-white/40">
+                      {t.date ? new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''} · {t.status}
+                    </p>
+                  </div>
+                  <p className={`font-bold text-sm ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {positive ? '+' : '-'}${amt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </motion.div>
 
       {/* Tabs */}
       <div className="flex gap-2 overflow-x-auto pb-1">
@@ -202,7 +298,7 @@ export default function PaymentsSection() {
                     </div>
                     <p className="font-bold text-white text-lg">{w.name}</p>
                     <p className="text-xs text-white/40 mb-3">{w.region}</p>
-                    <p className="font-display text-2xl text-white">${hideBalances ? '••••' : w.balance.toLocaleString()}</p>
+                    <p className="text-sm text-white/50 mb-3">Link to sync your real balance</p>
 
                     {selectedMethod === w.id && (
                       <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4 pt-4 border-t border-white/10 flex gap-2">
@@ -244,13 +340,12 @@ export default function PaymentsSection() {
                         <p className="text-[11px] text-white/40">{r.region}</p>
                       </div>
                     </div>
-                    <span className={`px-2 py-1 rounded-full text-[9px] font-bold ${r.connected ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300' : 'bg-white/5 border border-white/10 text-white/40'}`}>
-                      {r.connected ? '● LIVE' : '○ OFF'}
+                    <span className="px-2 py-1 rounded-full text-[9px] font-bold bg-white/5 border border-white/10 text-white/40">
+                      ○ UNLINKED
                     </span>
                   </div>
-                  <p className="font-display text-2xl text-white">
-                    {hideBalances ? '••••' : r.balance.toLocaleString()}
-                    <span className="text-sm text-white/40 ml-1">{r.currency}</span>
+                  <p className="text-sm text-white/50">
+                    Link {r.name} to enable real {r.currency} payments
                   </p>
                   <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
                     <code className="text-[10px] text-white/40 font-mono">{r.handle}</code>
@@ -295,8 +390,8 @@ export default function PaymentsSection() {
                       </div>
                       <p className="font-bold text-white">{c.name}</p>
                       <p className="text-[11px] text-white/40 mb-3">{c.chain}</p>
-                      <p className="font-display text-xl text-white">{hideBalances ? '•••' : c.balance.toLocaleString()} <span className="text-xs text-white/40">{c.symbol}</span></p>
-                      <p className="text-sm text-white/50 mt-0.5">${hideBalances ? '•••' : c.usdValue.toLocaleString()}</p>
+                      <p className="font-display text-xl text-white">{c.symbol} <span className="text-xs text-white/40">{c.chain}</span></p>
+                      <p className="text-sm text-white/50 mt-0.5">Link a real wallet to see holdings</p>
 
                       {selectedMethod === c.id && (
                         <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4 pt-4 border-t border-white/10">
@@ -357,7 +452,7 @@ export default function PaymentsSection() {
         <div className="flex items-center justify-between mb-5">
           <div>
             <h3 className="font-display text-xl text-white">All Payment Methods</h3>
-            <p className="text-xs text-white/40 mt-0.5">{connectedCount} connected · {availablePaymentMethods.length} available</p>
+            <p className="text-xs text-white/40 mt-0.5">{availablePaymentMethods.length} providers available to link</p>
           </div>
           <button onClick={() => setShowAdd(true)} className="px-4 py-2 rounded-xl glass-btn text-xs font-bold text-white/70 hover:text-white flex items-center gap-2">
             <Plus className="w-3.5 h-3.5" /> Connect
@@ -448,11 +543,11 @@ export default function PaymentsSection() {
                 </div>
               </div>
 
-              <p className="text-sm text-white/60 mb-1">Scan to pay</p>
-              <p className="font-display text-lg text-gold mb-4">john@vault.bank</p>
+              <p className="text-sm text-white/60 mb-1">Scan or share your REAL account number</p>
+              <p className="font-display text-lg text-gold mb-4">{account?.accountNumber || 'Loading…'}</p>
 
               <div className="flex gap-2">
-                <button onClick={() => copy('john@vault.bank', 'qr')} className="flex-1 py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2">
+                <button onClick={() => copy(account?.accountNumber || '', 'qr')} className="flex-1 py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2">
                   {copied === 'qr' ? <><Check className="w-4 h-4" /> Copied</> : <><Copy className="w-4 h-4" /> Copy ID</>}
                 </button>
                 <button className="px-4 py-3 rounded-xl glass-btn text-white/70"><Download className="w-4 h-4" /></button>
@@ -500,23 +595,53 @@ export default function PaymentsSection() {
 
               <div className="space-y-3">
                 <div>
-                  <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">PAYMENT METHOD</label>
-                  <select className="w-full glass-input rounded-xl px-4 py-3 text-sm text-white">
-                    <optgroup label="Digital Wallets">
-                      {digitalWallets.map(w => <option key={w.id} className="bg-[#0d0d14]">{w.name} (${w.balance.toLocaleString()})</option>)}
-                    </optgroup>
-                    <optgroup label="Crypto">
-                      {cryptoWallets.map(c => <option key={c.id} className="bg-[#0d0d14]">{c.name} ({c.balance} {c.symbol})</option>)}
-                    </optgroup>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">SEND TO</label>
-                  <input
-                    value={sendTo} onChange={(e) => setSendTo(e.target.value)}
-                    placeholder="Email, phone, @handle, or wallet"
-                    className="w-full glass-input rounded-xl px-4 py-3 text-sm text-white"
-                  />
+                  <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">RECIPIENT — REAL VAULTBANK USERS</label>
+                  {selected ? (
+                    <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-500/5 border border-blue-500/30">
+                      <Avatar name={selected.name} size="sm" ring={false} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-white font-semibold truncate">{selected.name}</p>
+                        <p className="text-[10px] text-white/40 truncate">{selected.accountNumber || selected.email}</p>
+                      </div>
+                      <button type="button" onClick={() => setSelected(null)} className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10">
+                        <X className="w-3.5 h-3.5 text-white/60" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="relative">
+                        <UserSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                        <input
+                          value={query} onChange={(e) => setQuery(e.target.value)}
+                          placeholder="Search by name, email or account number…"
+                          className="w-full glass-input rounded-xl pl-10 pr-10 py-3 text-sm text-white"
+                        />
+                        {searching && <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-cyan-400 animate-spin" />}
+                      </div>
+                      {results.length > 0 && (
+                        <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-white/10 divide-y divide-white/5">
+                          {results.map((r) => (
+                            <button
+                              key={r.id || r.email || r.name}
+                              type="button"
+                              onClick={() => { setSelected(r); setQuery(''); setResults([]); }}
+                              className="w-full flex items-center gap-3 p-2.5 hover:bg-white/5 transition-colors text-left"
+                            >
+                              <Avatar name={r.name} size="xs" ring={false} />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-xs font-semibold text-white truncate">{r.name}</p>
+                                <p className="text-[10px] text-white/40 truncate">{r.email}{r.accountNumber ? ` · ${r.accountNumber}` : ''}</p>
+                              </div>
+                              <Send className="w-3 h-3 text-cyan-400/60" />
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {query.trim().length >= 2 && !searching && results.length === 0 && (
+                        <p className="mt-2 text-[10px] text-white/30 px-1">No match — paste a full email or account number (VB-…) instead.</p>
+                      )}
+                    </>
+                  )}
                 </div>
                 <div>
                   <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
@@ -530,12 +655,30 @@ export default function PaymentsSection() {
                   </div>
                 </div>
                 <div className="grid grid-cols-4 gap-2">
-                  {['$10', '$25', '$50', '$100'].map(v => (
-                    <button key={v} onClick={() => setSendAmount(v.replace('$', ''))} className="py-2 rounded-lg glass-btn text-xs text-white/70 hover:text-white">{v}</button>
+                  {['10', '25', '50', '100'].map(v => (
+                    <button key={v} onClick={() => setSendAmount(v)} className="py-2 rounded-lg glass-btn text-xs text-white/70 hover:text-white">${v}</button>
                   ))}
                 </div>
-                <button onClick={() => setShowSend(false)} className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2 mt-2">
-                  <Zap className="w-4 h-4" /> Send Instantly
+                {sendStatus === 'error' && (
+                  <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">{sendMsg}</p>
+                )}
+                {sendStatus === 'success' && (
+                  <p className="text-xs text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 flex items-center gap-1.5">
+                    <Check className="w-3.5 h-3.5" /> {sendMsg}
+                  </p>
+                )}
+                <button
+                  onClick={executeSend}
+                  disabled={sendStatus === 'sending' || !sendAmount || (!selected && query.trim().length < 2)}
+                  className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
+                >
+                  {sendStatus === 'sending' ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Sending real money…</>
+                  ) : sendStatus === 'success' ? (
+                    <><Check className="w-4 h-4" /> Sent!</>
+                  ) : (
+                    <><Zap className="w-4 h-4" /> Send Real Transfer</>
+                  )}
                 </button>
               </div>
             </motion.div>

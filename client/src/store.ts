@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { cards as initialCards, transactions as initialTransactions, savingsGoals as initialGoals, budgetCategories as initialBudget, contacts as initialContacts, investments as initialInvestments } from './data';
+import { cards as initialCards, transactions as initialTransactions, savingsGoals as initialGoals, budgetCategories as initialBudget, investments as initialInvestments } from './data';
 import { api } from './api';
 
 export interface Transaction {
@@ -44,13 +44,6 @@ export interface BudgetCategory {
   icon: string;
 }
 
-export interface Contact {
-  name: string;
-  handle: string;
-  img: string;
-  recent: boolean;
-}
-
 export interface Investment {
   ticker: string;
   name: string;
@@ -70,7 +63,6 @@ export function useAppStore() {
   const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
   const [goals, setGoals] = useState<Goal[]>(initialGoals);
   const [budget, setBudget] = useState<BudgetCategory[]>(initialBudget);
-  const [contacts] = useState<Contact[]>(initialContacts);
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments);
   const [transferLoading, setTransferLoading] = useState(false);
 
@@ -78,25 +70,50 @@ export function useAppStore() {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
   };
 
+  // REAL money transfer — calls the backend /api/account/transfer
+  // endpoint which atomically moves money between real registered
+  // accounts and records transactions for both parties.
   const sendMoney = useCallback(async (recipient: string, amount: number, note?: string) => {
+    const trimmed = (recipient || '').trim();
+    if (!trimmed) throw new Error('Please choose a recipient.');
+    if (!amount || amount <= 0) throw new Error('Please enter a valid amount.');
+
     setTransferLoading(true);
-    await new Promise(r => setTimeout(r, 1500));
-    
-    const newTx: Transaction = {
-      id: Date.now(),
-      name: `Sent to ${recipient}`,
-      cat: note || 'Transfer',
-      amount: -amount,
-      date: 'Just now',
-      icon: '💸',
-      gem: 'sapphire',
-    };
-    
-    setTransactions(prev => [newTx, ...prev]);
-    setBalance(prev => prev - amount);
-    setAvailable(prev => prev - amount);
-    setTransferLoading(false);
-    return true;
+    try {
+      const isEmail = trimmed.includes('@');
+      const res = isEmail
+        ? await api.sendMoney({ recipientEmail: trimmed, amount, description: note })
+        : await api.sendMoney({ recipientAccountNumber: trimmed, amount, description: note });
+
+      if (!res.success) throw new Error(res.message || 'Transfer failed.');
+
+      // Sync real balance from the server response
+      const newBalance = res.transfer?.newBalance;
+      if (typeof newBalance === 'number') {
+        setBalance(newBalance);
+        setAvailable(newBalance);
+        try {
+          const acct = api.getAccount();
+          if (acct) {
+            localStorage.setItem('vaultbank_account', JSON.stringify({ ...acct, balance: newBalance, availableBalance: newBalance }));
+          }
+        } catch { /* non-critical */ }
+      }
+
+      const newTx: Transaction = {
+        id: Date.now(),
+        name: `Sent to ${res.transfer?.recipient?.name || trimmed}`,
+        cat: note || 'Transfer',
+        amount: -amount,
+        date: 'Just now',
+        icon: '💸',
+        gem: 'sapphire',
+      };
+      setTransactions(prev => [newTx, ...prev]);
+      return true;
+    } finally {
+      setTransferLoading(false);
+    }
   }, []);
 
   const lockCard = useCallback((cardId: number) => {
@@ -214,7 +231,6 @@ export function useAppStore() {
     transactions,
     goals,
     budget,
-    contacts,
     investments,
     transferLoading,
     formatMoney,

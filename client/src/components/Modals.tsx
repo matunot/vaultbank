@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Plus, Receipt, ArrowRightLeft, Globe, Smartphone, CheckCircle2, Loader2, TrendingUp } from 'lucide-react';
+import { X, Send, Plus, Receipt, ArrowRightLeft, Globe, Smartphone, CheckCircle2, Loader2, TrendingUp, UserSearch } from 'lucide-react';
 import RichIcon from './RichIcon';
+import Avatar from './Avatar';
+import { api } from '../api';
 
 interface ModalProps {
   isOpen: boolean;
@@ -10,58 +12,192 @@ interface ModalProps {
 
 interface TransferModalProps extends ModalProps {
   onSend: (recipient: string, amount: number, note?: string) => Promise<void>;
-  contacts: { name: string; handle: string; img: string; recent: boolean }[];
 }
 
-export function TransferModal({ isOpen, onClose, onSend, contacts }: TransferModalProps) {
-  const [recipient, setRecipient] = useState('');
+/** A real registered VaultBank user (from the backend directory). */
+interface Recipient {
+  id?: string;
+  name: string;
+  email?: string;
+  accountNumber?: string | null;
+}
+
+/** Best identifier to send money to: account number > email. */
+const recipientValue = (r: Recipient): string => r.accountNumber || r.email || r.name;
+
+export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<Recipient | null>(null);
+  const [results, setResults] = useState<Recipient[]>([]);
+  const [recent, setRecent] = useState<Recipient[]>([]);
+  const [searching, setSearching] = useState(false);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [status, setStatus] = useState<'idle' | 'sending' | 'success'>('idle');
+  const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  // REAL recent recipients — derived from the user's actual transfer history
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.getTransfers();
+        if (cancelled || !res.success || !Array.isArray(res.transfers)) return;
+        const recents: Recipient[] = [];
+        const seen = new Set<string>();
+        for (const t of res.transfers) {
+          const name = t.to_user_name || t.toUserName;
+          const email = t.to_user_email || t.toUserEmail;
+          if (name && !seen.has(name)) {
+            seen.add(name);
+            recents.push({ id: t.to_user_id, name, email });
+          }
+        }
+        setRecent(recents.slice(0, 6));
+      } catch { /* history is best-effort */ }
+    })();
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  // LIVE search over REAL registered VaultBank users (debounced)
+  useEffect(() => {
+    if (selected) return;
+    const q = query.trim();
+    if (q.length < 2) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.searchUsers(q);
+        setResults(res.success && Array.isArray(res.users) ? res.users : []);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query, selected]);
+
+  const pick = (r: Recipient) => {
+    setSelected(r);
+    setQuery('');
+    setResults([]);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const recipient = selected ? recipientValue(selected) : query.trim();
     if (!recipient || !amount) return;
     setStatus('sending');
-    await onSend(recipient, parseFloat(amount), note);
-    setStatus('success');
-    setTimeout(() => {
-      setStatus('idle');
-      setRecipient('');
-      setAmount('');
-      setNote('');
-      onClose();
-    }, 1800);
+    setErrorMsg('');
+    try {
+      await onSend(recipient, parseFloat(amount), note);
+      setStatus('success');
+      setTimeout(() => {
+        setStatus('idle');
+        setSelected(null);
+        setQuery('');
+        setAmount('');
+        setNote('');
+        onClose();
+      }, 1600);
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Transfer failed. Please try again.');
+      setStatus('error');
+    }
   };
 
   return (
-    <BaseModal isOpen={isOpen} onClose={onClose} icon={Send} title="Send Money" subtitle="INSTANT TRANSFER">
+    <BaseModal isOpen={isOpen} onClose={onClose} icon={Send} title="Send Money" subtitle="REAL INSTANT TRANSFER">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">RECIPIENT</label>
-          <input
-            type="text"
-            value={recipient}
-            onChange={(e) => setRecipient(e.target.value)}
-            placeholder="Name, email or @handle"
-            className="w-full bg-white/5 border border-white/10 rounded-xl p-3.5 text-sm text-white focus:outline-none focus:border-amber-500/40 transition-colors"
-          />
+          <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">RECIPIENT — REAL VAULTBANK USERS</label>
+
+          {selected ? (
+            <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-500/5 border border-amber-500/30">
+              <Avatar name={selected.name} size="sm" ring={false} />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm text-white font-semibold truncate">{selected.name}</p>
+                <p className="text-[10px] text-white/40 truncate">{selected.accountNumber || selected.email}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelected(null)}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10"
+              >
+                <X className="w-3.5 h-3.5 text-white/60" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="relative">
+                <UserSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                <input
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search by name, email or account number…"
+                  className="w-full bg-white/5 border border-white/10 rounded-xl p-3.5 pl-10 text-sm text-white focus:outline-none focus:border-amber-500/40 transition-colors"
+                />
+                {searching && (
+                  <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-amber-400 animate-spin" />
+                )}
+              </div>
+
+              {/* Live results — real registered users only */}
+              {results.length > 0 && (
+                <div className="mt-2 max-h-44 overflow-y-auto rounded-xl border border-white/10 divide-y divide-white/5">
+                  {results.map((r) => (
+                    <button
+                      key={r.id || r.email || r.name}
+                      type="button"
+                      onClick={() => pick(r)}
+                      className="w-full flex items-center gap-3 p-2.5 hover:bg-white/5 transition-colors text-left"
+                    >
+                      <Avatar name={r.name} size="xs" ring={false} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-white truncate">{r.name}</p>
+                        <p className="text-[10px] text-white/40 truncate">{r.email}{r.accountNumber ? ` · ${r.accountNumber}` : ''}</p>
+                      </div>
+                      <Send className="w-3 h-3 text-amber-400/60" />
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {query.trim().length >= 2 && !searching && results.length === 0 && (
+                <p className="mt-2 text-[10px] text-white/30 px-1">
+                  No matching user yet — you can also paste a full email address or account number (VB-…).
+                </p>
+              )}
+            </>
+          )}
         </div>
 
-        {/* Quick contacts */}
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {contacts.map((c, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => setRecipient(c.name)}
-              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-amber-500/30 transition-colors flex-shrink-0"
-            >
-              <img src={c.img} alt={c.name} className="w-6 h-6 rounded-full object-cover" />
-              <span className="text-xs text-white/70">{c.name.split(' ')[0]}</span>
-            </button>
-          ))}
-        </div>
+        {/* REAL recent recipients from actual transfer history */}
+        {recent.length > 0 && !selected && (
+          <div>
+            <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">RECENT — YOUR REAL TRANSFERS</label>
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              {recent.map((c, i) => (
+                <button
+                  key={c.id || c.email || i}
+                  type="button"
+                  onClick={() => pick(c)}
+                  className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-amber-500/30 transition-colors flex-shrink-0"
+                >
+                  <Avatar name={c.name} size="xs" ring={false} />
+                  <span className="text-xs text-white/70">{c.name.split(' ')[0]}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div>
           <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
@@ -87,7 +223,13 @@ export function TransferModal({ isOpen, onClose, onSend, contacts }: TransferMod
           />
         </div>
 
-        <SubmitButton status={status} idleText="Confirm Transfer" />
+        {status === 'error' && (
+          <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
+            {errorMsg}
+          </p>
+        )}
+
+        <SubmitButton status={status} idleText="Confirm Real Transfer" />
       </form>
     </BaseModal>
   );

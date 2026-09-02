@@ -11,6 +11,7 @@ const {
     findUserById,
     findAccountByUserId,
     findAccountByNumber,
+    searchUsers,
     createAccount,
     updateAccountBalance,
     createTransaction,
@@ -536,6 +537,35 @@ router.get('/api/account/statement', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Statement error:', error);
         res.status(500).json({ success: false, message: 'Failed to generate statement.' });
+    }
+});
+
+// ============================================================
+// GET /api/account/users/search?q= — Find REAL registered users
+// Powers the Send Money recipient lookup by name / email /
+// account number. Authenticated, self-excluded, safe fields only.
+// ============================================================
+router.get('/api/account/users/search', authenticateToken, async (req, res) => {
+    try {
+        const q = (req.query.q || '').toString().trim();
+        if (q.length < 2) {
+            return res.json({ success: true, users: [] });
+        }
+        const users = await searchUsers(q, req.user.id, 8);
+        res.json({
+            success: true,
+            users: users.map(u => ({
+                id: u.id,
+                name: u.full_name || u.email,
+                email: u.email,
+                accountNumber: u.account_number,
+                accountType: u.account_type,
+                currency: u.currency,
+            })),
+        });
+    } catch (error) {
+        console.error('User search error:', error);
+        res.status(500).json({ success: false, message: 'User search failed.' });
     }
 });
 

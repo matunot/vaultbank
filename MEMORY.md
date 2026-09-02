@@ -109,6 +109,11 @@ vaultbank/
 
 - [x] 2026-09-02: Dependency bumps committed (lucide-react, @vitejs/plugin-react, joi, mongoose, simple-statistics, uuid) + docs refreshed
 - [x] 2026-09-02: `LICENSE` referenced in docs + `"license": "UNLICENSED"` set in both package.json files
+- [x] 2026-09-02: **Send Money is now REAL** — `store.sendMoney()` calls `POST /api/account/transfer` (no more fake setTimeout); balance syncs from server response
+- [x] 2026-09-02: **Real user search** — new `GET /api/account/users/search?q=` (SQL ILIKE over users+accounts, self-excluded) + `searchUsers()` in database.js; verified live: returns real users (Admin User, diana, …) with VB- account numbers
+- [x] 2026-09-02: **Fake demo people removed** — TransferModal/TransferSection/QuickContacts now show real recipients from actual transfer history (`GET /api/transfers`); new `Avatar.tsx` (initials) replaces pravatar stock photos; `contacts` removed from data.ts usage & store
+- [x] 2026-09-02: **PaymentsSection is real** — real balance hero, real Recent Payments list, real send flow (user search → transfer), QR shows real account number; provider cards no longer show fake balances ("link to sync")
+- [x] 2026-09-02: `npx tsc --noEmit` passes 0 errors; backend `node --check` OK; endpoint tested live on port 5000
 
 ---
 
