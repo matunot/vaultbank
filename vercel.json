@@ -1,1 +1,1 @@
-﻿{"version":2,"builds":[{"src":"server.js","use":"@vercel/node","config":{"buildCommand":"bash build-client.sh"}}]}
+﻿{"version":2,"builds":[{"src":"server.js","use":"@vercel/node","config":{"buildCommand":"cd client && npm install && npm run build"}}]}
