@@ -1,1 +1,1 @@
-﻿@echo off cd client npm install npm run build
+@echo off cd client npm install npm run build
