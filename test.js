@@ -1,12 +1,6 @@
-const https = require('https');
-https.get('https://vaultbank.vercel.app/', (res) => {
-  let d = '';
-  res.on('data', c => d += c);
-  res.on('end', () => {
-    console.log('Status:', res.statusCode);
-    console.log('Title:', d.match(/<title>([^<]+)<\/title>/)?.[1] || 'NONE');
-    console.log('Has React root:', d.includes('id="root"') ? 'YES' : 'NO');
-    console.log('Has API URL:', d.includes('vaultbank-md20') ? 'YES' : 'NO');
-    console.log('Has Bootstrap:', d.includes('bootstrap') ? 'YES (old)' : 'NO (good)');
-  });
-}).on('error', e => console.log('ERR:', e.message));
+const fs = require('fs');
+const d = fs.readFileSync('c:/Users/cr7/Desktop/vaultbank/client/public/index.html', 'utf8');
+console.log('Has API URL:', d.includes('vaultbank-md20') ? 'YES' : 'NO');
+console.log('Has root div:', d.includes('id="root"') ? 'YES' : 'NO');
+console.log('Title:', d.match(/<title>([^<]+)<\/title>/)?.[1] || 'NONE');
+console.log('Length:', d.length);
