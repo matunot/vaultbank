@@ -12,7 +12,9 @@ services:
     # a spun-down server can't ping itself.
     plan: free
     runtime: nodejs24
-    buildCommand: npm install
+    # Build installs server deps, then builds the React app into client/dist so the
+    # backend can serve the whole app on a single origin (frontend + API).
+    buildCommand: npm install && cd ../client && npm install && npm run build
     startCommand: node index.js
     workingDirectory: server
     healthCheckPath: /health

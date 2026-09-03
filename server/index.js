@@ -30,6 +30,15 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const startTime = Date.now();
 
+// ─── Frontend Static Serving (single-origin) ────────────────────────────────
+// Serve the built React app from client/dist so the whole VaultBank app runs
+// on ONE origin (e.g. https://vaultbank-md20.onrender.com). This makes the
+// frontend impossible to go stale or lose API connectivity.
+const path = require('path');
+const fs = require('fs');
+const FRONTEND_DIST = path.join(__dirname, '..', 'client', 'dist');
+const hasFrontend = fs.existsSync(path.join(FRONTEND_DIST, 'index.html'));
+
 // ─── Security Middleware ────────────────────────────────────────────────────
 app.use(helmet({
     crossOriginEmbedderPolicy: false,
@@ -125,7 +134,18 @@ app.use('/', accountRoutes);
 app.use(stripePaymentRoutes);
 
 // ─── Root Route ──────────────────────────────────────────────────────────────
+// ─── Frontend Static Serving (single-origin) ────────────────────────────────
+// Serve the built React SPA so the app runs on one origin (frontend + API).
+// This guarantees the deployed app can always reach its own API — no stale
+// frontend build or cross-origin mismatch can break login again.
+if (hasFrontend) {
+    app.use(express.static(FRONTEND_DIST));
+}
+
 app.get('/', (req, res) => {
+    if (hasFrontend) {
+        return res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+    }
     return res.status(200).json({
         name: 'VaultBank API',
         version: '1.0.0',
@@ -278,6 +298,15 @@ app.get('/api', (req, res) => {
         timestamp: new Date().toISOString()
     });
 });
+
+// ─── SPA Fallback (after all API routes) ─────────────────────────────────────
+// Any non-API GET that didn't match an API route returns the React app, so
+// client-side routing (/dashboard, /payments, ...) works on a single origin.
+if (hasFrontend) {
+    app.get(/^\/(?!api\/|health|login|signup)(?:[A-Za-z0-9\-._~!$&'()*+,;=:@/%?]*)$/, (req, res) => {
+        return res.sendFile(path.join(FRONTEND_DIST, 'index.html'));
+    });
+}
 
 // ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use((req, res) => {
