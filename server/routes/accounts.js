@@ -419,6 +419,21 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
             message: `$${transferAmount.toFixed(2)} received from ${senderAccount.account_number}. New balance: $${recipientBalance.toFixed(2)}`
         });
 
+        // Create an in-memory alert for the receiver so their notification
+        // bell badge lights up immediately (complements the DB notification).
+        try {
+            const { demoStore } = require('../config/database');
+            demoStore.alerts.push({
+                id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                userId: recipientAccount.user_id,
+                type: 'success',
+                message: `You received $${transferAmount.toFixed(2)} from ${req.user.full_name || req.user.email}.`,
+                severity: 'info',
+                read: false,
+                createdAt: new Date().toISOString(),
+            });
+        } catch (e) { /* alert is best-effort */ }
+
         res.json({
             success: true,
             message: `Successfully transferred $${transferAmount.toFixed(2)}`,

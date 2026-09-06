@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../api';
+import { refreshBus } from '../refreshBus';
 
 export interface AccountData {
   id: string;
@@ -91,6 +92,11 @@ export function useAccountData(): AccountDataResult {
 
   useEffect(() => {
     fetchData();
+    // Refetch instantly whenever money moves (send, deposit, bill pay…)
+    const unsub = refreshBus.subscribe(fetchData);
+    // Plus a gentle 20s poll so money received from others shows up live too.
+    const poll = setInterval(fetchData, 20000);
+    return () => { unsub(); clearInterval(poll); };
   }, [fetchData]);
 
   return { account, transactions, balance, loading, error, refetch: fetchData };

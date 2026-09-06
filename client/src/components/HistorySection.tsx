@@ -1,37 +1,75 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowDownLeft, ArrowUpRight, Search, Download } from 'lucide-react';
-import { fullTransactionHistory } from '../data';
+import { ArrowDownLeft, ArrowUpRight, Search, Download, Loader2, RefreshCw } from 'lucide-react';
+import { api } from '../api';
+import { refreshBus } from '../refreshBus';
+
+interface Tx {
+  id: string | number;
+  name: string;
+  cat: string;
+  amount: number;
+  date: string;
+  status: string;
+}
 
 const catIcons: Record<string, { icon: React.ComponentType<any>; variant: 'gold' | 'emerald' | 'ruby' | 'sapphire' | 'amethyst' | 'amber' | 'cyan' }> = {
+  'Transfer': { icon: ArrowDownLeft, variant: 'emerald' },
+  'Deposit': { icon: ArrowDownLeft, variant: 'emerald' },
+  'Withdrawal': { icon: ArrowUpRight, variant: 'sapphire' },
   'Income': { icon: ArrowDownLeft, variant: 'emerald' },
-  'Electronics': { icon: ArrowUpRight, variant: 'sapphire' },
-  'Dining': { icon: ArrowUpRight, variant: 'ruby' },
-  'Auto': { icon: ArrowUpRight, variant: 'cyan' },
-  'Luxury': { icon: ArrowUpRight, variant: 'gold' },
-  'Tech': { icon: ArrowUpRight, variant: 'amethyst' },
-  'Investment': { icon: ArrowDownLeft, variant: 'emerald' },
-  'Travel': { icon: ArrowUpRight, variant: 'sapphire' },
-  'Entertainment': { icon: ArrowUpRight, variant: 'amethyst' },
-  'Groceries': { icon: ArrowUpRight, variant: 'emerald' },
-  'Transport': { icon: ArrowUpRight, variant: 'cyan' },
-  'Utilities': { icon: ArrowUpRight, variant: 'amber' },
-  'Food & Drink': { icon: ArrowUpRight, variant: 'ruby' },
+  'Expense': { icon: ArrowUpRight, variant: 'ruby' },
+  'Transfer Out': { icon: ArrowUpRight, variant: 'ruby' },
+  'Transfer In': { icon: ArrowDownLeft, variant: 'emerald' },
 };
 
+function mapTx(raw: any, index: number): Tx {
+  const debit = raw.type === 'debit' || raw.type === 'withdrawal' || raw.type === 'transfer_out' || parseFloat(raw.amount) < 0;
+  const amount = Math.abs(parseFloat(raw.amount) || 0);
+  const rawType = (raw.type || raw.category || 'Transaction').toString();
+  const cat = rawType.charAt(0).toUpperCase() + rawType.slice(1).replace(/_/g, ' ');
+  return {
+    id: raw.id || index,
+    name: raw.description || raw.counterparty_name || cat,
+    cat,
+    amount: debit ? -amount : amount,
+    date: raw.created_at ? new Date(raw.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Today',
+    status: raw.status || 'completed',
+  };
+}
+
 export default function HistorySection() {
+  const [txs, setTxs] = useState<Tx[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [search, setSearch] = useState('');
 
-  const filtered = useMemo(() => fullTransactionHistory.filter(tx => {
+  const fetchTx = useCallback(async () => {
+    try {
+      const res = await api.getAccountTransactions(100);
+      if (res.success && Array.isArray(res.transactions)) {
+        setTxs(res.transactions.map(mapTx));
+      }
+    } catch { /* best effort */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    fetchTx();
+    const unsub = refreshBus.subscribe(fetchTx);
+    const poll = setInterval(fetchTx, 30000);
+    return () => { unsub(); clearInterval(poll); };
+  }, [fetchTx]);
+
+  const filtered = useMemo(() => txs.filter(tx => {
     const isIncome = tx.amount > 0;
     const matchType = filter === 'all' || (filter === 'income' ? isIncome : !isIncome);
     const matchSearch = !search || tx.name.toLowerCase().includes(search.toLowerCase()) || tx.cat.toLowerCase().includes(search.toLowerCase());
     return matchType && matchSearch;
-  }), [filter, search]);
+  }), [txs, filter, search]);
 
-  const totalIn = fullTransactionHistory.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-  const totalOut = fullTransactionHistory.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+  const totalIn = txs.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+  const totalOut = txs.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
 
   return (
     <div className="space-y-5">
@@ -43,9 +81,19 @@ export default function HistorySection() {
       >
         <div className="absolute -top-20 -right-20 w-72 h-72 bg-purple-500/15 rounded-full blur-3xl" />
         <div className="relative z-10">
-          <p className="text-xs tracking-widest text-white/40 font-semibold">FULL TRANSACTION HISTORY</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs tracking-widest text-white/40 font-semibold">FULL TRANSACTION HISTORY</p>
+            <motion.button
+              whileHover={{ rotate: 180 }}
+              onClick={fetchTx}
+              className="p-1.5 rounded-lg glass-btn"
+              title="Refresh"
+            >
+              <RefreshCw className="w-3.5 h-3.5 text-white/40" />
+            </motion.button>
+          </div>
           <p className="font-display text-5xl lg:text-6xl text-white mt-2">
-            {fullTransactionHistory.length}<span className="text-2xl text-white/40 ml-3">transactions</span>
+            {loading ? '…' : txs.length}<span className="text-2xl text-white/40 ml-3">transactions</span>
           </p>
 
           <div className="grid grid-cols-3 gap-4 mt-6">
@@ -101,10 +149,19 @@ export default function HistorySection() {
         </div>
 
         <div className="space-y-2 max-h-150 overflow-y-auto pr-1">
+          {loading ? (
+            <div className="flex items-center gap-2 text-white/40 text-sm py-8 justify-center">
+              <Loader2 className="w-5 h-5 animate-spin" /> Loading real transactions…
+            </div>
+          ) : filtered.length === 0 ? (
+            <div className="text-sm text-white/40 py-8 text-center">
+              No {filter !== 'all' ? filter : ''} transactions yet. Send money or deposit to see it here.
+            </div>
+          ) : (
           <AnimatePresence mode="popLayout">
             {filtered.map((tx, i) => {
               const positive = tx.amount > 0;
-              const catConfig = catIcons[tx.cat] || { icon: ArrowUpRight, variant: 'amber' as const };
+              const catConfig = catIcons[tx.cat] || { icon: positive ? ArrowDownLeft : ArrowUpRight, variant: positive ? 'emerald' as const : 'amber' as const };
               const IconComp = catConfig.icon;
               return (
                 <motion.div
@@ -118,11 +175,11 @@ export default function HistorySection() {
                   className="flex items-center gap-4 p-4 rounded-2xl bg-white/2 border border-white/5 hover:border-white/10 cursor-pointer transition-all"
                 >
                   <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-xl border border-white/10">
-                    {tx.icon}
+                    {positive ? '💰' : '💸'}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-white truncate">{tx.name}</p>
-                    <p className="text-xs text-white/40 mt-0.5">{tx.cat} · {tx.date}</p>
+                    <p className="text-xs text-white/40 mt-0.5">{tx.cat} · {tx.date} · {tx.status}</p>
                   </div>
                   <div className="flex items-center gap-3 shrink-0">
                     <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
@@ -138,6 +195,7 @@ export default function HistorySection() {
               );
             })}
           </AnimatePresence>
+          )}
         </div>
       </motion.div>
     </div>

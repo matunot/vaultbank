@@ -11,7 +11,7 @@ interface ModalProps {
 }
 
 interface TransferModalProps extends ModalProps {
-  onSend: (recipient: string, amount: number, note?: string) => Promise<void>;
+  onSend: (recipient: string, amount: number, note?: string, recipientName?: string) => Promise<void>;
 }
 
 /** A real registered VaultBank user (from the backend directory). */
@@ -35,6 +35,7 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
   const [note, setNote] = useState('');
   const [status, setStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  const [lastSent, setLastSent] = useState<{ name: string; amount: number } | null>(null);
 
   // REAL recent recipients — derived from the user's actual transfer history
   useEffect(() => {
@@ -96,16 +97,20 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
     setStatus('sending');
     setErrorMsg('');
     try {
-      await onSend(recipient, parseFloat(amount), note);
+      const amountNum = parseFloat(amount);
+      const sentTo = selected?.name || recipient;
+      await onSend(recipient, amountNum, note, sentTo);
       setStatus('success');
+      setLastSent({ name: sentTo, amount: amountNum });
       setTimeout(() => {
         setStatus('idle');
         setSelected(null);
         setQuery('');
         setAmount('');
         setNote('');
+        setLastSent(null);
         onClose();
-      }, 1600);
+      }, 2200);
     } catch (err: any) {
       setErrorMsg(err?.message || 'Transfer failed. Please try again.');
       setStatus('error');
@@ -227,6 +232,44 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
           <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
             {errorMsg}
           </p>
+        )}
+
+        {status === 'success' && lastSent && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: 8 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            className="relative overflow-hidden rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4"
+          >
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: '100%' }}
+              transition={{ duration: 0.9, ease: 'easeInOut' }}
+              className="absolute inset-y-0 w-1/3 bg-linear-to-r from-transparent via-emerald-400/20 to-transparent"
+            />
+            <div className="relative flex items-center gap-3">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 15, delay: 0.1 }}
+                className="w-10 h-10 rounded-full bg-emerald-500/25 border border-emerald-400/40 flex items-center justify-center shrink-0"
+              >
+                <CheckCircle2 className="w-5 h-5 text-emerald-300" />
+              </motion.div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-emerald-200">
+                  ${(lastSent.amount).toFixed(2)} sent to {lastSent.name}
+                </p>
+                <p className="text-[10px] text-emerald-400/70 mt-0.5 tracking-wide">
+                  REAL MONEY · INSTANT · SETTLED
+                </p>
+              </div>
+              <motion.div
+                animate={{ scale: [1, 1.25, 1] }}
+                transition={{ repeat: Infinity, duration: 1.4 }}
+                className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"
+              />
+            </div>
+          </motion.div>
         )}
 
         <SubmitButton status={status} idleText="Confirm Real Transfer" />

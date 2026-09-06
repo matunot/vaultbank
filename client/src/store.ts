@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { cards as initialCards, transactions as initialTransactions, savingsGoals as initialGoals, budgetCategories as initialBudget, investments as initialInvestments } from './data';
 import { api } from './api';
+import { refreshBus } from './refreshBus';
 
 export interface Transaction {
   id: number;
@@ -110,6 +111,7 @@ export function useAppStore() {
         gem: 'sapphire',
       };
       setTransactions(prev => [newTx, ...prev]);
+      refreshBus.emit();
       return true;
     } finally {
       setTransferLoading(false);
@@ -154,6 +156,7 @@ export function useAppStore() {
       gem: 'emerald',
     };
     setTransactions(prev => [newTx, ...prev]);
+    refreshBus.emit();
     return true;
   }, [syncBalanceFromServer]);
 
@@ -173,6 +176,7 @@ export function useAppStore() {
     };
     setTransactions(prev => [newTx, ...prev]);
     setBudget(prev => prev.map(b => b.name === 'Entertainment' ? { ...b, spent: b.spent + amount } : b));
+    refreshBus.emit();
     return true;
   }, [syncBalanceFromServer]);
 

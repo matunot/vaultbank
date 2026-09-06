@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, PartyPopper } from 'lucide-react';
+import { Shield, PartyPopper, Send } from 'lucide-react';
 
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
@@ -57,6 +57,8 @@ export default function App() {
 
   // Handle the REAL return from Stripe Checkout (?deposit=success / cancelled)
   const [depositBanner, setDepositBanner] = useState<string | null>(null);
+  // Gold toast fired the moment a REAL transfer completes
+  const [sendToast, setSendToast] = useState<{ name: string; amount: number } | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('deposit') === 'success') {
@@ -70,8 +72,11 @@ export default function App() {
     }
   }, []);
 
-  const handleSend = useCallback(async (recipient: string, amount: number, note?: string) => {
+  const handleSend = useCallback(async (recipient: string, amount: number, note?: string, recipientName?: string) => {
     await store.sendMoney(recipient, amount, note);
+    const who = (recipientName || recipient).trim();
+    setSendToast({ name: who, amount });
+    setTimeout(() => setSendToast(null), 5000);
     closeModal();
   }, [store, closeModal]);
 
@@ -119,6 +124,50 @@ export default function App() {
                 <div className="flex items-center gap-3 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
                   <PartyPopper className="w-5 h-5 text-emerald-300 shrink-0" />
                   <p className="text-sm font-semibold text-emerald-200">{depositBanner}</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Gold toast — REAL money sent confirmation */}
+          <AnimatePresence>
+            {sendToast && (
+              <motion.div
+                initial={{ opacity: 0, y: -16, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -16, scale: 0.97 }}
+                className="px-5 lg:px-8 pt-4"
+              >
+                <div className="relative overflow-hidden rounded-2xl p-4 border border-amber-400/40 bg-linear-to-r from-amber-500/15 via-yellow-500/10 to-amber-500/15">
+                  <motion.div
+                    initial={{ x: '-100%' }}
+                    animate={{ x: '100%' }}
+                    transition={{ duration: 1.2, ease: 'easeInOut' }}
+                    className="absolute inset-y-0 w-1/4 bg-linear-to-r from-transparent via-amber-300/25 to-transparent"
+                  />
+                  <div className="relative flex items-center gap-3">
+                    <motion.div
+                      initial={{ scale: 0, rotate: -30 }}
+                      animate={{ scale: 1, rotate: 0 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                      className="w-10 h-10 rounded-full bg-amber-400/30 border border-amber-300/50 flex items-center justify-center shrink-0"
+                    >
+                      <Send className="w-5 h-5 text-amber-200 -rotate-12" />
+                    </motion.div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-bold text-amber-100">
+                        {store.formatMoney(sendToast.amount)} sent to {sendToast.name}
+                      </p>
+                      <p className="text-[11px] text-amber-300/70 mt-0.5 tracking-wide">
+                        REAL MONEY · INSTANT TRANSFER · BALANCE UPDATED
+                      </p>
+                    </div>
+                    <motion.div
+                      animate={{ opacity: [1, 0.4, 1] }}
+                      transition={{ repeat: Infinity, duration: 1.4 }}
+                      className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"
+                    />
+                  </div>
                 </div>
               </motion.div>
             )}
