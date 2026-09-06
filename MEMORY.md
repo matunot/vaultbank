@@ -137,6 +137,17 @@ vaultbank/
     - `CLIENT_URL` env var updated → `https://vaultbank-md20.onrender.com` (Stripe success/cancel URLs now return to the app)
   - **Verified live:** GET `/` → 867KB React HTML (has onrender URL + `?deposit=success` handler); login 200 + JWT; `/api/account` 200; `/api/account/balance` 200 ($4,980.50); Stripe LIVE; new Checkout session success_url = `https://vaultbank-md20.onrender.com/?deposit=success&session_id=…`
   - **Vercel (`vaultbank-mu`) no longer needed** — stale build marked ⚠️ legacy in MEMORY.md.
+- [x] 🎉 **SEND/RECEIVE MONEY — LIVE FEEDBACK EVERYWHERE (2026-09-03)**
+  - **`client/src/refreshBus.ts` (new)** — tiny pub/sub that fires when money moves; every view subscribes and refetches instantly = whole app stays live with NO reload
+  - **`store.ts`** — emits the bus after every successful send / deposit / bill pay
+  - **`hooks/useAccountData.ts`** — subscribes to the bus + gentle 20s poll (so money RECEIVED from others shows up too)
+  - **`Modals.tsx` (TransferModal)** — emerald animated success receipt: "💸 $2.50 sent to X · REAL MONEY · INSTANT · SETTLED"
+  - **`App.tsx`** — gold toast banner on send: formatMoney sent to user, "BALANCE UPDATED"
+  - **`HistorySection.tsx`** — now fetches REAL devices from `/api/account/transactions` (was fake `fullTransactionHistory` from data.ts); has refresh button + loading + empty states
+  - **`NotificationsPanel.tsx`** — fetches REAL alerts from `/api/alerts` (was fake data.ts), live badge count, "Money Received" titles, time-ago, poll + bus subscription
+  - **`server/routes/accounts.js`** — transfer now also pushes a real "Money Received" alert to the receiver's demoStore (instant bell badge)
+  - **`server/routes/alerts.js`** — was CRASHING in production (read `demoStore.alerts` which is empty in real-DB mode → 500). Now reads real DB notifications via `getNotifications()` with graceful fallback; unread-count/read-all are production-safe
+  - **Verified live on `https://vaultbank-md20.onrender.com`**: real transfer `$2.50 demo→diana` → sender balance 4980.50→4978.00, transaction + transfer history both updated; `/api/alerts` returns 200 + real notifications; TS 0 errors; build OK
 
 ---
 
