@@ -120,7 +120,7 @@ export default function PaymentsSection() {
         animate={{ opacity: 1, y: 0 }}
         className="relative rounded-3xl overflow-hidden iridescent-border"
       >
-        <div className="relative p-6 lg:p-8 bg-gradient-to-br from-cyan-500/10 via-blue-500/5 to-purple-500/10">
+        <div className="relative p-6 lg:p-8 bg-linear-to-br from-cyan-500/10 via-blue-500/5 to-purple-500/10">
           <div className="absolute inset-0 glass opacity-40" />
           <div className="absolute -top-20 -right-20 w-72 h-72 bg-cyan-500/20 rounded-full blur-3xl" />
           <div className="absolute -bottom-20 -left-20 w-72 h-72 bg-purple-500/15 rounded-full blur-3xl" />
@@ -166,7 +166,7 @@ export default function PaymentsSection() {
                 <motion.button
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   onClick={() => setShowAdd(true)}
-                  className="px-5 py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 glow-blue"
+                  className="px-5 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 glow-blue"
                 >
                   <Plus className="w-4 h-4" /> Add Method
                 </motion.button>
@@ -247,7 +247,7 @@ export default function PaymentsSection() {
               const positive = t.type === 'credit' || t.amount > 0;
               const amt = Math.abs(t.amount);
               return (
-                <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl bg-white/[0.03] border border-white/5">
+                <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl bg-white/3 border border-white/5">
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${positive ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-rose-500/10 border border-rose-500/20'}`}>
                     {positive ? <ArrowDownRight className="w-4 h-4 text-emerald-300" /> : <ArrowUpRight className="w-4 h-4 text-rose-300" />}
                   </div>
@@ -278,7 +278,7 @@ export default function PaymentsSection() {
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
-              tab === t.id ? 'bg-gradient-to-r from-cyan-400 to-blue-500 text-white glow-blue' : 'glass-btn text-white/60 hover:text-white'
+              tab === t.id ? 'bg-linear-to-r from-cyan-400 to-blue-500 text-white glow-blue' : 'glass-btn text-white/60 hover:text-white'
             }`}
           >
             <t.icon className="w-4 h-4" />{t.label}
@@ -446,7 +446,7 @@ export default function PaymentsSection() {
                 {showAddresses && (
                   <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-2">
                     {cryptoWallets.map((c) => (
-                      <div key={c.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/5">
+                      <div key={c.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/3 border border-white/5">
                         <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold" style={{ background: `${c.color}25`, color: c.color, border: `1px solid ${c.color}50` }}>{c.icon}</div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-bold text-white">{c.symbol} · {c.chain}</p>
@@ -566,7 +566,7 @@ export default function PaymentsSection() {
               <p className="font-display text-lg text-gold mb-4">{account?.accountNumber || 'Loading…'}</p>
 
               <div className="flex gap-2">
-                <button onClick={() => copy(account?.accountNumber || '', 'qr')} className="flex-1 py-3 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2">
+                <button onClick={() => copy(account?.accountNumber || '', 'qr')} className="flex-1 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2">
                   {copied === 'qr' ? <><Check className="w-4 h-4" /> Copied</> : <><Copy className="w-4 h-4" /> Copy ID</>}
                 </button>
                 <button className="px-4 py-3 rounded-xl glass-btn text-white/70"><Download className="w-4 h-4" /></button>
@@ -689,7 +689,7 @@ export default function PaymentsSection() {
                 <button
                   onClick={executeSend}
                   disabled={sendStatus === 'sending' || !sendAmount || (!selected && query.trim().length < 2)}
-                  className="w-full py-4 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
+                  className="w-full py-4 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
                 >
                   {sendStatus === 'sending' ? (
                     <><Loader2 className="w-4 h-4 animate-spin" /> Sending real money…</>
@@ -748,7 +748,7 @@ export default function PaymentsSection() {
                   <motion.div
                     key={m.id + i}
                     initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                    className="flex items-center gap-3 p-3 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-cyan-500/30 transition-all cursor-pointer"
+                    className="flex items-center gap-3 p-3 rounded-2xl bg-white/3 border border-white/5 hover:border-cyan-500/30 transition-all cursor-pointer"
                   >
                     <div className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-lg"
                       style={{ background: `${m.color}20`, border: `1px solid ${m.color}40`, color: m.color }}

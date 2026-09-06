@@ -72,7 +72,7 @@ export default function BudgetPanel({ budget }: BudgetPanelProps) {
                   animate={{ width: `${Math.min(pct, 100)}%` }}
                   transition={{ delay: 0.4 + i * 0.1, duration: 0.8, ease: 'easeOut' }}
                   className={`h-full rounded-full relative ${
-                    danger ? 'bg-gradient-to-r from-rose-500 to-rose-400' : warning ? 'bg-gradient-to-r from-amber-500 to-amber-400' : 'bg-gradient-to-r from-emerald-500 to-emerald-400'
+                    danger ? 'bg-linear-to-r from-rose-500 to-rose-400' : warning ? 'bg-linear-to-r from-amber-500 to-amber-400' : 'bg-linear-to-r from-emerald-500 to-emerald-400'
                   }`}
                   style={{ 
                     boxShadow: danger 

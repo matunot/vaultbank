@@ -91,7 +91,7 @@ export default function SpendingPanel() {
             className="flex items-center gap-2 cursor-pointer group"
           >
             <div
-              className="w-2.5 h-2.5 rounded-full flex-shrink-0 group-hover:scale-125 transition-transform"
+              className="w-2.5 h-2.5 rounded-full shrink-0 group-hover:scale-125 transition-transform"
               style={{ background: seg.color, boxShadow: `0 0 8px ${seg.glow}` }}
             />
             <span className="text-xs text-white/50 group-hover:text-white/80 truncate flex-1 transition-colors">{seg.label}</span>
@@ -116,7 +116,7 @@ export default function SpendingPanel() {
                 initial={{ height: 0 }}
                 animate={{ height: `${b.v}%` }}
                 transition={{ delay: 0.8 + i * 0.06, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-                className="w-full rounded-t-md bg-gradient-to-t from-amber-500/40 to-amber-300/80 hover:from-amber-400 hover:to-amber-200 cursor-pointer transition-colors"
+                className="w-full rounded-t-md bg-linear-to-t from-amber-500/40 to-amber-300/80 hover:from-amber-400 hover:to-amber-200 cursor-pointer transition-colors"
                 style={{ boxShadow: '0 0 12px rgba(212,175,55,0.2)' }}
               />
               <span className="text-[10px] text-white/30 font-medium">{b.d}</span>

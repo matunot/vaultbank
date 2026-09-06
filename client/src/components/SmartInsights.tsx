@@ -43,7 +43,7 @@ export default function SmartInsights() {
               className={`p-4 rounded-2xl ${insight.bg} ${insight.border} border cursor-pointer transition-all`}
             >
               <div className="flex items-start gap-3">
-                <Icon className={`w-5 h-5 flex-shrink-0 mt-0.5 ${insight.color}`} />
+                <Icon className={`w-5 h-5 shrink-0 mt-0.5 ${insight.color}`} />
                 <p className={`text-sm leading-relaxed ${insight.color.replace('text-', 'text-').replace('400', '300')}`}>
                   {insight.text}
                 </p>

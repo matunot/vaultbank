@@ -84,7 +84,7 @@ export default function SettingsModal({ isOpen, onClose, onLogout, theme, onThem
             className="w-full max-w-3xl max-h-[90vh] rounded-3xl glass-panel overflow-hidden flex flex-col"
           >
             {/* Header */}
-            <div className="p-6 border-b border-white/10 flex items-center justify-between flex-shrink-0">
+            <div className="p-6 border-b border-white/10 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/20 flex items-center justify-center">
                   <Shield className="w-4 h-4 text-amber-400" />
@@ -102,7 +102,7 @@ export default function SettingsModal({ isOpen, onClose, onLogout, theme, onThem
             {/* Body */}
             <div className="flex flex-1 overflow-hidden">
               {/* Side tabs */}
-              <div className="w-52 border-r border-white/10 p-3 space-y-1 flex-shrink-0 hidden md:block">
+              <div className="w-52 border-r border-white/10 p-3 space-y-1 shrink-0 hidden md:block">
                 {tabs.map(t => (
                   <button
                     key={t.id}
@@ -192,7 +192,7 @@ export default function SettingsModal({ isOpen, onClose, onLogout, theme, onThem
                             key={t.id}
                             onClick={() => onThemeChange(t.id)}
                             className={`p-4 rounded-2xl text-center transition-all ${
-                              theme === t.id ? 'bg-amber-500/15 border-2 border-amber-500/40' : 'bg-white/[0.03] border border-white/5'
+                              theme === t.id ? 'bg-amber-500/15 border-2 border-amber-500/40' : 'bg-white/3 border border-white/5'
                             }`}
                           >
                             <t.icon className={`w-5 h-5 mx-auto mb-2 ${theme === t.id ? 'text-amber-400' : 'text-white/40'}`} />
@@ -227,7 +227,7 @@ export default function SettingsModal({ isOpen, onClose, onLogout, theme, onThem
                         { label: 'Animations', desc: 'Smooth transitions and effects', value: animations, setter: setAnimations },
                         { label: 'Compact Mode', desc: 'Reduce spacing for density', value: compactMode, setter: setCompactMode },
                       ].map((item, i) => (
-                        <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/[0.03]">
+                        <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-white/3">
                           <div>
                             <p className="text-sm font-semibold text-white">{item.label}</p>
                             <p className="text-xs text-white/40">{item.desc}</p>
@@ -257,7 +257,7 @@ export default function SettingsModal({ isOpen, onClose, onLogout, theme, onThem
                         { icon: Fingerprint, label: 'Biometric Lock', desc: 'Require fingerprint or face ID', value: bioLock, setter: setBioLock },
                         { icon: Shield, label: 'Two-Factor Auth', desc: 'Extra verification for logins', value: twoFactor, setter: setTwoFactor },
                       ].map((item, i) => (
-                        <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03]">
+                        <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-white/3">
                           <div className="flex items-center gap-3">
                             <div className="w-9 h-9 rounded-lg bg-amber-500/15 flex items-center justify-center">
                               <item.icon className="w-4 h-4 text-amber-400" />
@@ -322,7 +322,7 @@ export default function SettingsModal({ isOpen, onClose, onLogout, theme, onThem
                         { icon: Calendar, label: 'Weekly Report', desc: 'Every Monday spending summary', value: weeklyReport, setter: setWeeklyReport },
                         { icon: Download, label: 'Monthly Statement', desc: 'Downloadable PDF statement', value: monthlyStatement, setter: setMonthlyStatement },
                       ].map((item, i) => (
-                        <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-white/[0.03]">
+                        <div key={i} className="flex items-center justify-between p-4 rounded-xl bg-white/3">
                           <div className="flex items-center gap-3">
                             <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${item.value ? 'bg-amber-500/15' : 'bg-white/5'}`}>
                               <item.icon className={`w-4 h-4 ${item.value ? 'text-amber-400' : 'text-white/30'}`} />
@@ -363,7 +363,7 @@ export default function SettingsModal({ isOpen, onClose, onLogout, theme, onThem
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     onClick={handleSave}
-                    className="w-full py-4 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold flex items-center justify-center gap-2 glow-amber"
+                    className="w-full py-4 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold flex items-center justify-center gap-2 glow-amber"
                   >
                     {saved ? <><Check className="w-4 h-4" /> Saved</> : <><Save className="w-4 h-4" /> Save Changes</>}
                   </motion.button>

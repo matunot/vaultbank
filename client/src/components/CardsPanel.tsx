@@ -94,8 +94,8 @@ export default function CardsPanel({ cards, onLockCard, formatMoney }: CardsPane
             <div className="relative z-10 h-full p-6 flex flex-col justify-between">
               <div className="flex items-start justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-10 h-7 rounded-md bg-gradient-to-br from-amber-300 to-amber-600 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent" />
+                  <div className="w-10 h-7 rounded-md bg-linear-to-br from-amber-300 to-amber-600 relative overflow-hidden">
+                    <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/40 to-transparent" />
                     <div className="absolute inset-1 border border-amber-800/40 rounded-sm" />
                   </div>
                   <div className="text-right">

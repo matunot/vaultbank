@@ -97,16 +97,16 @@ export default function QuickContacts() {
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: 0.5 + i * 0.08 }}
             onClick={() => setSelected(contact)}
-            className={`flex flex-col items-center gap-2 p-3 rounded-2xl min-w-[80px] transition-all ${
+            className={`flex flex-col items-center gap-2 p-3 rounded-2xl min-w-20 transition-all ${
               selected?.name === contact.name
                 ? 'bg-blue-500/10 border border-blue-500/30'
-                : 'bg-white/[0.02] border border-transparent hover:bg-white/[0.04]'
+                : 'bg-white/2er border-transparent hover:bg-white/4'
             }`}
           >
             <Avatar name={contact.name} size="md" />
             <div className="text-center">
-              <p className="text-xs font-medium text-white truncate max-w-[70px]">{contact.name.split(' ')[0]}</p>
-              <p className="text-[9px] text-white/40 truncate max-w-[70px]">{contact.email}</p>
+              <p className="text-xs font-medium text-white truncate max-w-17.5">{contact.name.split(' ')[0]}</p>
+              <p className="text-[9px] text-white/40 truncate max-w-17.5">{contact.email}</p>
             </div>
           </motion.button>
         ))}
@@ -115,7 +115,7 @@ export default function QuickContacts() {
         <motion.button
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
-          className="flex flex-col items-center gap-2 p-3 rounded-2xl min-w-[80px] bg-white/[0.02] border border-dashed border-white/10 hover:border-amber-500/30 transition-all"
+          className="flex flex-col items-center gap-2 p-3 rounded-2xl min-w-20 bg-white/2 border border-dashed border-white/10 hover:border-amber-500/30 transition-all"
         >
           <RichIcon icon={<UserSearch size={18} />} variant="gold" size="md" glow />
           <span className="text-xs font-medium text-white/60">Find</span>
@@ -147,7 +147,7 @@ export default function QuickContacts() {
               whileTap={{ scale: 0.98 }}
               onClick={send}
               disabled={status === 'sending' || !amount}
-              className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-500 text-white font-semibold text-sm flex items-center gap-2 glow-blue disabled:opacity-50"
+              className="px-6 py-2.5 rounded-xl bg-linear-to-r from-blue-500 to-indigo-500 text-white font-semibold text-sm flex items-center gap-2 glow-blue disabled:opacity-50"
             >
               {status === 'sending' ? (
                 <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
