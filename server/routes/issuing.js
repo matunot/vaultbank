@@ -1,4 +1,4 @@
-/**
+﻿/**
  * VaultBank Stripe Issuing - REAL cards
  *
  * Issues real Visa/Mastercard virtual cards via Stripe Issuing.
@@ -136,7 +136,7 @@ async function getOrCreateCardholder(user, body) {
 }
 
 // ============================================================
-// GET /api/issuing/status â€” is real card issuing available?
+// GET /api/issuing/status Ã¢â‚¬â€ is real card issuing available?
 // ============================================================
 router.get('/api/issuing/status', authenticateToken, async (req, res) => {
     try {
@@ -148,7 +148,7 @@ router.get('/api/issuing/status', authenticateToken, async (req, res) => {
             await s.issuing.cardholders.list({ limit: 1 });
         } catch (e) {
             if (String(e.message || '').includes('not set up to use Issuing')) {
-                return res.json({ success: true, available: false, reason: 'issuing-not-activated', activationUrl: 'https://dashboard.stripe.com/issuing/overview', mode: stripeMode() });
+                return res.json({ success: true, available: false, reason: 'issuing-not-activated', activationUrl: 'https://dashboard.stripe.com/issuing/overview', mode: stripeMode(), webhookRegistered: !!(await getConfig('issuing_webhook_endpoint_id')) });
             }
             // Any other error: report it but keep the UI functional
             return res.json({ success: true, available: false, reason: 'error', message: e.message, mode: stripeMode() });
@@ -177,7 +177,7 @@ router.get('/api/issuing/status', authenticateToken, async (req, res) => {
 });
 
 // ============================================================
-// POST /api/issuing/cardholder â€” create the real cardholder (KYC entity)
+// POST /api/issuing/cardholder Ã¢â‚¬â€ create the real cardholder (KYC entity)
 // ============================================================
 router.post('/api/issuing/cardholder', authenticateToken, async (req, res) => {
     try {
@@ -200,7 +200,7 @@ router.post('/api/issuing/cardholder', authenticateToken, async (req, res) => {
 });
 
 // ============================================================
-// POST /api/issuing/cards â€” issue a REAL virtual card
+// POST /api/issuing/cards Ã¢â‚¬â€ issue a REAL virtual card
 // ============================================================
 router.post('/api/issuing/cards', authenticateToken, async (req, res) => {
     try {
@@ -250,7 +250,7 @@ router.post('/api/issuing/cards', authenticateToken, async (req, res) => {
         await createNotification(req.user.id, {
             type: 'success',
             title: 'Real card issued',
-            message: brandLabel + ' â€¢â€¢ ' + card.last4 + ' is active. Use it anywhere ' + (net === 'mastercard' ? 'Mastercard' : 'Visa') + ' is accepted.',
+            message: brandLabel + ' Ã¢â‚¬Â¢Ã¢â‚¬Â¢ ' + card.last4 + ' is active. Use it anywhere ' + (net === 'mastercard' ? 'Mastercard' : 'Visa') + ' is accepted.',
         });
 
         res.status(201).json({
@@ -276,7 +276,7 @@ router.post('/api/issuing/cards', authenticateToken, async (req, res) => {
 });
 
 // ============================================================
-// GET /api/issuing/cards â€” my real cards (live status from Stripe)
+// GET /api/issuing/cards Ã¢â‚¬â€ my real cards (live status from Stripe)
 // ============================================================
 router.get('/api/issuing/cards', authenticateToken, async (req, res) => {
     try {
@@ -313,7 +313,7 @@ router.get('/api/issuing/cards', authenticateToken, async (req, res) => {
 });
 
 // ============================================================
-// POST /api/issuing/cards/:id/freeze â€” REAL freeze (network-level decline)
+// POST /api/issuing/cards/:id/freeze Ã¢â‚¬â€ REAL freeze (network-level decline)
 // ============================================================
 router.post('/api/issuing/cards/:id/freeze', authenticateToken, async (req, res) => {
     try {
@@ -328,9 +328,9 @@ router.post('/api/issuing/cards/:id/freeze', authenticateToken, async (req, res)
         await createNotification(req.user.id, {
             type: frozen ? 'warning' : 'success',
             title: frozen ? 'Card frozen' : 'Card unfrozen',
-            message: (rows[0].brand_label || 'Card') + ' â€¢â€¢ ' + rows[0].last4 + (frozen ? ' now declines all authorizations.' : ' is active again.'),
+            message: (rows[0].brand_label || 'Card') + ' Ã¢â‚¬Â¢Ã¢â‚¬Â¢ ' + rows[0].last4 + (frozen ? ' now declines all authorizations.' : ' is active again.'),
         });
-        res.json({ success: true, message: frozen ? 'Card frozen â€” all authorizations will be declined.' : 'Card is active.', status: card.status, frozen });
+        res.json({ success: true, message: frozen ? 'Card frozen Ã¢â‚¬â€ all authorizations will be declined.' : 'Card is active.', status: card.status, frozen });
     } catch (error) {
         console.error('Freeze error:', error.message);
         res.status(400).json({ success: false, message: error.message });
@@ -338,7 +338,7 @@ router.post('/api/issuing/cards/:id/freeze', authenticateToken, async (req, res)
 });
 
 // ============================================================
-// POST /api/issuing/cards/:id/limits â€” real network-enforced spend controls
+// POST /api/issuing/cards/:id/limits Ã¢â‚¬â€ real network-enforced spend controls
 // ============================================================
 router.post('/api/issuing/cards/:id/limits', authenticateToken, async (req, res) => {
     try {
@@ -362,7 +362,7 @@ router.post('/api/issuing/cards/:id/limits', authenticateToken, async (req, res)
 });
 
 // ============================================================
-// POST /api/issuing/cards/:id/ephemeral-key â€” PCI-safe card reveal
+// POST /api/issuing/cards/:id/ephemeral-key Ã¢â‚¬â€ PCI-safe card reveal
 // The frontend mounts the number/CVV inside Stripes secure iframe.
 // ============================================================
 router.post('/api/issuing/cards/:id/ephemeral-key', authenticateToken, async (req, res) => {
@@ -392,7 +392,7 @@ router.post('/api/issuing/cards/:id/ephemeral-key', authenticateToken, async (re
 });
 
 // ============================================================
-// GET /api/issuing/cards/:id/transactions â€” real card activity
+// GET /api/issuing/cards/:id/transactions Ã¢â‚¬â€ real card activity
 // (from issuing transactions recorded on the VaultBank ledger)
 // ============================================================
 router.get('/api/issuing/cards/:id/transactions', authenticateToken, async (req, res) => {
@@ -402,7 +402,7 @@ router.get('/api/issuing/cards/:id/transactions', authenticateToken, async (req,
         if (rows.length === 0) return res.status(404).json({ success: false, message: 'Card not found.' });
         const tx = await db.query(
             "SELECT * FROM transactions WHERE account_id = (SELECT id FROM accounts WHERE user_id = $1 LIMIT 1) AND (description LIKE $2 OR type = 'card_spend') ORDER BY created_at DESC LIMIT 25",
-            [req.user.id, '%â€¢â€¢ ' + rows[0].last4 + '%']
+            [req.user.id, '%Ã¢â‚¬Â¢Ã¢â‚¬Â¢ ' + rows[0].last4 + '%']
         );
         res.json({
             success: true,
@@ -422,7 +422,7 @@ router.get('/api/issuing/cards/:id/transactions', authenticateToken, async (req,
 });
 
 // ============================================================
-// POST /api/issuing/setup (admin) â€” auto-register the Issuing webhook.
+// POST /api/issuing/setup (admin) Ã¢â‚¬â€ auto-register the Issuing webhook.
 // Stores the signing secret in server_config so no manual env var needed.
 // ============================================================
 router.post('/api/issuing/setup', authenticateToken, requireAdmin, async (req, res) => {
@@ -457,7 +457,7 @@ router.post('/api/issuing/setup', authenticateToken, requireAdmin, async (req, r
 });
 
 // ============================================================
-// POST /api/issuing/simulate-authorization (test mode) â€” simulate a
+// POST /api/issuing/simulate-authorization (test mode) Ã¢â‚¬â€ simulate a
 // Netflix-style charge against a real test card end-to-end.
 // ============================================================
 router.post('/api/issuing/simulate-authorization', authenticateToken, async (req, res) => {
