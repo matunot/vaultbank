@@ -8,6 +8,25 @@ import { api } from '../api';
 import { refreshBus } from '../refreshBus';
 
 const STRIPE_JS_API_VERSION = '2024-06-20';
+// Stripe.js loads from the CDN at runtime so builds never depend on the npm
+// package being installed (fixes Vercel builds with stale node_modules caches).
+declare global {
+  interface Window {
+    Stripe?: (key: string, opts?: any) => any;
+  }
+}
+
+function loadStripeCdn(publishableKey: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (window.Stripe) return resolve(window.Stripe(publishableKey));
+    const s = document.createElement('script');
+    s.src = 'https://js.stripe.com/v3';
+    s.async = true;
+    s.onload = () => (window.Stripe ? resolve(window.Stripe(publishableKey)) : reject(new Error('Stripe.js failed to initialize.')));
+    s.onerror = () => reject(new Error('Failed to load Stripe.js from CDN.'));
+    document.head.appendChild(s);
+  });
+}
 
 interface RealCard {
   id: string;
@@ -179,9 +198,7 @@ export default function IssuingCardsSection({ cards: demoCards, onLockCard, form
     try {
       const keyRes = await api.getCardEphemeralKey(card.id, STRIPE_JS_API_VERSION);
       if (!keyRes.success) throw new Error(keyRes.message || 'Ephemeral key failed.');
-      const { loadStripe } = await import('@stripe/stripe-js');
-      const stripe = await loadStripe(status.publishableKey);
-      if (!stripe) throw new Error('Stripe.js failed to load.');
+      const stripe = await loadStripeCdn(status.publishableKey);
       await new Promise(r => setTimeout(r, 50));
       if (!revealRef.current) throw new Error('Mount point missing.');
       if (elementsRef.current) { try { elementsRef.current.destroy?.(); } catch { /* noop */ } }
