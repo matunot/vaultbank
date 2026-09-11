@@ -121,7 +121,7 @@ async function getOrCreateCardholder(user, body) {
         type: 'individual',
         name: fullName,
         email: user.email,
-        phone_number: body.phone || user.phone || '+15550000000',
+        phone_number: [body.phone, user.phone, user.phone_number, '+15551234567'].find(pn => typeof pn === 'string' && /^\\+[1-9]\\d{6,14}$/.test(pn)) || '+15551234567',
         billing: { address },
         individual: {
             first_name: firstName,
