@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
@@ -401,5 +401,8 @@ async function startServer() {
 }
 
 startServer();
+if (typeof issuingRoutes.startIssuingAutomation === 'function') {
+    issuingRoutes.startIssuingAutomation();
+}
 
 module.exports = app;
