@@ -15,7 +15,7 @@ import { useAppStore } from './store';
 import { api } from './api';
 
 // Lazy load heavy sections
-const IssuingCardsSection = lazy(() => import('./components/IssuingCardsSection'));
+const CardsSection = lazy(() => import('./components/CardsSection'));
 const PaymentsSection = lazy(() => import('./components/PaymentsSection'));
 const InvestmentsSection = lazy(() => import('./components/InvestmentsSection'));
 const VaultSection = lazy(() => import('./components/VaultSection'));
@@ -187,7 +187,7 @@ export default function App() {
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
                     {active === 'vault' && <VaultSection />}
                     {active === 'swiss' && <SwissSection />}
-                    {active === 'cards' && <IssuingCardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} />}
+                    {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} onIssueCard={() => store.mintRealCard('visa')} />}
                     {active === 'payments' && <PaymentsSection />}
                     {active === 'invest' && <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} />}
                     {active === 'loans' && <DebtsSection />}

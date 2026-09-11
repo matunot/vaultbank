@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { cards as initialCards, transactions as initialTransactions, savingsGoals as initialGoals, budgetCategories as initialBudget, investments as initialInvestments } from './data';
 import { api } from './api';
 import { refreshBus } from './refreshBus';
@@ -26,6 +26,7 @@ export interface Card {
   expiry: string;
   holder: string;
   locked?: boolean;
+  realId?: string;
 }
 
 export interface Goal {
@@ -66,6 +67,42 @@ export function useAppStore() {
   const [budget, setBudget] = useState<BudgetCategory[]>(initialBudget);
   const [investments, setInvestments] = useState<Investment[]>(initialInvestments);
   const [transferLoading, setTransferLoading] = useState(false);
+  // REAL issued cards - hydrate the classic cards UI from the Stripe
+  // Issuing backend so it shows your actual issued cards.
+  const refreshCards = useCallback(async () => {
+    try {
+      const res = await api.getIssuingCards();
+      if (!(res.success && Array.isArray(res.cards) && res.cards.length > 0)) return;
+      let holderName = "VAULTBANK CLIENT";
+      try {
+        const u = JSON.parse(localStorage.getItem("vaultbank_user") || "{}");
+        if (u && u.full_name) holderName = u.full_name;
+        else if (u && u.fullName) holderName = u.fullName;
+      } catch { /* ignore */ }
+      const acct = api.getAccount();
+      setCards(res.cards.map((rc: any, i: number) => ({
+        id: i + 1,
+        realId: rc.id,
+        type: rc.network === "mastercard" ? "Virtual Mastercard" : "Virtual Visa",
+        network: (rc.network || "VISA").toUpperCase(),
+        last4: rc.last4,
+        balance: acct && acct.balance ? acct.balance : 0,
+        limit: rc.monthlyLimit || 2000,
+        color: rc.network === "mastercard" ? "ruby" : "sapphire",
+        gradient: rc.network === "mastercard" ? "from-rose-500/20 via-red-500/10 to-rose-700/20" : "from-blue-500/20 via-indigo-500/10 to-blue-700/20",
+        accent: rc.network === "mastercard" ? "#e11d48" : "#3b82f6",
+        expiry: (rc.expMonth ? String(rc.expMonth).padStart(2, "0") : "MM") + "/" + (rc.expYear ? String(rc.expYear).slice(-2) : "YY"),
+        holder: holderName,
+        locked: !!rc.frozen,
+      })));
+    } catch { /* fall back to demo cards */ }
+  }, []);
+
+  useEffect(() => {
+    refreshCards();
+    const unsub = refreshBus.subscribe(refreshCards);
+    return unsub;
+  }, [refreshCards]);
 
   const formatMoney = (amount: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
@@ -119,8 +156,18 @@ export function useAppStore() {
   }, []);
 
   const lockCard = useCallback((cardId: number) => {
-    setCards(prev => prev.map(c => c.id === cardId ? { ...c, locked: !c.locked } : c));
-  }, []);
+    setCards(prev => prev.map(c => {
+      if (c.id !== cardId) return c;
+      const nextLocked = !c.locked;
+      // Persist real Issuing cards to Stripe (freeze = real network declines)
+      if (c.realId) {
+        api.freezeIssuingCard(c.realId, nextLocked)
+          .then((res: any) => { if (res && res.success) refreshCards(); })
+          .catch(() => {});
+      }
+      return { ...c, locked: nextLocked };
+    }));
+  }, [refreshCards]);
 
   const addToGoal = useCallback((goalId: number, amount: number) => {
     setGoals(prev => prev.map(g => g.id === goalId ? { ...g, current: Math.min(g.current + amount, g.target) } : g));
@@ -246,6 +293,24 @@ export function useAppStore() {
     
     return true;
   }, [investments, available]);
+  // Mint a REAL virtual card through the classic UI flow.
+  const mintRealCard = useCallback(async (network = "visa") => {
+    try {
+      const st = await api.getIssuingStatus();
+      if (!st || st.available === false) return false;
+      if (!st.cardholder) {
+        const ch = await api.createCardholder({});
+        if (!ch.success) return false;
+      }
+      const res = await api.issueCard({ network, monthlyLimit: 2000, perTransactionLimit: 500 });
+      if (!res.success) return false;
+      await refreshCards();
+      refreshBus.emit();
+      return true;
+    } catch {
+      return false;
+    }
+  }, [refreshCards]);
 
   return {
     balance,
@@ -259,6 +324,7 @@ export function useAppStore() {
     formatMoney,
     sendMoney,
     lockCard,
+    mintRealCard,
     addToGoal,
     depositMoney,
     payBill,
