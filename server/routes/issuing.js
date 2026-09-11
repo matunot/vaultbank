@@ -142,6 +142,18 @@ router.get('/api/issuing/status', authenticateToken, async (req, res) => {
     try {
         const s = getStripe();
         if (!s) return res.json({ success: true, available: false, reason: 'no-stripe-key', mode: 'none' });
+
+        // Probe whether Issuing is actually enabled on this Stripe account
+        try {
+            await s.issuing.cardholders.list({ limit: 1 });
+        } catch (e) {
+            if (String(e.message || '').includes('not set up to use Issuing')) {
+                return res.json({ success: true, available: false, reason: 'issuing-not-activated', activationUrl: 'https://dashboard.stripe.com/issuing/overview', mode: stripeMode() });
+            }
+            // Any other error: report it but keep the UI functional
+            return res.json({ success: true, available: false, reason: 'error', message: e.message, mode: stripeMode() });
+        }
+
         let cardholder = null;
         try {
             await ensureTables();
