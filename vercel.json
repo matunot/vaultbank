@@ -1,1 +1,1 @@
-{"framework":"vite","installCommand":"npm --prefix client install","buildCommand":"npm --prefix client run build","outputDirectory":"client/dist"}
+{"framework":"vite","installCommand":"echo 'deps install in build step'","buildCommand":"sh -c 'S=scripts/vercel-build.sh; [ -f \"$S\" ] || S=../scripts/vercel-build.sh; sh \"$S\"'","outputDirectory":"dist"}
