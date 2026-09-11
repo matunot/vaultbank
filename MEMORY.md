@@ -1,4 +1,4 @@
-﻿# ðŸ§  VaultBank â€” AI & Human Memory (PERMANENT)
+# ðŸ§  VaultBank â€” AI & Human Memory (PERMANENT)
 
 > **This file is the brain of the project.** Any AI or human working here MUST read this first.
 > Update this file whenever you learn something new. Never stop saving memory.
@@ -129,6 +129,15 @@ vaultbank/
   2. Stripe webhook `checkout.session.completed` â†’ `https://vaultbank-md20.onrender.com/api/stripe/webhook` âœ… verified
   3. `GET /api/stripe/balance` returns `mode: "live"` âœ…
   4. Real Checkout session created live (status 200, `cs_test_â€¦`) â€” test card `4242 4242 4242 4242` will credit the real balance
+
+- [x] **VERCEL BUILD FIX - Stripe.js via CDN (2026-09-03)**
+  - Vercel build failed on commit 56510b8: `Rolldown failed to resolve import "@stripe/stripe-js"` - Vercel uses a legacy `builds` path that ran only root `npm run build` (never the client install) and restored a stale `client/node_modules` cache without the new dependency
+  - Fix 1 (commit ad50ff0): root package.json build script is now self-sufficient: `npm --prefix client install && npm --prefix client run build`
+  - Fix 2 (commit d6929cf): `IssuingCardsSection.tsx` loads Stripe.js from the CDN at runtime (`https://js.stripe.com/v3` script tag, `window.Stripe`, `loadStripeCdn()` helper) - no npm import to resolve, so builds can never fail on this dependency regardless of install path; removed @stripe/stripe-js from client deps + lockfile
+  - Root package.json must stay BOM-free (a Set-Content BOM broke PostCSS config loading: `Unexpected token`; rewritten with UTF8Encoding(false))
+  - Verified: tsc 0 errors, vite build OK with the package physically absent, all commits pushed (d6929cf)
+  - If Vercel is still red after this push, the definitive cleanup is Vercel Dashboard - delete/disconnect the legacy project (Render single-origin is the real deployment)
+
 
 - [x] **REAL CARDS VIA STRIPE ISSUING - FULLY WIRED (2026-09-03)**
   - `server/routes/issuing.js` (new) - real Stripe Issuing integration: cardholders (KYC entity, E.164 phone guard), issue real Visa/Mastercard virtual cards with network-enforced spend controls (monthly + per-transaction), REAL freeze (Stripe declines authorizations), PCI-safe reveal via ephemeral keys + Stripe.js IssuingCard iframe, card activity from ledger, admin `POST /api/issuing/setup` auto-registers the issuing webhook and stores its signing secret in the `server_config` table (no manual env var), `POST /api/issuing/simulate-authorization` for test-mode Netflix-style charges (Stripe testHelpers)
