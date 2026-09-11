@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
+﻿import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, PartyPopper, Send } from 'lucide-react';
 
@@ -15,7 +15,7 @@ import { useAppStore } from './store';
 import { api } from './api';
 
 // Lazy load heavy sections
-const CardsSection = lazy(() => import('./components/CardsSection'));
+const IssuingCardsSection = lazy(() => import('./components/IssuingCardsSection'));
 const PaymentsSection = lazy(() => import('./components/PaymentsSection'));
 const InvestmentsSection = lazy(() => import('./components/InvestmentsSection'));
 const VaultSection = lazy(() => import('./components/VaultSection'));
@@ -62,11 +62,11 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('deposit') === 'success') {
-      setDepositBanner('Deposit confirmed — REAL funds have been added to your account.');
+      setDepositBanner('Deposit confirmed â€” REAL funds have been added to your account.');
       window.history.replaceState({}, '', window.location.pathname);
       setTimeout(() => setDepositBanner(null), 8000);
     } else if (params.get('deposit') === 'cancelled') {
-      setDepositBanner('Deposit cancelled — no money was moved.');
+      setDepositBanner('Deposit cancelled â€” no money was moved.');
       window.history.replaceState({}, '', window.location.pathname);
       setTimeout(() => setDepositBanner(null), 6000);
     }
@@ -129,7 +129,7 @@ export default function App() {
             )}
           </AnimatePresence>
 
-          {/* Gold toast — REAL money sent confirmation */}
+          {/* Gold toast â€” REAL money sent confirmation */}
           <AnimatePresence>
             {sendToast && (
               <motion.div
@@ -159,7 +159,7 @@ export default function App() {
                         {store.formatMoney(sendToast.amount)} sent to {sendToast.name}
                       </p>
                       <p className="text-[11px] text-amber-300/70 mt-0.5 tracking-wide">
-                        REAL MONEY · INSTANT TRANSFER · BALANCE UPDATED
+                        REAL MONEY Â· INSTANT TRANSFER Â· BALANCE UPDATED
                       </p>
                     </div>
                     <motion.div
@@ -187,7 +187,7 @@ export default function App() {
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
                     {active === 'vault' && <VaultSection />}
                     {active === 'swiss' && <SwissSection />}
-                    {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} />}
+                    {active === 'cards' && <IssuingCardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} />}
                     {active === 'payments' && <PaymentsSection />}
                     {active === 'invest' && <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} />}
                     {active === 'loans' && <DebtsSection />}
@@ -207,7 +207,7 @@ export default function App() {
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass">
               <Shield className="w-3.5 h-3.5 text-amber-500" />
               <span className="text-[10px] tracking-widest font-semibold text-white/30">
-                END-TO-END ENCRYPTED · FDIC INSURED · 256-BIT SSL
+                END-TO-END ENCRYPTED Â· FDIC INSURED Â· 256-BIT SSL
               </span>
             </div>
           </motion.div>

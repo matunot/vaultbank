@@ -148,11 +148,29 @@ router.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), as
         const sig = req.headers['stripe-signature'];
         let event;
 
+        event = null;
+        let lastSigErr = null;
+        const candidateSecrets = [STRIPE_WEBHOOK_SECRET].filter(Boolean);
         try {
-            event = stripeInstance.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
-        } catch (err) {
-            console.error('Webhook signature verification failed:', err.message);
-            return res.status(400).send(`Webhook Error: ${err.message}`);
+            const cfgRow = await db.query("SELECT value FROM server_config WHERE key = 'issuing_webhook_secret'");
+            if (cfgRow.rows[0] && cfgRow.rows[0].value) candidateSecrets.push(cfgRow.rows[0].value);
+        } catch (e) { /* server_config table may not exist yet */ }
+        for (const secret of candidateSecrets) {
+            try {
+                event = stripeInstance.webhooks.constructEvent(req.body, sig, secret);
+                break;
+            } catch (err) {
+                lastSigErr = err;
+            }
+        }
+        if (!event) {
+            console.error('Webhook signature verification failed:', lastSigErr && lastSigErr.message);
+            return res.status(400).send('Webhook Error: ' + (lastSigErr && lastSigErr.message));
+        }
+
+        // Real-time card authorizations MUST be answered synchronously.
+        if (event.type === 'issuing_authorization.request') {
+            return await handleCardAuthorization(res, event);
         }
 
         // Handle the event
@@ -198,6 +216,28 @@ router.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), as
             case 'payment_intent.payment_failed': {
                 const intent = event.data.object;
                 console.error('Payment failed:', intent.id, intent.last_payment_error?.message);
+                break;
+            }
+
+            case 'issuing_transaction.created': {
+                await handleCardTransaction(event);
+                break;
+            }
+
+            case 'issuing_card.created': {
+                const issuedCard = event.data.object;
+                if (issuedCard.metadata && issuedCard.metadata.vaultbank_user_id) {
+                    await createNotification(issuedCard.metadata.vaultbank_user_id, {
+                        type: 'success',
+                        title: 'Your card is ready',
+                        message: 'A new VaultBank card ending ' + issuedCard.last4 + ' was created.',
+                    });
+                }
+                break;
+            }
+
+            case 'issuing_cardholder.created': {
+                console.log('Issuing cardholder created:', event.data.object.id);
                 break;
             }
 
@@ -356,4 +396,73 @@ router.post('/api/stripe/withdraw', authenticateToken, async (req, res) => {
     }
 });
 
+
+// ============================================================
+// Issuing webhook helpers - real-time card authorizations
+// ============================================================
+async function handleCardAuthorization(res, event) {
+    try {
+        const auth = event.data.object;
+        const cardId = typeof auth.card === 'string' ? auth.card : auth.card.id;
+        const { rows } = await db.query(
+            'SELECT c.user_id, a.balance FROM issued_cards c JOIN accounts a ON a.user_id = c.user_id WHERE c.card_id = $1 LIMIT 1',
+            [cardId]
+        );
+        if (rows.length === 0) {
+            return res.json({ declined: 'card_not_found' });
+        }
+        const amount = (auth.amount || 0) / 100;
+        const balance = parseFloat(rows[0].balance);
+        if (amount > balance) {
+            await createNotification(rows[0].user_id, {
+                type: 'warning',
+                title: 'Card declined',
+                message: '$' + amount.toFixed(2) + ' authorization declined (insufficient funds). Balance $' + balance.toFixed(2) + '.',
+            });
+            return res.json({ declined: 'insufficient_funds' });
+        }
+        return res.json({ approved: true });
+    } catch (e) {
+        console.error('Authorization handler error:', e.message);
+        return res.json({ declined: 'server_error' });
+    }
+}
+
+async function handleCardTransaction(event) {
+    try {
+        const tx = event.data.object;
+        const cardId = typeof tx.card === 'string' ? tx.card : tx.card.id;
+        const { rows } = await db.query('SELECT * FROM issued_cards WHERE card_id = $1', [cardId]);
+        if (rows.length === 0) return;
+        const row = rows[0];
+        const account = await findAccountByUserId(row.user_id);
+        if (!account) return;
+        const amount = Math.abs(tx.amount || 0) / 100;
+        const balanceBefore = parseFloat(account.balance);
+        const newBalance = balanceBefore - amount;
+        await updateAccountBalance(account.id, newBalance);
+        const merchant = (tx.merchant_data && (tx.merchant_data.merchant_name || tx.merchant_data.network_id)) || 'Merchant';
+        await createTransaction({
+            account_id: account.id,
+            user_id: row.user_id,
+            type: 'card_spend',
+            status: 'completed',
+            amount: -amount,
+            currency: account.currency,
+            balance_before: balanceBefore,
+            balance_after: newBalance,
+            description: merchant + ' · ' + (row.brand_label || 'Card') + ' •• ' + row.last4,
+            category: 'expense',
+            external_reference: tx.id,
+            metadata: { issuing: true, card_id: cardId },
+        });
+        await createNotification(row.user_id, {
+            type: 'transaction',
+            title: 'Card charged',
+            message: '$' + amount.toFixed(2) + ' at ' + merchant + ' with ' + (row.brand_label || 'card') + ' •• ' + row.last4 + '. New balance $' + newBalance.toFixed(2) + '.',
+        });
+    } catch (e) {
+        console.error('Card transaction handler error:', e.message);
+    }
+}
 module.exports = router;

@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
@@ -19,6 +19,7 @@ const paymentsRoutes = require('./routes/payments');
 const amlRoutes = require('./routes/aml');
 const reportsRoutes = require('./routes/reports');
 const accountRoutes = require('./routes/accounts');
+const issuingRoutes = require('./routes/issuing');
 const stripePaymentRoutes = require('./routes/stripe-payments');
 const anomaliesRoutes = require('./routes/anomalies');
 
@@ -30,7 +31,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const startTime = Date.now();
 
-// ─── Frontend Static Serving (single-origin) ────────────────────────────────
+// â”€â”€â”€ Frontend Static Serving (single-origin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Serve the built React app from client/dist so the whole VaultBank app runs
 // on ONE origin (e.g. https://vaultbank-md20.onrender.com). This makes the
 // frontend impossible to go stale or lose API connectivity.
@@ -39,13 +40,13 @@ const fs = require('fs');
 const FRONTEND_DIST = path.join(__dirname, '..', 'client', 'dist');
 const hasFrontend = fs.existsSync(path.join(FRONTEND_DIST, 'index.html'));
 
-// ─── Security Middleware ────────────────────────────────────────────────────
+// â”€â”€â”€ Security Middleware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use(helmet({
     crossOriginEmbedderPolicy: false,
     contentSecurityPolicy: false // Allow for development
 }));
 
-// ─── CORS Configuration ─────────────────────────────────────────────────────
+// â”€â”€â”€ CORS Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Allow all origins. This is a public banking app and the frontend may be
 // accessed from any domain (Vercel previews, custom domains, local dev).
 // Credentials are still required for JWT auth.
@@ -56,18 +57,18 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-Requested-With']
 }));
 
-// ─── Body Parsing ────────────────────────────────────────────────────────────
+// â”€â”€â”€ Body Parsing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// ─── Logging ─────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Logging â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 if (process.env.NODE_ENV !== 'test') {
     app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
     // Custom request logger for structured logging
     app.use(requestLogger);
 }
 
-// ─── Rate Limiting (global) ──────────────────────────────────────────────────
+// â”€â”€â”€ Rate Limiting (global) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use(generalLimiter);
 
 // Attach audit logger to request for easy use in routes
@@ -76,7 +77,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// ─── Health Check ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Health Check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/health', (req, res) => {
     return res.status(200).json({
         status: 'ok',
@@ -85,11 +86,11 @@ app.get('/health', (req, res) => {
         version: '1.0.0',
         environment: process.env.NODE_ENV || 'development',
         memory: typeof process.memoryUsage === 'function' ? process.memoryUsage() : {},
-        message: '🏦 VaultBank API is running!'
+        message: 'ðŸ¦ VaultBank API is running!'
     });
 });
 
-// ─── Input Sanitization ──────────────────────────────────────────────────────
+// â”€â”€â”€ Input Sanitization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Sanitize all request bodies and query parameters BEFORE routes so XSS
 // payloads are stripped from every endpoint, including auth.
 app.use((req, res, next) => {
@@ -111,7 +112,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// ─── API Routes ───────────────────────────────────────────────────────────────
+// â”€â”€â”€ API Routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use('/', authRoutes);
 app.use('/', transferRoutes);
 app.use('/', rewardsRoutes);
@@ -127,16 +128,17 @@ app.use('/', anomaliesRoutes);
 // Register compliance reports route
 app.use('/', reportsRoutes);
 
-// ─── Banking Account Routes (Real Banking) ──────────────────────────────────
+// â”€â”€â”€ Banking Account Routes (Real Banking) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use('/', accountRoutes);
+app.use('/', issuingRoutes);
 
-// ─── Stripe Payment Routes (Deposits, Withdrawals, Webhooks) ──────────────
+// â”€â”€â”€ Stripe Payment Routes (Deposits, Withdrawals, Webhooks) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use(stripePaymentRoutes);
 
-// ─── Root Route ──────────────────────────────────────────────────────────────
-// ─── Frontend Static Serving (single-origin) ────────────────────────────────
+// â”€â”€â”€ Root Route â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// â”€â”€â”€ Frontend Static Serving (single-origin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Serve the built React SPA so the app runs on one origin (frontend + API).
-// This guarantees the deployed app can always reach its own API — no stale
+// This guarantees the deployed app can always reach its own API â€” no stale
 // frontend build or cross-origin mismatch can break login again.
 if (hasFrontend) {
     app.use(express.static(FRONTEND_DIST));
@@ -150,7 +152,7 @@ app.get('/', (req, res) => {
         name: 'VaultBank API',
         version: '1.0.0',
         status: 'operational',
-        message: '🏦 Welcome to the VaultBank API!',
+        message: 'ðŸ¦ Welcome to the VaultBank API!',
         endpoints: {
             health: 'GET /health',
             apiInfo: 'GET /api',
@@ -223,7 +225,7 @@ app.get('/', (req, res) => {
     });
 });
 
-// ─── API Info ────────────────────────────────────────────────────────────────
+// â”€â”€â”€ API Info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.get('/api', (req, res) => {
     return res.status(200).json({
         name: 'VaultBank API',
@@ -299,7 +301,7 @@ app.get('/api', (req, res) => {
     });
 });
 
-// ─── SPA Fallback (after all API routes) ─────────────────────────────────────
+// â”€â”€â”€ SPA Fallback (after all API routes) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Any non-API GET that didn't match an API route returns the React app, so
 // client-side routing (/dashboard, /payments, ...) works on a single origin.
 if (hasFrontend) {
@@ -308,7 +310,7 @@ if (hasFrontend) {
     });
 }
 
-// ─── 404 Handler ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ 404 Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use((req, res) => {
     return res.status(404).json({
         success: false,
@@ -317,7 +319,7 @@ app.use((req, res) => {
     });
 });
 
-// ─── Global Error Handler ────────────────────────────────────────────────────
+// â”€â”€â”€ Global Error Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 //The fourth argument is required by Express to identify error-handling middleware.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
@@ -348,52 +350,52 @@ app.use((err, req, res, _next) => {
     });
 });
 
-// ─── Process Error Handlers ──────────────────────────────────────────────────
+// â”€â”€â”€ Process Error Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 process.on('uncaughtException', (error) => {
-    console.error('❌ Uncaught Exception:', error);
+    console.error('âŒ Uncaught Exception:', error);
     process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-    console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+    console.error('âŒ Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// ─── Ensure Database Connection ───────────────────────────────────────────────
+// â”€â”€â”€ Ensure Database Connection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const { ensureConnection } = require('./config/db');
 const { seedDemoData } = require('./config/database');
 
-// ─── Start Server ─────────────────────────────────────────────────────────────
+// â”€â”€â”€ Start Server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 async function startServer() {
     // Wait for PostgreSQL database connection
     try {
         await ensureConnection();
-        console.info('✅ Database connection established');
+        console.info('âœ… Database connection established');
         // Seed demo data (safe: only runs if no users exist)
         await seedDemoData();
     } catch (err) {
-        console.warn('⚠️  Could not connect to database, starting in demo mode:', err.message);
+        console.warn('âš ï¸  Could not connect to database, starting in demo mode:', err.message);
     }
 
     app.listen(PORT, () => {
         console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║                     🏦 VAULTBANK SERVER                       ║
-╚══════════════════════════════════════════════════════════════╝
+â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
+â•‘                     ðŸ¦ VAULTBANK SERVER                       â•‘
+â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
-  🚀 Server running on port ${PORT}
-  🌍 Environment: ${process.env.NODE_ENV || 'development'}
-  🔗 Health check: http://localhost:${PORT}/health
-  📋 API docs: http://localhost:${PORT}/api
-  🔐 Auth: POST http://localhost:${PORT}/login
-  📊 Admin: POST http://localhost:${PORT}/api/auth/login
+  ðŸš€ Server running on port ${PORT}
+  ðŸŒ Environment: ${process.env.NODE_ENV || 'development'}
+  ðŸ”— Health check: http://localhost:${PORT}/health
+  ðŸ“‹ API docs: http://localhost:${PORT}/api
+  ðŸ” Auth: POST http://localhost:${PORT}/login
+  ðŸ“Š Admin: POST http://localhost:${PORT}/api/auth/login
 
   Credentials:
-  ├── User:  demo@vaultbank.com  / password
-  └── Admin: admin@vaultbank.com / admin123
+  â”œâ”€â”€ User:  demo@vaultbank.com  / password
+  â””â”€â”€ Admin: admin@vaultbank.com / admin123
 
-  Mode: 🗄️  PostgreSQL (Neon) - Real Database
+  Mode: ðŸ—„ï¸  PostgreSQL (Neon) - Real Database
 
-═════════════════════════════════════════════════════════════════
+â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 `);
     });
 }
