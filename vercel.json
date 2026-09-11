@@ -1,1 +1,1 @@
-{"version":2,"builds":[{"src":"package.json","use":"@vercel/static-build"}]}
+{"framework":"vite","installCommand":"npm --prefix client install","buildCommand":"npm --prefix client run build","outputDirectory":"client/dist"}
