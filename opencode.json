@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [
+    [
+      "@javargasm/opencode-graphify@0.2.0",
+      {
+        "semanticBackend": "auto",
+        "alwaysActive": true,
+        "forceGraphFirst": false,
+        "reportMaxChars": 6000,
+        "maxSessionAugments": 8
+      }
+    ],
+    "opencode-agent-memory@0.2.0",
+    "@openviking/opencode-plugin@2026.9.10",
+    "@different-ai/opencode-browser",
+    "ponytail-opencode-plugin",
+    "opencode-omniroute-auth"
+  ],
+  "permission": {
+    "skill": "allow"
+  }
+}
