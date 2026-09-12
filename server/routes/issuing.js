@@ -152,14 +152,16 @@ router.get('/api/issuing/status', authenticateToken, async (req, res) => {
             const stripeMessage = String(e.message || 'unknown stripe error');
             if (stripeMessage.includes('not set up to use Issuing')) {
                 let stripeAccount = null;
+                let stripeAccountId = null;
                 try {
                     const acct = await s.accounts.retrieve();
+                    stripeAccountId = acct.id || null;
                     stripeAccount = (acct.settings && acct.settings.dashboard && acct.settings.dashboard.display_name)
                         || (acct.business_profile && acct.business_profile.name)
                         || acct.email
                         || acct.id;
                 } catch (e2) { /* restricted keys can't read account */ }
-                return res.json({ success: true, available: false, reason: 'issuing-not-activated', activationUrl: 'https://dashboard.stripe.com/issuing/overview', mode: stripeMode(), webhookRegistered: !!(await getConfig('issuing_webhook_endpoint_id')), stripeCode, stripeAccount });
+                return res.json({ success: true, available: false, reason: 'issuing-not-activated', activationUrl: 'https://dashboard.stripe.com/issuing/overview', mode: stripeMode(), webhookRegistered: !!(await getConfig('issuing_webhook_endpoint_id')), stripeCode, stripeAccount, stripeAccountId });
             }
             // Any other error: report it but keep the UI functional
             return res.json({ success: true, available: false, reason: 'error', message: stripeMessage, stripeCode, mode: stripeMode() });
