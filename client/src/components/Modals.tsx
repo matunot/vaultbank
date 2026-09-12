@@ -279,7 +279,9 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
 }
 
 export function DepositModal({ isOpen, onClose }: ModalProps) {
-  const [mode, setMode] = useState<'card' | 'instant' | 'paypal'>('card');
+  const [mode, setMode] = useState<'card' | 'instant' | 'paypal' | 'usdc'>('card');
+  const [usdc, setUsdc] = useState<{ address: string; network: string; qr: string | null } | null>(null);
+  const [usdcChecking, setUsdcChecking] = useState(false);
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -293,8 +295,42 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
       .catch(() => setStripeMode('demo'));
   }, [isOpen]);
 
+  // Fetch your personal USDC address when the USDC rail opens (no signup needed).
+  useEffect(() => {
+    if (!isOpen || mode !== 'usdc' || usdc) return;
+    api.usdcAddress('base')
+      .then((r) => {
+        if (r.success && r.address) setUsdc({ address: r.address, network: r.network || 'base', qr: r.qr || null });
+        else throw new Error(r.message || 'USDC deposits are not enabled yet.');
+      })
+      .catch((err: any) => { setErrorMsg(err?.message || 'USDC deposits are not enabled yet.'); setStatus('error'); });
+  }, [isOpen, mode, usdc]);
+
+  const checkUsdc = async () => {
+    setUsdcChecking(true);
+    setErrorMsg('');
+    try {
+      const r = await api.usdcCheck('base');
+      if (!r.success) throw new Error(r.message || 'Scan failed.');
+      const n = (r.credited || []).length;
+      if (n > 0) {
+        setStatus('success');
+        setTimeout(() => { setStatus('idle'); onClose(); }, 1600);
+      } else {
+        setErrorMsg('No confirmed USDC yet — wait for 12 network confirmations, then check again.');
+        setStatus('error');
+      }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Scan failed.');
+      setStatus('error');
+    } finally {
+      setUsdcChecking(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mode === 'usdc') return; // USDC flow uses the address panel + check button.
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) return;
     setStatus('loading');
@@ -347,7 +383,7 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
         </div>
 
         {/* Mode toggle */}
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
             onClick={() => setMode('card')}
@@ -378,8 +414,49 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
             <p className="text-xs font-bold text-white flex items-center gap-1.5">🅿️ PayPal</p>
             <p className="text-[9px] text-white/40 mt-1">Real PayPal checkout</p>
           </button>
+          <button
+            type="button"
+            onClick={() => setMode('usdc')}
+            className={`p-3 rounded-xl border text-left transition-colors ${
+              mode === 'usdc' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
+            }`}
+          >
+            <p className="text-xs font-bold text-white flex items-center gap-1.5">🪙 USDC Crypto</p>
+            <p className="text-[9px] text-white/40 mt-1">No signup · your address</p>
+          </button>
         </div>
 
+        {mode === 'usdc' ? (
+          <div className="space-y-3">
+            <p className="text-[11px] text-white/50 leading-relaxed">
+              Send <span className="text-white font-bold">USDC on Base</span> to your personal address below.
+              No account or verification needed — funds credit after 12 network confirmations.
+            </p>
+            {usdc ? (
+              <>
+                {usdc.qr && <img src={usdc.qr} alt="USDC deposit QR" className="w-40 h-40 mx-auto rounded-xl bg-white p-2" />}
+                <button
+                  type="button"
+                  onClick={() => { navigator.clipboard.writeText(usdc.address); }}
+                  className="w-full font-mono text-xs text-amber-200 bg-white/5 border border-white/10 rounded-xl p-3 break-all hover:border-amber-500/40 transition-colors"
+                  title="Tap to copy"
+                >
+                  {usdc.address}
+                </button>
+                <button
+                  type="button"
+                  onClick={checkUsdc}
+                  className="w-full py-3 rounded-xl bg-linear-to-r from-emerald-400 to-teal-500 text-white font-bold text-sm"
+                >
+                  {usdcChecking ? 'Scanning chain…' : "I've sent it — check now"}
+                </button>
+              </>
+            ) : (
+              status !== 'error' && <p className="text-xs text-white/40 text-center py-4">Generating your address…</p>
+            )}
+          </div>
+        ) : (
+        <>
         <div>
           <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
           <div className="relative">
@@ -405,12 +482,20 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
             </button>
           ))}
         </div>
+        </>
+        )}
 
         {status === 'error' && (
           <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">{errorMsg}</p>
         )}
 
+        {status === 'success' && mode === 'usdc' && (
+          <p className="text-xs text-emerald-300 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">USDC deposit confirmed — balance updated.</p>
+        )}
+
+        {mode !== 'usdc' && (
         <SubmitButton status={status} idleText={mode === 'card' ? 'Pay with Card — Real Money' : mode === 'paypal' ? 'Pay with PayPal — Real Money' : 'Deposit Instantly'} color="emerald" />
+        )}
       </form>
     </BaseModal>
   );

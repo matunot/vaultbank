@@ -316,6 +316,17 @@ export const api = {
     });
   },
 
+  async usdcAddress(network?: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/usdc/deposit-address${network ? `?network=${network}` : ''}`);
+  },
+
+  async usdcCheck(network?: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usdc/check', {
+      method: 'POST',
+      body: JSON.stringify(network ? { network } : {}),
+    });
+  },
+
   async getAdminStats(): Promise<ApiResponse> {
     return request<ApiResponse>('api/admin/stats');
   },
