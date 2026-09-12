@@ -143,7 +143,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
                 {allLocked ? 'Unlock All' : 'Lock All'}
               </motion.button>
             </div>
-            <span className="text-sm text-white/40">{cards.length} cards Ãƒâ€šÃ‚Â· {activeCount} active</span>
+            <span className="text-sm text-white/40">{cards.length} cards · {activeCount} active</span>
           </div>
         </div>
       </motion.div>
@@ -222,7 +222,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
 
                 <div>
                   <div className="font-mono text-xl lg:text-2xl tracking-[0.25em] text-amber-100/90 mb-5">
-                    {showNumber ? (card?.realId ? null : mockFullNumbers[card?.id]) || 'ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ' + card?.last4 : `ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ${card?.last4}`}
+                    {showNumber ? (card?.realId ? null : mockFullNumbers[card?.id]) || '•••• •••• •••• ' + card?.last4 : `•••• •••• •••• ${card?.last4}`}
                   </div>
                   <div className="flex items-end justify-between">
                     <div>
@@ -261,7 +261,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
           </motion.div>
         </div>
 
-        <p className="text-[10px] text-white/30 text-center mt-2 mb-4">Click card to flip Ãƒâ€šÃ‚Â· Swipe arrows to browse</p>
+        <p className="text-[10px] text-white/30 text-center mt-2 mb-4">Click card to flip · Swipe arrows to browse</p>
 
         {/* Card Navigation */}
         <div className="flex items-center justify-between gap-4">
@@ -418,13 +418,13 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center text-sm ${
                 tx.amount > 0 ? 'bg-emerald-500/15 border border-emerald-500/20' : 'bg-rose-500/10 border border-rose-500/15'
               }`}>
-                {tx.amount > 0 ? 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¥' : 'ÃƒÂ°Ã…Â¸Ã¢â‚¬Å“Ã‚Â¤'}
+                {tx.amount > 0 ? '📥' : '📤'}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-white truncate">{tx.name}</p>
                 <div className="flex items-center gap-1.5 text-[11px] text-white/40">
                   <span>{tx.category}</span>
-                  <span>Ãƒâ€šÃ‚Â·</span>
+                  <span>·</span>
                   <span>{tx.date}</span>
                 </div>
               </div>
@@ -485,10 +485,10 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
         <h3 className="font-display text-xl text-white mb-4">Card Benefits</h3>
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           {[
-            { icon: 'ÃƒÂ°Ã…Â¸Ã‚ÂÃ‚Â§', title: 'Zero ATM Fees', desc: 'Unlimited free withdrawals worldwide' },
-            { icon: 'ÃƒÂ°Ã…Â¸Ã¢â‚¬ÂÃ¢â‚¬â„¢', title: 'Fraud Protection', desc: '24/7 monitoring & instant card lock' },
-            { icon: 'ÃƒÂ¢Ã…â€œÃ‹â€ ÃƒÂ¯Ã‚Â¸Ã‚Â', title: 'Travel Insurance', desc: 'Up to $500K coverage on every trip' },
-            { icon: 'ÃƒÂ¢Ã‚Â­Ã‚Â', title: 'Concierge Service', desc: '24/7 premium concierge access' },
+            { icon: '🏧', title: 'Zero ATM Fees', desc: 'Unlimited free withdrawals worldwide' },
+            { icon: '🔒', title: 'Fraud Protection', desc: '24/7 monitoring & instant card lock' },
+            { icon: '✈️', title: 'Travel Insurance', desc: 'Up to $500K coverage on every trip' },
+            { icon: '⭐', title: 'Concierge Service', desc: '24/7 premium concierge access' },
           ].map((b, i) => (
             <div key={i} className="p-4 rounded-2xl bg-white/3 border border-white/5 hover:bg-white/6 hover:border-amber-500/20 transition-all">
               <div className="text-2xl mb-2">{b.icon}</div>
@@ -534,7 +534,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
                     type="password" maxLength={4} value={pinAttempt}
                     onChange={(e) => setPinAttempt(e.target.value)}
                     className="w-full glass-input rounded-xl px-4 py-3 text-center text-2xl tracking-widest text-white"
-                    placeholder="ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢"
+                    placeholder="• • • •"
                   />
                 </div>
 
@@ -544,7 +544,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
                     pinSuccess ? 'bg-emerald-500 text-white glow-emerald' : 'bg-amber-400 text-amber-950'
                   }`}
                 >
-                  {pinSuccess ? 'PIN Verified ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“' : 'Verify PIN'}
+                  {pinSuccess ? 'PIN Verified ✓' : 'Verify PIN'}
                 </button>
 
                 {pinAttempt.length === 4 && pinAttempt !== '248' && pinAttempt !== '1234' && !pinSuccess && (
@@ -561,11 +561,11 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
                       </div>
                       <div>
                         <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">NEW PIN</label>
-                        <input type="password" maxLength={4} className="w-full glass-input rounded-xl px-4 py-3 text-center text-2xl tracking-widest text-white" placeholder="ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢" />
+                        <input type="password" maxLength={4} className="w-full glass-input rounded-xl px-4 py-3 text-center text-2xl tracking-widest text-white" placeholder="• • • •" />
                       </div>
                       <div>
                         <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">CONFIRM NEW PIN</label>
-                        <input type="password" maxLength={4} className="w-full glass-input rounded-xl px-4 py-3 text-center text-2xl tracking-widest text-white" placeholder="ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢" />
+                        <input type="password" maxLength={4} className="w-full glass-input rounded-xl px-4 py-3 text-center text-2xl tracking-widest text-white" placeholder="• • • •" />
                       </div>
                       <button onClick={() => setShowPinModal(false)} className="w-full py-3 rounded-xl bg-linear-to-r from-emerald-400 to-teal-400 text-white font-bold text-sm glow-emerald">
                         Update PIN
@@ -625,9 +625,9 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
                 <div>
                   <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">DELIVERY</label>
                   <select className="w-full glass-input rounded-xl px-4 py-3 text-sm text-white">
-                    <option className="bg-[#0d0d14]">Standard (5-7 days) Ãƒâ€šÃ‚Â· Free</option>
-                    <option className="bg-[#0d0d14]">Express (2-3 days) Ãƒâ€šÃ‚Â· $25</option>
-                    <option className="bg-[#0d0d14]">Priority (24h) Ãƒâ€šÃ‚Â· $50</option>
+                    <option className="bg-[#0d0d14]">Standard (5-7 days) · Free</option>
+                    <option className="bg-[#0d0d14]">Express (2-3 days) · $25</option>
+                    <option className="bg-[#0d0d14]">Priority (24h) · $50</option>
                   </select>
                 </div>
 
