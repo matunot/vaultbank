@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Lock, Eye, EyeOff, Copy, Check, ChevronLeft, ChevronRight,
@@ -7,6 +7,33 @@ import {
   Settings2, Ban,
 } from 'lucide-react';
 import { cardTransactions, cardSpendingCategories } from '../data';
+import { api } from '../api';
+import { refreshBus } from '../refreshBus';
+
+// Stripe.js loads from CDN at runtime (no npm dep, same as IssuingCardsSection).
+declare global {
+  interface Window {
+    Stripe?: (key: string, opts?: any) => any;
+  }
+}
+
+function loadStripeCdn(publishableKey: string): Promise<any> {
+  return new Promise((resolve, reject) => {
+    if (window.Stripe) return resolve(window.Stripe(publishableKey));
+    const s = document.createElement('script');
+    s.src = 'https://js.stripe.com/v3';
+    s.async = true;
+    s.onload = () => (window.Stripe ? resolve(window.Stripe(publishableKey)) : reject(new Error('Stripe.js failed to initialize.')));
+    s.onerror = () => reject(new Error('Failed to load Stripe.js from CDN.'));
+    document.head.appendChild(s);
+  });
+}
+
+export interface IssueCardOpts {
+  network: string;
+  monthlyLimit: number;
+  perTransactionLimit: number;
+}
 
 interface Card {
   id: number; type: string; network: string; last4: string;
@@ -19,7 +46,7 @@ interface Props {
   cards: Card[];
   onLockCard: (id: number) => void;
   formatMoney: (amount: number) => string;
-  onIssueCard?: () => void;
+  onIssueCard?: (opts: IssueCardOpts) => Promise<boolean> | boolean | void;
 }
 
 const glowMap: Record<string, string> = {
@@ -51,10 +78,61 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
   const [pinSuccess, setPinSuccess] = useState(false);
   const [limitEdit, setLimitEdit] = useState(false);
   const [newLimit, setNewLimit] = useState('');
+  const [issueNetwork, setIssueNetwork] = useState('visa');
+  const [issueMonthly, setIssueMonthly] = useState('2000');
+  const [issuePerTx, setIssuePerTx] = useState('500');
+  const [issuing, setIssuing] = useState(false);
+  const [issueError, setIssueError] = useState<string | null>(null);
+  const [realTx, setRealTx] = useState<any[] | null>(null);
+  const [pubKey, setPubKey] = useState<string | null>(null);
+  const [revealBusy, setRevealBusy] = useState(false);
+  const [revealErr, setRevealErr] = useState<string | null>(null);
+  const [revealedId, setRevealedId] = useState<string | null>(null);
+  const revealRef = useRef<HTMLDivElement | null>(null);
+  const elsRef = useRef<any>(null);
 
   const card = cards[selectedIdx];
-  const cardTx = cardTransactions[card?.id] || [];
-  const cardSpend = cardSpendingCategories[card?.id] || [];
+
+  // REAL card activity for issued cards; static demo data otherwise.
+  useEffect(() => {
+    setRealTx(null);
+    const rid = cards[selectedIdx]?.realId;
+    if (!rid) return;
+    let on = true;
+    api.getIssuingCardActivity(rid)
+      .then((r) => { if (on && r.success && Array.isArray(r.transactions)) setRealTx(r.transactions); })
+      .catch(() => { /* fall back to empty */ });
+    return () => { on = false; };
+  }, [selectedIdx, cards]);
+
+  // Publishable key for PCI-safe PAN reveal (real cards only).
+  useEffect(() => {
+    api.getIssuingStatus()
+      .then((r) => { if (r?.publishableKey) setPubKey(r.publishableKey); })
+      .catch(() => { /* reveal stays unavailable */ });
+  }, []);
+
+  const staticTx = cardTransactions[card?.id] || [];
+  const txList = useMemo(() => {
+    if (realTx) return realTx.map((t: any) => ({
+      name: t.description || 'Card purchase',
+      category: t.category || 'purchase',
+      date: t.date ? new Date(t.date).toLocaleDateString() : '',
+      amount: parseFloat(t.amount) || 0,
+    }));
+    return staticTx;
+  }, [realTx, staticTx]);
+  const SPEND_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
+  const cardSpend = useMemo(() => {
+    if (!realTx) return cardSpendingCategories[card?.id] || [];
+    const byCat = new Map<string, number>();
+    realTx.forEach((t: any) => {
+      const c = t.category || 'purchase';
+      byCat.set(c, (byCat.get(c) || 0) + Math.abs(parseFloat(t.amount) || 0));
+    });
+    return [...byCat.entries()].map(([label, amount], i) => ({ label, amount, color: SPEND_COLORS[i % SPEND_COLORS.length] }));
+  }, [realTx, card?.id]);
+  const cardTx = txList;
   const totalSpend = cardSpend.reduce((s, c) => s + c.amount, 0);
 
   const copyToClipboard = useCallback((text: string, id: string) => {
@@ -95,11 +173,67 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
     setFlipped(false);
   }, [cards.length]);
 
+  // PCI-safe PAN reveal for REAL cards via Stripe.js iframe; demo cards toggle locally.
+  const toggleShowNumber = useCallback(async () => {
+    if (showNumber) { setShowNumber(false); return; }
+    if (!card?.realId) { setShowNumber(true); return; }
+    if (revealedId === card.realId && revealRef.current?.childElementCount) { setShowNumber(true); return; }
+    if (!pubKey) { setRevealErr('Secure reveal unavailable (server publishable key missing).'); return; }
+    setRevealBusy(true);
+    setRevealErr(null);
+    try {
+      const k = await api.getCardEphemeralKey(card.realId, '2024-06-20');
+      if (!k.success) throw new Error(k.message || 'Ephemeral key failed.');
+      const stripe = await loadStripeCdn(pubKey);
+      await new Promise((r) => setTimeout(r, 50));
+      if (!revealRef.current) throw new Error('Mount point missing.');
+      try { elsRef.current?.destroy?.(); } catch { /* noop */ }
+      const els = stripe.elements({ locale: 'en' });
+      elsRef.current = els;
+      els.create('issuingCard', { issuingCard: card.realId, ephemeralKeySecret: k.clientSecret, mutable: true }).mount(revealRef.current);
+      setRevealedId(card.realId);
+      setShowNumber(true);
+    } catch (e: any) {
+      setRevealErr(e?.message || 'Could not reveal card.');
+    } finally {
+      setRevealBusy(false);
+    }
+  }, [showNumber, card?.realId, revealedId, pubKey]);
+
   const totalBalance = useMemo(() => cards.reduce((s, c) => s + c.balance, 0), [cards]);
   const totalLimit = useMemo(() => cards.reduce((s, c) => s + c.limit, 0), [cards]);
   const activeCount = cards.filter(c => !lockedCards.includes(c.id)).length;
 
   const isLocked = lockedCards.includes(card?.id);
+
+  // REAL limit update for issued cards (Stripe spend controls); refreshes via bus.
+  const saveLimit = useCallback(async () => {
+    const v = parseInt(newLimit, 10);
+    if (card?.realId && v > 0) {
+      try {
+        await api.updateCardLimits(card.realId, { monthlyLimit: v });
+        refreshBus.emit();
+      } catch { /* keep local close; limits re-sync on next load */ }
+    }
+    setLimitEdit(false);
+  }, [newLimit, card?.realId]);
+
+  // REAL issue with chosen network + limits; surfaces backend errors inline.
+  const confirmIssue = useCallback(async () => {
+    const monthly = Math.max(parseInt(issueMonthly, 10) || 2000, 1);
+    const perTx = Math.max(parseInt(issuePerTx, 10) || 500, 1);
+    setIssuing(true);
+    setIssueError(null);
+    try {
+      const ok = await onIssueCard?.({ network: issueNetwork, monthlyLimit: monthly, perTransactionLimit: perTx });
+      if (ok === false) throw new Error('Card issuing is not enabled yet — activate Stripe Issuing first.');
+      setShowNewCard(false);
+    } catch (e: any) {
+      setIssueError(e?.message || 'Could not issue card.');
+    } finally {
+      setIssuing(false);
+    }
+  }, [onIssueCard, issueNetwork, issueMonthly, issuePerTx]);
 
   return (
     <div className="space-y-5">
@@ -224,6 +358,8 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
                   <div className="font-mono text-xl lg:text-2xl tracking-[0.25em] text-amber-100/90 mb-5">
                     {showNumber ? (card?.realId ? null : mockFullNumbers[card?.id]) || '•••• •••• •••• ' + card?.last4 : `•••• •••• •••• ${card?.last4}`}
                   </div>
+                  {card?.realId && showNumber && <div ref={revealRef} className="mb-4 min-h-[2rem]" />}
+                  {revealErr && <p className="text-[11px] text-rose-400 mb-3">{revealErr}</p>}
                   <div className="flex items-end justify-between">
                     <div>
                       <div className="text-[9px] text-amber-200/40 tracking-widest">CARDHOLDER</div>
@@ -290,11 +426,11 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-5">
           <motion.button
             whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.95 }}
-            onClick={() => setShowNumber(!showNumber)}
+            onClick={toggleShowNumber}
             className="flex items-center justify-center gap-2 py-3 rounded-xl glass-btn text-xs font-bold text-white/70 hover:text-white"
           >
             {showNumber ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            {showNumber ? 'Hide Number' : 'Show Number'}
+            {revealBusy ? 'Revealing…' : showNumber ? 'Hide Number' : 'Show Number'}
           </motion.button>
 
           <motion.button
@@ -548,7 +684,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
                 </button>
 
                 {pinAttempt.length === 4 && pinAttempt !== '248' && pinAttempt !== '1234' && !pinSuccess && (
-                  <p className="text-xs text-rose-400 text-center font-bold">Incorrect PIN. Try 1234</p>
+                  <p className="text-xs text-rose-400 text-center font-bold">Incorrect PIN.</p>
                 )}
 
                 <AnimatePresence>
@@ -623,6 +759,31 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
                 </div>
 
                 <div>
+                  <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">NETWORK</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(['visa', 'mastercard'] as const).map((n) => (
+                      <button key={n} onClick={() => setIssueNetwork(n)}
+                        className={`py-2.5 rounded-xl text-xs font-bold tracking-wider transition-all ${issueNetwork === n ? 'bg-amber-400 text-amber-950' : 'glass-btn text-white/60 hover:text-white'}`}
+                      >{n.toUpperCase()}</button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">MONTHLY LIMIT ($)</label>
+                    <input type="number" value={issueMonthly} onChange={(e) => setIssueMonthly(e.target.value)}
+                      className="w-full glass-input rounded-xl px-4 py-3 text-sm text-white" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">PER-CHARGE ($)</label>
+                    <input type="number" value={issuePerTx} onChange={(e) => setIssuePerTx(e.target.value)}
+                      className="w-full glass-input rounded-xl px-4 py-3 text-sm text-white" />
+                  </div>
+                </div>
+                {issueError && <p className="text-xs text-rose-400 font-semibold">{issueError}</p>}
+
+                <div>
                   <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">DELIVERY</label>
                   <select className="w-full glass-input rounded-xl px-4 py-3 text-sm text-white">
                     <option className="bg-[#0d0d14]">Standard (5-7 days) · Free</option>
@@ -632,10 +793,10 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
                 </div>
 
                 <button
-                  onClick={() => { setShowNewCard(false); onIssueCard?.(); }}
+                  onClick={confirmIssue}
                   className="w-full py-3 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm glow-amber"
                 >
-                  Confirm Order
+                  {issuing ? 'Issuing…' : 'Confirm Order'}
                 </button>
               </div>
             </motion.div>
@@ -688,7 +849,7 @@ export default function CardsSection({ cards, onLockCard, formatMoney, onIssueCa
                     >${v}</button>
                   ))}
                 </div>
-                <button onClick={() => setLimitEdit(false)}
+                <button onClick={saveLimit}
                   className="w-full py-3 rounded-xl bg-linear-to-r from-blue-400 to-indigo-500 text-white font-bold text-sm glow-blue"
                 >Save New Limit</button>
               </div>

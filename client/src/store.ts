@@ -294,7 +294,7 @@ export function useAppStore() {
     return true;
   }, [investments, available]);
   // Mint a REAL virtual card through the classic UI flow.
-  const mintRealCard = useCallback(async (network = "visa") => {
+  const mintRealCard = useCallback(async (network = "visa", monthlyLimit = 2000, perTransactionLimit = 500) => {
     try {
       const st = await api.getIssuingStatus();
       if (!st || st.available === false) return false;
@@ -302,7 +302,7 @@ export function useAppStore() {
         const ch = await api.createCardholder({});
         if (!ch.success) return false;
       }
-      const res = await api.issueCard({ network, monthlyLimit: 2000, perTransactionLimit: 500 });
+      const res = await api.issueCard({ network, monthlyLimit, perTransactionLimit });
       if (!res.success) return false;
       await refreshCards();
       refreshBus.emit();

@@ -187,7 +187,7 @@ export default function App() {
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
                     {active === 'vault' && <VaultSection />}
                     {active === 'swiss' && <SwissSection />}
-                    {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} onIssueCard={() => store.mintRealCard('visa')} />}
+                    {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} onIssueCard={(o) => store.mintRealCard(o.network, o.monthlyLimit, o.perTransactionLimit)} />}
                     {active === 'payments' && <PaymentsSection />}
                     {active === 'invest' && <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} />}
                     {active === 'loans' && <DebtsSection />}
