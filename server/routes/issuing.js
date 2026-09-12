@@ -257,7 +257,8 @@ router.post('/api/issuing/cards', authenticateToken, async (req, res) => {
             currency: 'usd',
             type: 'virtual',
             status: 'active',
-            network: net,
+            // ponytail: Stripe has no `network` create-param (scheme is account-level);
+            // requested brand is tracked in our DB row + brand_label.
             cardholder: cardholder.id,
             ...(spendingControls.spending_limits.length ? { spending_controls: spendingControls } : {}),
             metadata: { vaultbank_user_id: req.user.id },
