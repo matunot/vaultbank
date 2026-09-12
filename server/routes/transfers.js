@@ -215,13 +215,13 @@ router.get('/api/transfers', authenticateToken, async (req, res) => {
         await db.ensureConnection();
         const userId = req.user.id;
         const { limit = 20, offset = 0 } = req.query;
+        // ponytail: clamp pagination (DoS cap); pg compat takes options, not Mongoose chain
+        const lim = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 100);
+        const off = Math.max(parseInt(offset, 10) || 0, 0);
 
         const transfers = await db.Transfer.find({
             $or: [{ from_user_id: userId }, { to_user_id: userId }]
-        })
-            .sort({ created_at: -1 })
-            .skip(parseInt(offset))
-            .limit(parseInt(limit));
+        }, { limit: lim, skip: off });
 
         // Enrich with user names
         const enriched = await Promise.all(transfers.map(async (t) => {
