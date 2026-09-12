@@ -401,7 +401,7 @@ router.get('/api/issuing/cards/:id/transactions', authenticateToken, async (req,
         const { rows } = await db.query('SELECT * FROM issued_cards WHERE card_id = $1 AND user_id = $2', [req.params.id, req.user.id]);
         if (rows.length === 0) return res.status(404).json({ success: false, message: 'Card not found.' });
         const tx = await db.query(
-            "SELECT * FROM transactions WHERE account_id = (SELECT id FROM accounts WHERE user_id = $1 LIMIT 1) AND (description LIKE $2 OR type = 'card_spend') ORDER BY created_at DESC LIMIT 25",
+            "SELECT * FROM transactions WHERE account_id = (SELECT id FROM accounts WHERE user_id = $1 LIMIT 1) AND (description LIKE $2 OR type = 'card_charge') ORDER BY created_at DESC LIMIT 25",
             [req.user.id, '%Ã¢â‚¬Â¢Ã¢â‚¬Â¢ ' + rows[0].last4 + '%']
         );
         res.json({

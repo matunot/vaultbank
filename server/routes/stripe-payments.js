@@ -438,14 +438,26 @@ async function handleCardTransaction(event) {
         const account = await findAccountByUserId(row.user_id);
         if (!account) return;
         const amount = Math.abs(tx.amount || 0) / 100;
-        const balanceBefore = parseFloat(account.balance);
-        const newBalance = balanceBefore - amount;
-        await updateAccountBalance(account.id, newBalance);
+        // ponytail: atomic debit — concurrent taps can't overdraft; CHECK allows card_charge
+        const { rows: debited } = await db.query(
+            'UPDATE accounts SET balance = balance - $2 WHERE id = $1 AND balance >= $2 RETURNING balance',
+            [account.id, amount]
+        );
+        if (debited.length === 0) {
+            await createNotification(row.user_id, {
+                type: 'warning',
+                title: 'Card declined',
+                message: '$' + amount.toFixed(2) + ' card charge declined (insufficient funds).',
+            });
+            return;
+        }
+        const newBalance = parseFloat(debited[0].balance);
+        const balanceBefore = newBalance + amount;
         const merchant = (tx.merchant_data && (tx.merchant_data.merchant_name || tx.merchant_data.network_id)) || 'Merchant';
         await createTransaction({
             account_id: account.id,
             user_id: row.user_id,
-            type: 'card_spend',
+            type: 'card_charge',
             status: 'completed',
             amount: -amount,
             currency: account.currency,
