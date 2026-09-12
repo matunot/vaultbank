@@ -147,11 +147,22 @@ router.get('/api/issuing/status', authenticateToken, async (req, res) => {
         try {
             await s.issuing.cardholders.list({ limit: 1 });
         } catch (e) {
-            if (String(e.message || '').includes('not set up to use Issuing')) {
-                return res.json({ success: true, available: false, reason: 'issuing-not-activated', activationUrl: 'https://dashboard.stripe.com/issuing/overview', mode: stripeMode(), webhookRegistered: !!(await getConfig('issuing_webhook_endpoint_id')) });
+            // ponytail: surface raw Stripe error (code/message are diagnostic, never secrets)
+            const stripeCode = e.code || null;
+            const stripeMessage = String(e.message || 'unknown stripe error');
+            if (stripeMessage.includes('not set up to use Issuing')) {
+                let stripeAccount = null;
+                try {
+                    const acct = await s.accounts.retrieve();
+                    stripeAccount = (acct.settings && acct.settings.dashboard && acct.settings.dashboard.display_name)
+                        || (acct.business_profile && acct.business_profile.name)
+                        || acct.email
+                        || acct.id;
+                } catch (e2) { /* restricted keys can't read account */ }
+                return res.json({ success: true, available: false, reason: 'issuing-not-activated', activationUrl: 'https://dashboard.stripe.com/issuing/overview', mode: stripeMode(), webhookRegistered: !!(await getConfig('issuing_webhook_endpoint_id')), stripeCode, stripeAccount });
             }
             // Any other error: report it but keep the UI functional
-            return res.json({ success: true, available: false, reason: 'error', message: e.message, mode: stripeMode() });
+            return res.json({ success: true, available: false, reason: 'error', message: stripeMessage, stripeCode, mode: stripeMode() });
         }
 
         let cardholder = null;
@@ -161,12 +172,22 @@ router.get('/api/issuing/status', authenticateToken, async (req, res) => {
             cardholder = chId || null;
         } catch (e) { /* db may not be ready */ }
         const publishableKey = process.env.STRIPE_PUBLISHABLE_KEY || process.env.PAYMENT_PROVIDER_STRIPE_KEY || null;
+        // Which Stripe account is this key for? (display name only — safe to expose)
+        let stripeAccount = null;
+        try {
+            const acct = await s.accounts.retrieve();
+            stripeAccount = (acct.settings && acct.settings.dashboard && acct.settings.dashboard.display_name)
+                || (acct.business_profile && acct.business_profile.name)
+                || acct.email
+                || acct.id;
+        } catch (e) { /* restricted keys can't read account */ }
         res.json({
             success: true,
             available: true,
             mode: stripeMode(),
             cardholder,
             publishableKey,
+            stripeAccount,
             cardholderAddressRequired: stripeMode() === 'live',
             webhookRegistered: !!(await getConfig('issuing_webhook_endpoint_id')),
         });
