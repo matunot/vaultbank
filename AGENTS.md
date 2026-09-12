@@ -15,7 +15,7 @@ Real licensed bank, production-grade. Node.js + Express (`server/index.js`, port
 ## Gotchas (never violate)
 - `.env` at `server/.env` (Neon `DATABASE_URL`), never root. No env → falls back to in-memory demo.
 - PG only, raw `db.query()` with `$1,$2`. `mongoose` dep still installed — `.lean()/.toObject()/._id` crashes.
-- `transactions.type`: `deposit|withdrawal|transfer_in|transfer_out|payment|refund|fee|interest|adjustment`. Never bare `transfer`.
+- `transactions.type`: `deposit|withdrawal|transfer_in|transfer_out|payment|refund|fee|interest|adjustment|stripe_deposit|stripe_withdrawal|card_charge|card_refund` (per `007_real_banking_schema.sql`). Never bare `transfer` or `card_spend`.
 - `audit_logs`: `action,resource_type,resource_id,details,ip_address,user_agent,created_at`. No `category`/`timestamp`.
 - Debit atomically: `UPDATE accounts SET balance = balance - $2 WHERE id = $1 AND balance >= $2 RETURNING *`.
 - CORS `origin:true` in `server/index.js` is intentional — do not re-add allowlist.
