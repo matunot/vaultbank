@@ -40,3 +40,12 @@ Thumbs.db
 
 # VaultBank auto-deploy extension build artifact
 vaultbank-auto-deploy-extension/*.vsix
+
+# OpenCode local state — NEVER commit
+.opencode/memory/
+graphify-out/
+.openviking/
+data/vectordb/
+data/viking/
+data/_system/
+data/*.pid
