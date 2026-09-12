@@ -169,6 +169,10 @@ vaultbank/
   - **`server/routes/alerts.js`** â€” was CRASHING in production (read `demoStore.alerts` which is empty in real-DB mode â†’ 500). Now reads real DB notifications via `getNotifications()` with graceful fallback; unread-count/read-all are production-safe
   - **Verified live on `https://vaultbank-md20.onrender.com`**: real transfer `$2.50 demoâ†’diana` â†’ sender balance 4980.50â†’4978.00, transaction + transfer history both updated; `/api/alerts` returns 200 + real notifications; TS 0 errors; build OK
 
+- [x] **OPENCODE EXTENSIONS PACK (2026-09-11)** — `opencode.json` now 6 plugins: graphify (graph), agent-memory (memory), openviking (recall), `@different-ai/opencode-browser@4.6.1` (browser), `ponytail-opencode-plugin@0.1.0` (`/ponytail`), `opencode-omniroute-auth@1.2.2` (`/connect omniroute`). 25 local skills + 4 agents kept, nothing reinstalled. Restart opencode once so Bun auto-installs the 3 new ones. Then run `/connect omniroute` once (key stays in local auth.json, never in repo).
+
+- [x] **TRANSFERS 500 FIX (2026-09-12)** — `GET /api/transfers` crashed live (`db.Transfer.find(...).sort is not a function`, transfers.js:222). PG compat returns rows, not a Mongoose query — now `find(filter, {limit, skip})` with clamped pagination (1-100). Sweep clean (other `.sort` = Array.sort; `$set` handled).
+
 ---
 
 ## ðŸ“… What's NEXT (To Do)
@@ -184,4 +188,4 @@ vaultbank/
 
 ---
 
-*Created: 2026-08-12 | Last updated: 2026-09-03 | Never forget: read this first, update it often.*
+*Created: 2026-08-12 | Last updated: 2026-09-11 | Never forget: read this first, update it often.*
