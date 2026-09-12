@@ -44,3 +44,7 @@ services:
         sync: false
       - key: PAYPAL_WEBHOOK_ID
         sync: false
+      # ── USDC deposits: account-level XPUB (public only — generates
+      # addresses, can never spend). Sweeping needs the offline xpriv.
+      - key: USDC_XPUB
+        sync: false
