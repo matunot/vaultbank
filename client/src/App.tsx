@@ -13,6 +13,7 @@ import ErrorBoundary from './components/ErrorBoundary';
 import { TransferModal, DepositModal, PayBillModal, ConvertModal, WireModal, MobileModal, TradeModal, WithdrawModal } from './components/Modals';
 import { useAppStore } from './store';
 import { api } from './api';
+import { refreshBus } from './refreshBus';
 
 // Lazy load heavy sections
 const CardsSection = lazy(() => import('./components/CardsSection'));
@@ -56,6 +57,7 @@ export default function App() {
   const closeModal = useCallback(() => setModal(null), []);
 
   // Handle the REAL return from Stripe Checkout (?deposit=success / cancelled)
+  // and PayPal Checkout (?deposit=paypal-success&token=ORDERID)
   const [depositBanner, setDepositBanner] = useState<string | null>(null);
   // Gold toast fired the moment a REAL transfer completes
   const [sendToast, setSendToast] = useState<{ name: string; amount: number } | null>(null);
@@ -66,9 +68,29 @@ export default function App() {
       window.history.replaceState({}, '', window.location.pathname);
       setTimeout(() => setDepositBanner(null), 8000);
     } else if (params.get('deposit') === 'cancelled') {
-      setDepositBanner('Deposit cancelled â€” no money was moved.');
+      setDepositBanner('Deposit cancelled — no money was moved.');
       window.history.replaceState({}, '', window.location.pathname);
       setTimeout(() => setDepositBanner(null), 6000);
+    } else if (params.get('deposit') === 'paypal-success') {
+      const orderId = params.get('token') || '';
+      window.history.replaceState({}, '', window.location.pathname);
+      if (!orderId) {
+        setDepositBanner('PayPal return missing order — no money was moved.');
+        setTimeout(() => setDepositBanner(null), 6000);
+      } else {
+        // Capture the approved PayPal order, then refresh balances everywhere.
+        api.paypalCapture({ orderId })
+          .then((r) => {
+            setDepositBanner(r.success
+              ? 'PayPal deposit confirmed — REAL funds have been added to your account.'
+              : 'PayPal capture failed — no money was moved.');
+          })
+          .catch(() => setDepositBanner('PayPal capture failed — no money was moved.'))
+          .finally(() => {
+            refreshBus.emit();
+            setTimeout(() => setDepositBanner(null), 8000);
+          });
+      }
     }
   }, []);
 

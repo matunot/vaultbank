@@ -258,7 +258,7 @@ router.post('/api/payments/webhook/:provider', async (req, res) => {
                 await handleRazorpayEvent(event);
                 break;
             case 'paypal':
-                await handlePayPalEvent(event);
+                await handlePayPalEvent(event, req);
                 break;
             default:
                 console.log(`Unhandled provider webhook: ${provider}`);
@@ -499,7 +499,7 @@ async function handleRazorpayEvent(event) {
     }
 }
 
-async function handlePayPalEvent(event) {
+async function handlePayPalEvent(event, req) {
     const eventType = event && event.event_type;
     switch (eventType) {
         case 'PAYMENT.CAPTURE.COMPLETED': {
@@ -508,6 +508,39 @@ async function handlePayPalEvent(event) {
                 await ledger.updatePaymentStatus('paypal', cap.id, 'succeeded', { metadata: { last_event: eventType, amount: cap.amount && cap.amount.value, currency: cap.amount && cap.amount.currency_code } });
             }
             console.log('[PayPal] Capture completed:', cap && cap.id);
+            // REAL money credit — only after PayPal itself confirms the signature.
+            try {
+                const h = (req && req.headers) || {};
+                const ok = await paypalAdapter.verifyWebhookSignature({
+                    transmissionId: h['paypal-transmission-id'],
+                    transmissionTime: h['paypal-transmission-time'],
+                    certUrl: h['paypal-cert-url'],
+                    authAlgo: h['paypal-auth-algo'],
+                    transmissionSig: h['paypal-transmission-sig'],
+                    webhookId: process.env.PAYPAL_WEBHOOK_ID,
+                    event,
+                });
+                if (!ok) {
+                    console.error('[PayPal] Webhook signature NOT verified — no credit.');
+                    break;
+                }
+                const custom = String((cap && cap.custom_id) || '');
+                const [userId, accountId] = custom.split(':');
+                const amt = parseFloat(cap.amount && cap.amount.value);
+                if (userId && accountId && amt > 0) {
+                    const { creditPayPalDeposit } = require('./paypal-deposits');
+                    await creditPayPalDeposit({
+                        userId,
+                        accountId,
+                        amount: amt,
+                        currency: (cap.amount && cap.amount.currency_code) || 'USD',
+                        captureId: cap.id,
+                        orderId: null,
+                    });
+                }
+            } catch (e) {
+                console.error('[PayPal] Capture credit error:', e.message);
+            }
             break;
         }
         case 'PAYMENT.CAPTURE.DENIED': {

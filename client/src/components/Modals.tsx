@@ -279,7 +279,7 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
 }
 
 export function DepositModal({ isOpen, onClose }: ModalProps) {
-  const [mode, setMode] = useState<'card' | 'instant'>('card');
+  const [mode, setMode] = useState<'card' | 'instant' | 'paypal'>('card');
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -308,6 +308,15 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
           return;
         }
         throw new Error(res.message || 'Could not start Stripe checkout.');
+      }
+      if (mode === 'paypal') {
+        // REAL money in — PayPal Checkout (approved on paypal.com, captured on return)
+        const res = await api.paypalDeposit({ amount: amt });
+        if (res.success && res.approvalUrl) {
+          window.location.href = res.approvalUrl;
+          return;
+        }
+        throw new Error(res.message || 'PayPal deposits are not enabled yet.');
       }
       // Instant internal deposit — real backend balance update
       const res = await api.accountDeposit({ amount: amt, description: 'Instant deposit' });
@@ -338,7 +347,7 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
         </div>
 
         {/* Mode toggle */}
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
             onClick={() => setMode('card')}
@@ -358,6 +367,16 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
           >
             <p className="text-xs font-bold text-white flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" /> Instant</p>
             <p className="text-[9px] text-white/40 mt-1">Internal credit · no card needed</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('paypal')}
+            className={`p-3 rounded-xl border text-left transition-colors ${
+              mode === 'paypal' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
+            }`}
+          >
+            <p className="text-xs font-bold text-white flex items-center gap-1.5">🅿️ PayPal</p>
+            <p className="text-[9px] text-white/40 mt-1">Real PayPal checkout</p>
           </button>
         </div>
 
@@ -391,7 +410,7 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
           <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">{errorMsg}</p>
         )}
 
-        <SubmitButton status={status} idleText={mode === 'card' ? 'Pay with Card — Real Money' : 'Deposit Instantly'} color="emerald" />
+        <SubmitButton status={status} idleText={mode === 'card' ? 'Pay with Card — Real Money' : mode === 'paypal' ? 'Pay with PayPal — Real Money' : 'Deposit Instantly'} color="emerald" />
       </form>
     </BaseModal>
   );

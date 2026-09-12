@@ -302,6 +302,20 @@ export const api = {
     return request<ApiResponse>('api/stripe/balance');
   },
 
+  async paypalDeposit(data: { amount: number; currency?: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/paypal/deposit', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async paypalCapture(data: { orderId: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/paypal/capture', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   async getAdminStats(): Promise<ApiResponse> {
     return request<ApiResponse>('api/admin/stats');
   },

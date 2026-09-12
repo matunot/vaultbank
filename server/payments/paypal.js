@@ -53,7 +53,7 @@ const mockOrders = new Map();
  * @returns {Promise<Object>} { providerId, approvalUrl, status }
  */
 async function createPaymentIntent(payload) {
-    const { amount, currency = 'USD', description, userId } = payload;
+    const { amount, currency = 'USD', description, userId, returnUrl, cancelUrl, customId } = payload;
     const client = getPayPalClient();
 
     if (client && paypal) {
@@ -65,6 +65,7 @@ async function createPaymentIntent(payload) {
             purchase_units: [
                 {
                     reference_id: `vb_${uuidv4().slice(0, 8)}`,
+                    custom_id: customId || undefined,
                     description: description || 'VaultBank Payment',
                     amount: {
                         currency_code: currency.toUpperCase(),
@@ -75,7 +76,9 @@ async function createPaymentIntent(payload) {
             application_context: {
                 brand_name: 'VaultBank',
                 landing_page: 'NO_PREFERENCE',
-                user_action: 'PAY_NOW'
+                user_action: 'PAY_NOW',
+                return_url: returnUrl || undefined,
+                cancel_url: cancelUrl || undefined
             }
         });
 
@@ -190,6 +193,72 @@ function verifyWebhook(req) {
 }
 
 /**
+ * PayPal API base (sandbox vs live mirrors the SDK environment choice).
+ */
+function getApiBase() {
+    const clientId = process.env.PAYMENT_PROVIDER_PAYPAL_CLIENT_ID || '';
+    const clientSecret = process.env.PAYMENT_PROVIDER_PAYPAL_SECRET || '';
+    return (clientId.startsWith('EBX') || /live/i.test(clientSecret))
+        ? 'https://api-m.paypal.com'
+        : 'https://api-m.sandbox.paypal.com';
+}
+
+let cachedToken = null;
+let cachedTokenExp = 0;
+
+/**
+ * OAuth client-credentials token (cached until near-expiry).
+ * Returns null when no keys are configured — callers must fail closed.
+ */
+async function getAccessToken() {
+    const clientId = process.env.PAYMENT_PROVIDER_PAYPAL_CLIENT_ID;
+    const clientSecret = process.env.PAYMENT_PROVIDER_PAYPAL_SECRET;
+    if (!clientId || clientId.startsWith('your_paypal') || !clientSecret) return null;
+    if (cachedToken && Date.now() < cachedTokenExp) return cachedToken;
+    const auth = Buffer.from(clientId + ':' + clientSecret).toString('base64');
+    const r = await fetch(getApiBase() + '/v1/oauth2/token', {
+        method: 'POST',
+        headers: { Authorization: 'Basic ' + auth, 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'grant_type=client_credentials',
+    });
+    if (!r.ok) throw new Error('PayPal OAuth failed: ' + r.status);
+    const data = await r.json();
+    if (!data.access_token) throw new Error('PayPal OAuth: no access_token');
+    cachedToken = data.access_token;
+    cachedTokenExp = Date.now() + ((data.expires_in || 300) - 30) * 1000;
+    return cachedToken;
+}
+
+/**
+ * Real webhook signature verification via PayPal's verify API.
+ * Call BEFORE moving money. Returns true only on VERIFIED.
+ */
+async function verifyWebhookSignature({ transmissionId, transmissionTime, certUrl, authAlgo, transmissionSig, webhookId, event }) {
+    try {
+        const token = await getAccessToken();
+        if (!token) return false;
+        const r = await fetch(getApiBase() + '/v1/notifications/verify-webhook-signature', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                auth_algo: authAlgo,
+                cert_url: certUrl,
+                transmission_id: transmissionId,
+                transmission_sig: transmissionSig,
+                transmission_time: transmissionTime,
+                webhook_id: webhookId || process.env.PAYPAL_WEBHOOK_ID,
+                webhook_event: event,
+            }),
+        });
+        if (!r.ok) return false;
+        const data = await r.json();
+        return data.verification_status === 'VERIFIED';
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
  * Get order status
  * @param {string} providerId - PayPal order ID
  * @returns {Promise<Object>} { status, details }
@@ -228,5 +297,7 @@ module.exports = {
     createPaymentIntent,
     capturePayment,
     verifyWebhook,
+    verifyWebhookSignature,
+    getAccessToken,
     getStatus
 };
