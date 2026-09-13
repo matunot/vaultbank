@@ -183,6 +183,12 @@ vaultbank/
 
 ## ðŸ“… What's NEXT (To Do)
 
+- [ ] RESUME HERE — PayPal $1 live verify (2026-09-13 session, updated 22:20 UTC):
+1. DONE: `GET /api/paypal/config-status` (admin-only, MASKED, no secret values) added in `0f6a54c` — one read-only GET now answers PayPal config status; never probe with order creation again. 7/7 paypal tests green, pushed.
+2. Verified LIVE via that endpoint on the fresh deploy (env fully re-applied): clientId set (tail `0lSY` = user's NEW key), webhookId set (tail `060L`), mode=live — but `secret: {set:false, length:0}`. **The secret is definitively NOT in the Render dashboard** (name typo / empty value field / wrong service). User has successfully saved 3 of 4 vars.
+3. PayPal credentials themselves are VALID: user-pasted Client ID + Secret authenticated OK against `api-m.paypal.com` (live OAuth token issued). The moment the secret lands in Render under the EXACT name `PAYMENT_PROVIDER_PAYPAL_SECRET` (Save → new deploy starts), deposits go live: expect `200 + approvalUrl` on authed `POST /api/paypal/deposit {amount:1}`, then verify `GET /api/paypal/config-status` shows `fullyConfigured:true`.
+4. SECURITY: user pasted live Client ID + Secret in chat → after deposits confirmed working, ROLL the PayPal secret (developer.paypal.com → app → regenerate) + update Render in one save.
+5. No Render API key / CLI on this machine — Render env changes stay manual unless user provides an `rnd_...` key. `.mssqlignore` untracked junk — do not commit.
 - [ ] RESUME HERE — PayPal $1 live verify (2026-09-13 session):
 1. Code 100% done + deployed: PayPal deposit rail, `PAYPAL_MODE` (`2c8ad44`), `502 PAYPAL_AUTH_FAILED` self-diagnosis (`df3fe04`), general rate limit 100->500 (`dec76c9`), **503 now names the exact missing env var (`c1c1d63`, pushed — wait for redeploy)**.
   2. PayPal Live app `vaultbank` exists (Client ID `BAAFHQVO...`), Live webhook `https://vaultbank-md20.onrender.com/api/payments/webhook/paypal` -> ID `0AG77579BR282060L` (All Events).
