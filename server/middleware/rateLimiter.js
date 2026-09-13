@@ -5,7 +5,8 @@ const rateLimit = require('express-rate-limit');
  */
 const generalLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100,
+    // ponytail: app's own 20s poll = ~135 req/15min; 500 stops abuse without throttling normal use
+    max: 500,
     standardHeaders: true,
     legacyHeaders: false,
     message: {
