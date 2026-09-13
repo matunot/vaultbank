@@ -165,9 +165,15 @@ router.post('/api/paypal/deposit', authenticateToken, async (req, res) => {
         return res.status(200).json({ success: true, approvalUrl: result.approvalUrl, orderId: result.providerId });
     } catch (error) {
         console.error('PayPal deposit error:', error.message);
+        const rawMsg = String((error && error.message) || '');
         // ponytail: invalid_client = keys/mode tab mismatch — say so, reveal nothing else
-        if (/invalid_client/i.test(String((error && error.message) || ''))) {
+        if (/invalid_client/i.test(rawMsg)) {
             return res.status(502).json({ success: false, code: 'PAYPAL_AUTH_FAILED', message: 'PayPal rejected the API credentials. Make sure Client ID, Secret and PAYPAL_MODE (live/sandbox) are all from the same PayPal tab.' });
+        }
+        // ponytail: PayPal refused the ORDER because our merchant account is restricted
+        // (new business accounts are limited until verification). Actionable, not generic.
+        if (/PAYEE_ACCOUNT_RESTRICTED|UNPROCESSABLE_ENTITY/i.test(rawMsg) || (error && error.statusCode === 422)) {
+            return res.status(422).json({ success: false, code: 'PAYPAL_MERCHANT_RESTRICTED', message: 'PayPal accepted the credentials, but your PayPal merchant (business) account is restricted. Complete the verification steps in your PayPal business account (Resolution Center / confirm email + business details), then try the deposit again.' });
         }
         return res.status(500).json({ success: false, message: 'Failed to start PayPal deposit.' });
     }
