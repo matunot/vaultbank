@@ -173,6 +173,8 @@ vaultbank/
 
 - [x] **TRANSFERS 500 FIX (2026-09-12)** — `GET /api/transfers` crashed live (`db.Transfer.find(...).sort is not a function`, transfers.js:222). PG compat returns rows, not a Mongoose query — now `find(filter, {limit, skip})` with clamped pagination (1-100). Sweep clean (other `.sort` = Array.sort; `$set` handled).
 
+- [x] **PAYPAL LIVE/SANDBOX FIX (2026-09-13)** — `server/payments/paypal.js` now uses explicit `PAYPAL_MODE` env (`live|sandbox`, default `sandbox`); old `EBX`-prefix heuristic kept as fallback. Live keys + Live webhook ID require `PAYPAL_MODE=live` in Render or order creation 500s against the wrong endpoint. `render.yaml` includes the key. Pushed in `2c8ad44`, paypal suite 7/7 green (ledger + paymentsMetrics failures pre-existing on clean tree).
+
 - [x] **PAYPAL DEPOSIT RAIL (2026-09-12)** — real money in via PayPal Checkout: `POST /api/paypal/deposit` (order + approvalUrl, fail-closed 503 without keys) → approve on paypal.com → `POST /api/paypal/capture` or `PAYMENT.CAPTURE.COMPLETED` webhook credits atomically (idempotent on capture id, real signature verification). DepositModal PayPal rail + `?deposit=paypal-success` return handler. 7 unit tests. Needs in Render: `PAYMENT_PROVIDER_PAYPAL_CLIENT_ID/SECRET` + `PAYPAL_WEBHOOK_ID`.
 
 - [x] **USDC DEPOSIT RAIL (2026-09-12)** — zero-signup crypto deposits: per-user addresses derived from `USDC_XPUB` (xpub/0/index, ethers cross-verified vectors), public-RPC watcher (Base + Polygon, 12 confs), idempotent atomic credit, QR + check-now UI. On-chain funds park until swept with offline xpriv (sweep code intentionally absent). Needs in Render: `USDC_XPUB` (public only).
