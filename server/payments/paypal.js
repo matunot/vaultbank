@@ -17,6 +17,19 @@ const { v4: uuidv4 } = require('uuid');
 let paypal = null;
 let paypalClient = null;
 
+// ponytail: explicit PAYPAL_MODE wins; the EBX/live heuristics are legacy fallback.
+function getPayPalMode() {
+    const m = String(process.env.PAYPAL_MODE || '').toLowerCase().trim();
+    if (m === 'live' || m === 'sandbox') return m;
+    const clientId = process.env.PAYMENT_PROVIDER_PAYPAL_CLIENT_ID || '';
+    const clientSecret = process.env.PAYMENT_PROVIDER_PAYPAL_SECRET || '';
+    return (clientId.startsWith('EBX') || /live/i.test(clientSecret)) ? 'live' : 'sandbox';
+}
+
+function isLive() {
+    return getPayPalMode() === 'live';
+}
+
 function getPayPalClient() {
     const clientId = process.env.PAYMENT_PROVIDER_PAYPAL_CLIENT_ID;
     const clientSecret = process.env.PAYMENT_PROVIDER_PAYPAL_SECRET;
@@ -28,7 +41,7 @@ function getPayPalClient() {
     if (!paypalClient) {
         try {
             paypal = require('@paypal/checkout-server-sdk');
-            const environment = clientId.startsWith('EBX')
+            const environment = isLive()
                 ? new paypal.core.LiveEnvironment(clientId, clientSecret)
                 : new paypal.core.SandboxEnvironment(clientId, clientSecret);
             paypalClient = new paypal.core.PayPalHttpClient(environment);
@@ -196,9 +209,7 @@ function verifyWebhook(req) {
  * PayPal API base (sandbox vs live mirrors the SDK environment choice).
  */
 function getApiBase() {
-    const clientId = process.env.PAYMENT_PROVIDER_PAYPAL_CLIENT_ID || '';
-    const clientSecret = process.env.PAYMENT_PROVIDER_PAYPAL_SECRET || '';
-    return (clientId.startsWith('EBX') || /live/i.test(clientSecret))
+    return isLive()
         ? 'https://api-m.paypal.com'
         : 'https://api-m.sandbox.paypal.com';
 }
