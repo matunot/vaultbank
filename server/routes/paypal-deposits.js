@@ -24,10 +24,12 @@ const paypalAdapter = require('../payments/paypal');
 
 const BASE_URL = (process.env.CLIENT_URL || 'https://vaultbank-md20.onrender.com').replace(/\/+$/, '');
 
-const hasPayPalKeys = () => {
-    const id = process.env.PAYMENT_PROVIDER_PAYPAL_CLIENT_ID;
-    const secret = process.env.PAYMENT_PROVIDER_PAYPAL_SECRET;
-    return !!(id && !id.startsWith('your_paypal') && secret);
+const missingPayPalKeys = () => {
+    const want = ['PAYMENT_PROVIDER_PAYPAL_CLIENT_ID', 'PAYMENT_PROVIDER_PAYPAL_SECRET'];
+    return want.filter((name) => {
+        const v = process.env[name];
+        return !v || (name.endsWith('CLIENT_ID') && v.startsWith('your_paypal'));
+    });
 };
 
 // ============================================================================
@@ -85,8 +87,9 @@ router.post('/api/paypal/deposit', authenticateToken, async (req, res) => {
         if (amount > 100000) {
             return res.status(400).json({ success: false, message: 'Maximum single deposit is $100,000.' });
         }
-        if (!hasPayPalKeys()) {
-            return res.status(503).json({ success: false, code: 'PAYPAL_NOT_CONFIGURED', message: 'PayPal deposits are not enabled yet.' });
+        const missingKeys = missingPayPalKeys();
+        if (missingKeys.length) {
+            return res.status(503).json({ success: false, code: 'PAYPAL_NOT_CONFIGURED', message: 'PayPal deposits are not enabled yet. Missing env: ' + missingKeys.join(', ') });
         }
         const account = await findAccountByUserId(req.user.id);
         if (!account) {
@@ -134,8 +137,9 @@ router.post('/api/paypal/capture', authenticateToken, async (req, res) => {
         if (!orderId) {
             return res.status(400).json({ success: false, message: 'orderId is required.' });
         }
-        if (!hasPayPalKeys()) {
-            return res.status(503).json({ success: false, code: 'PAYPAL_NOT_CONFIGURED', message: 'PayPal deposits are not enabled yet.' });
+        const missingKeys = missingPayPalKeys();
+        if (missingKeys.length) {
+            return res.status(503).json({ success: false, code: 'PAYPAL_NOT_CONFIGURED', message: 'PayPal deposits are not enabled yet. Missing env: ' + missingKeys.join(', ') });
         }
         const status = await paypalAdapter.getStatus(orderId);
         let capture = null;
