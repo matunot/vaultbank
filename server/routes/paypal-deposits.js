@@ -117,9 +117,11 @@ router.post('/api/paypal/deposit', authenticateToken, async (req, res) => {
         return res.status(200).json({ success: true, approvalUrl: result.approvalUrl, orderId: result.providerId });
     } catch (error) {
         console.error('PayPal deposit error:', error.message);
-        // TEMP-DIAG (revert before final): surface sanitized PayPal reason to authed caller for live diagnosis
-        const detail = String((error && error.message) || error || 'unknown').replace(/['"][A-Za-z0-9_\-]{20,}['"]/g, '[redacted]').slice(0, 300);
-        return res.status(500).json({ success: false, message: 'Failed to start PayPal deposit.', detail });
+        // ponytail: invalid_client = keys/mode tab mismatch — say so, reveal nothing else
+        if (/invalid_client/i.test(String((error && error.message) || ''))) {
+            return res.status(502).json({ success: false, code: 'PAYPAL_AUTH_FAILED', message: 'PayPal rejected the API credentials. Make sure Client ID, Secret and PAYPAL_MODE (live/sandbox) are all from the same PayPal tab.' });
+        }
+        return res.status(500).json({ success: false, message: 'Failed to start PayPal deposit.' });
     }
 });
 
