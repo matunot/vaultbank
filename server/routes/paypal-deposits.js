@@ -12,7 +12,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const {
     findAccountByUserId,
     createTransaction,
@@ -35,6 +35,40 @@ const missingPayPalKeys = () => {
 const paypalConfigInfo = () => ({
     mode: String(process.env.PAYPAL_MODE || '').toLowerCase().trim() || 'unset',
     webhookIdSet: !!(process.env.PAYPAL_WEBHOOK_ID && process.env.PAYPAL_WEBHOOK_ID.trim()),
+});
+
+// ============================================================================
+// GET /api/paypal/config-status — admin-only, MASKED PayPal env diagnostic.
+// Never returns secret values — only set/unset + safe metadata, so ops can
+// answer "is PayPal live?" in one read-only GET (no order-creation probes).
+// ============================================================================
+const maskVar = (name, { showTail = false } = {}) => {
+    const v = (process.env[name] || '').trim();
+    if (!v) return { set: false, length: 0 };
+    const out = { set: true, length: v.length };
+    if (showTail) out.tail = v.slice(-4); // last 4 chars only — never enough to leak
+    return out;
+};
+
+router.get('/api/paypal/config-status', authenticateToken, requireAdmin, (req, res) => {
+    const missing = missingPayPalKeys();
+    const clientId = (process.env.PAYMENT_PROVIDER_PAYPAL_CLIENT_ID || '').trim();
+    const info = paypalConfigInfo();
+    return res.status(200).json({
+        success: true,
+        paypal: {
+            clientId: { set: !!clientId, tail: clientId ? clientId.slice(-4) : null },
+            secret: maskVar('PAYMENT_PROVIDER_PAYPAL_SECRET'),
+            webhookId: maskVar('PAYPAL_WEBHOOK_ID', { showTail: true }),
+            mode: info.mode,
+            webhookIdSet: info.webhookIdSet,
+        },
+        missingEnv: missing,
+        fullyConfigured: missing.length === 0,
+        hint: missing.length
+            ? 'Set the missing env var(s) in Render on the service that serves vaultbank-md20.onrender.com -> Environment -> Save. A NEW DEPLOY must start (watch the Events tab / uptime reset) — a save without a deploy did not apply.'
+            : 'All PayPal env vars present. If deposits still fail, check PAYPAL_MODE matches the credential tab (live vs sandbox).',
+    });
 });
 
 // ============================================================================
