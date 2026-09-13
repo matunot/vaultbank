@@ -32,6 +32,11 @@ const missingPayPalKeys = () => {
     });
 };
 
+const paypalConfigInfo = () => ({
+    mode: String(process.env.PAYPAL_MODE || '').toLowerCase().trim() || 'unset',
+    webhookIdSet: !!(process.env.PAYPAL_WEBHOOK_ID && process.env.PAYPAL_WEBHOOK_ID.trim()),
+});
+
 // ============================================================================
 // Shared idempotent credit — single place money enters from PayPal
 // ============================================================================
@@ -89,7 +94,13 @@ router.post('/api/paypal/deposit', authenticateToken, async (req, res) => {
         }
         const missingKeys = missingPayPalKeys();
         if (missingKeys.length) {
-            return res.status(503).json({ success: false, code: 'PAYPAL_NOT_CONFIGURED', message: 'PayPal deposits are not enabled yet. Missing env: ' + missingKeys.join(', ') });
+            return res.status(503).json({
+                success: false,
+                code: 'PAYPAL_NOT_CONFIGURED',
+                message: 'PayPal deposits are not enabled yet. Missing env: ' + missingKeys.join(', '),
+                missing: missingKeys,
+                ...paypalConfigInfo(),
+            });
         }
         const account = await findAccountByUserId(req.user.id);
         if (!account) {
@@ -139,7 +150,13 @@ router.post('/api/paypal/capture', authenticateToken, async (req, res) => {
         }
         const missingKeys = missingPayPalKeys();
         if (missingKeys.length) {
-            return res.status(503).json({ success: false, code: 'PAYPAL_NOT_CONFIGURED', message: 'PayPal deposits are not enabled yet. Missing env: ' + missingKeys.join(', ') });
+            return res.status(503).json({
+                success: false,
+                code: 'PAYPAL_NOT_CONFIGURED',
+                message: 'PayPal deposits are not enabled yet. Missing env: ' + missingKeys.join(', '),
+                missing: missingKeys,
+                ...paypalConfigInfo(),
+            });
         }
         const status = await paypalAdapter.getStatus(orderId);
         let capture = null;
