@@ -184,7 +184,7 @@ vaultbank/
 ## ðŸ“… What's NEXT (To Do)
 
 - [ ] RESUME HERE — PayPal $1 live verify (2026-09-13 session):
-  1. Code 100% done + deployed: PayPal deposit rail, `PAYPAL_MODE` (`2c8ad44`), `502 PAYPAL_AUTH_FAILED` self-diagnosis (`df3fe04`), general rate limit 100->500 (`dec76c9`).
+1. Code 100% done + deployed: PayPal deposit rail, `PAYPAL_MODE` (`2c8ad44`), `502 PAYPAL_AUTH_FAILED` self-diagnosis (`df3fe04`), general rate limit 100->500 (`dec76c9`), **503 now names the exact missing env var (`c1c1d63`, pushed — wait for redeploy)**.
   2. PayPal Live app `vaultbank` exists (Client ID `BAAFHQVO...`), Live webhook `https://vaultbank-md20.onrender.com/api/payments/webhook/paypal` -> ID `0AG77579BR282060L` (All Events).
   3. BLOCKER: last live test -> `503 PAYPAL_NOT_CONFIGURED` = Render env keys missing/empty on current deploy. User must ensure all 4 exist with values: `PAYMENT_PROVIDER_PAYPAL_CLIENT_ID` (Live), `PAYMENT_PROVIDER_PAYPAL_SECRET` (Live), `PAYPAL_WEBHOOK_ID=0AG77579BR282060L`, `PAYPAL_MODE=live` -> Save -> wait for `Live` deploy.
   4. Then verify gently (ONE login + ONE deposit, no polling loops): authed `POST /api/paypal/deposit {amount:1}` -> expect `approvalUrl`. Prior live error was `invalid_client` (keys rejected = typo or sandbox/live tab mismatch).
