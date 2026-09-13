@@ -183,6 +183,13 @@ vaultbank/
 
 ## ðŸ“… What's NEXT (To Do)
 
+- [ ] RESUME HERE — PayPal $1 live verify (2026-09-13 session, final state ~22:50 UTC):
+1. **SOLVED**: Render env now FULLY configured — `config-status` returns `fullyConfigured:true` (clientId tail `0lSY`, secret set len 80 (user rolled it), webhookId tail `9143` (NEW webhook, old `060L` dead), mode=live). The blocker was: user's saves never applied for ~1h (no restart in health uptime) until finally landed.
+2. **NEW GATE — PayPal merchant account RESTRICTED**: order creation returns HTTP 422 `PAYEE_ACCOUNT_RESTRICTED` "The merchant account is restricted." Credentials + code + config are all VALID; PayPal itself refuses orders until the user completes business verification in paypal.com (confirm email, business details, bank/card — see Resolution Center). NOTHING to fix in code/Render — purely PayPal account-side.
+3. SHIPPED: `GET /api/paypal/config-status` (admin, masked) in `0f6a54c`; 422 surfacing as `PAYPAL_MERCHANT_RESTRICTED` code in `0336f93` (was generic 500). Both verified live. Tests 7/7 green.
+4. VERIFY after user clears PayPal restriction: authed `POST /api/paypal/deposit {amount:1}` → expect `200 + approvalUrl` (order WILL create once restriction lifts — no other change needed). Prior 502 invalid_client = key/mode tab mismatch; generic 500 now only for unknown errors.
+5. SECURITY: PayPal secret was pasted in chat — user already rolled it once (new secret len 80 in Render). Good. Keep rolling if reused elsewhere.
+6. Test-machine lessons: health `/health` uptime is MILLISECONDS (Date.now-startTime), skipped by rate limiter → safe to poll; PowerShell git push prints stderr as NativeCommandError (cosmetic, push succeeds); write JSON bodies to temp file + `curl -d @file` to dodge quoting hell.
 - [ ] RESUME HERE — PayPal $1 live verify (2026-09-13 session, updated 22:20 UTC):
 1. DONE: `GET /api/paypal/config-status` (admin-only, MASKED, no secret values) added in `0f6a54c` — one read-only GET now answers PayPal config status; never probe with order creation again. 7/7 paypal tests green, pushed.
 2. Verified LIVE via that endpoint on the fresh deploy (env fully re-applied): clientId set (tail `0lSY` = user's NEW key), webhookId set (tail `060L`), mode=live — but `secret: {set:false, length:0}`. **The secret is definitively NOT in the Render dashboard** (name typo / empty value field / wrong service). User has successfully saved 3 of 4 vars.
