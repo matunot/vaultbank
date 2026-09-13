@@ -117,7 +117,9 @@ router.post('/api/paypal/deposit', authenticateToken, async (req, res) => {
         return res.status(200).json({ success: true, approvalUrl: result.approvalUrl, orderId: result.providerId });
     } catch (error) {
         console.error('PayPal deposit error:', error.message);
-        return res.status(500).json({ success: false, message: 'Failed to start PayPal deposit.' });
+        // TEMP-DIAG (revert before final): surface sanitized PayPal reason to authed caller for live diagnosis
+        const detail = String((error && error.message) || error || 'unknown').replace(/['"][A-Za-z0-9_\-]{20,}['"]/g, '[redacted]').slice(0, 300);
+        return res.status(500).json({ success: false, message: 'Failed to start PayPal deposit.', detail });
     }
 });
 
