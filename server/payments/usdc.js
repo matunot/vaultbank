@@ -155,6 +155,28 @@ function deriveDepositAddress(xpub, index) {
     return pubToAddress(child.pub);
 }
 
+/**
+ * Deposit address derived from a root PRIVATE key (USDC_HOT_WALLET_KEY):
+ * HMAC-SHA512(root, "vaultbank-deposit/v1/" + index) -> secp256k1 scalar -> address.
+ * Domain-separated label keeps these keys independent of any other use of the
+ * root. Private keys are NEVER stored or returned — only the address, so a DB
+ * leak reveals nothing. Same address on all EVM chains (Base/Polygon/Ethereum).
+ */
+function deriveDepositAddressFromRoot(rootKeyHex, index) {
+    if (!Number.isInteger(index) || index < 0) throw new Error('Invalid index.');
+    const root = String(rootKeyHex || '').toLowerCase().replace(/^0x/, '');
+    if (!/^[0-9a-f]{64}$/.test(root)) throw new Error('Invalid root key.');
+    const rootBytes = Buffer.from(root, 'hex');
+    const nBig = BigInt(ec.curve.n.toString(10));
+    for (let counter = 0; ; counter++) {
+        const label = Buffer.from('vaultbank-deposit/v1/' + index + (counter ? '/' + counter : ''), 'ascii');
+        const I = createHmac('sha512', rootBytes).update(label).digest();
+        const sBig = BigInt('0x' + I.subarray(0, 32).toString('hex'));
+        if (sBig === 0n || sBig >= nBig) continue; // astronomically rare — re-derive
+        return pubToAddress(Buffer.from(ec.keyFromPrivate(I.subarray(0, 32)).getPublic(true, 'array')));
+    }
+}
+
 // ============================================================================
 // Chain scanning (public RPC, no keys)
 // ============================================================================
@@ -237,6 +259,7 @@ module.exports = {
     TOKEN_DECIMALS,
     CONFIRMATIONS,
     deriveDepositAddress,
+    deriveDepositAddressFromRoot,
     parseXpub,
     parseTransferLog,
     scanDeposits,

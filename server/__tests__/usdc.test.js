@@ -11,7 +11,7 @@
  * Run with: `cd server && npx jest __tests__/usdc.test.js`
  */
 
-const { NETWORKS, TOKEN_DECIMALS, deriveDepositAddress, parseTransferLog } = require('../payments/usdc');
+const { NETWORKS, TOKEN_DECIMALS, deriveDepositAddress, deriveDepositAddressFromRoot, parseTransferLog } = require('../payments/usdc');
 const hotwallet = require('../payments/usdc-hotwallet');
 const EC = require('elliptic').ec;
 
@@ -38,6 +38,29 @@ describe('usdc derivation (ethers cross-verified)', () => {
     test('rejects hardened indexes', () => {
         expect(() => deriveDepositAddress(XPUB, 0x80000000)).toThrow();
         expect(() => deriveDepositAddress(XPUB, -1)).toThrow();
+    });
+});
+
+describe('hot-wallet-rooted deposit derivation (USDC_HOT_WALLET_KEY)', () => {
+    // Deposit addresses derived straight from the hot wallet root key so no
+    // xpub is required. Golden vectors cross-verified with an independent
+    // keccak path (js-sha3 directly). Deterministic — pin them.
+    const ROOT = '0x' + '11'.repeat(32);
+    test('golden vectors pinned (index 0, 1, 7)', () => {
+        expect(deriveDepositAddressFromRoot(ROOT, 0)).toBe('0x6a069f042925e4F664CcB5d447BBe508a568205A');
+        expect(deriveDepositAddressFromRoot(ROOT, 1)).toBe('0x6c63749b0dBe6dCA286368cf8C6ef967F41a4566');
+        expect(deriveDepositAddressFromRoot(ROOT, 7)).toBe('0x5f0EbDe8204e53851C95F6b1539d5352643374C7');
+    });
+    test('deterministic + unique per index', () => {
+        expect(deriveDepositAddressFromRoot(ROOT, 3)).toBe(deriveDepositAddressFromRoot(ROOT, 3));
+        expect(deriveDepositAddressFromRoot(ROOT, 3)).not.toBe(deriveDepositAddressFromRoot(ROOT, 4));
+    });
+    test('rejects garbage root keys and bad indexes', () => {
+        expect(() => deriveDepositAddressFromRoot('nope', 0)).toThrow();
+        expect(() => deriveDepositAddressFromRoot('0x' + '11'.repeat(31), 0)).toThrow();
+        expect(() => deriveDepositAddressFromRoot(null, 0)).toThrow();
+        expect(() => deriveDepositAddressFromRoot(ROOT, -1)).toThrow();
+        expect(() => deriveDepositAddressFromRoot(ROOT, 1.5)).toThrow();
     });
 });
 

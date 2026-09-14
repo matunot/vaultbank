@@ -1,17 +1,22 @@
 /**
- * VaultBank USDC/USDT Deposit Routes — receive-only, non-custodial, zero signup.
+ * VaultBank USDC/USDT Deposit Routes — receive-only, zero signup.
  *
  * - GET  /api/usdc/deposit-address?network=base|polygon|ethereum&token=usdc|usdt → per-user address + QR
  * - POST /api/usdc/check {network?} → scan chains (BOTH tokens), credit confirmed transfers
  *
- * The deposit address is xpub-derived and token-independent — the SAME address
- * receives USDC and USDT on a given network. "check" scans every supported
- * token on the network and credits whatever confirms.
+ * The deposit address is token-independent — the SAME address receives USDC
+ * and USDT on a given network. "check" scans every supported token on the
+ * network and credits whatever confirms.
  *
- * Setup: operator pastes an account-level XPUB into USDC_XPUB (public key
- * only — generates addresses, can NEVER spend). Without it: 503 + how-to.
- * On-chain funds stay parked until swept with the offline xpriv (a later,
- * explicitly-authorized step — sweeping code does not exist in this repo).
+ * Address generation (either, first wins):
+ *  - USDC_XPUB (account-level xpub — BIP32 xpub/0/index derivation)
+ *  - USDC_HOT_WALLET_KEY (root private key — HMAC-derived per-index addresses,
+ *    keys never stored). This is the default: ONE env var enables both crypto
+ *    deposits and chain withdrawals. NEVER paste an xpriv — 0x + 64 hex only.
+ * Without either: 503 + how-to.
+ *
+ * On-chain funds stay parked until swept (manual or a later, explicitly
+ * authorized sweep step — sweeping code does not exist in this repo).
  *
  * Credits are idempotent on txHash:logIndex and use atomic increments.
  */
@@ -26,7 +31,8 @@ const {
     createNotification,
     db,
 } = require('../config/database');
-const { NETWORKS, TOKEN_DECIMALS, deriveDepositAddress, scanDeposits } = require('../payments/usdc');
+const { NETWORKS, TOKEN_DECIMALS, deriveDepositAddress, deriveDepositAddressFromRoot, scanDeposits } = require('../payments/usdc');
+const hotwallet = require('../payments/usdc-hotwallet');
 
 const SUPPORTED_TOKENS = Object.keys(TOKEN_DECIMALS); // ['usdc', 'usdt']
 
@@ -75,6 +81,12 @@ const getXpub = () => {
     return x && x.startsWith('xpub') ? x.trim() : null;
 };
 
+// Crypto deposits are active if an xpub OR the hot wallet key is configured.
+// The hot wallet key derives per-user deposit addresses on the fly — private
+// keys are never stored. One env var (USDC_HOT_WALLET_KEY) enables BOTH
+// deposits and chain withdrawals.
+const depositsConfigured = () => !!(getXpub() || hotwallet.getHotWallet());
+
 // ============================================================================
 // GET /api/usdc/deposit-address — your personal deposit address (per network)
 // The SAME address receives USDC and USDT on that network.
@@ -90,8 +102,8 @@ router.get('/api/usdc/deposit-address', authenticateToken, async (req, res) => {
             return res.status(400).json({ success: false, message: `${token.toUpperCase()} is not supported on ${NETWORKS[network].label}.` });
         }
         const xpub = getXpub();
-        if (!xpub) {
-            return res.status(503).json({ success: false, code: 'USDC_NOT_CONFIGURED', message: 'USDC deposits are not enabled yet.' });
+        if (!depositsConfigured()) {
+            return res.status(503).json({ success: false, code: 'USDC_NOT_CONFIGURED', message: 'Crypto deposits are not enabled yet. Set USDC_HOT_WALLET_KEY (0x + 64 hex) in Render to enable deposits + withdrawals.' });
         }
         await ensureTables();
         const account = await findAccountByUserId(req.user.id);
@@ -105,7 +117,9 @@ router.get('/api/usdc/deposit-address', authenticateToken, async (req, res) => {
         if (!row) {
             const n = await db.query('SELECT COUNT(*) AS n FROM usdc_deposits WHERE network = $1', [network]);
             const index = parseInt(n.rows[0].n || '0', 10);
-            const address = deriveDepositAddress(xpub, index);
+            const address = xpub
+                ? deriveDepositAddress(xpub, index)
+                : deriveDepositAddressFromRoot(hotwallet.getHotWallet().key, index);
             await db.query(
                 'INSERT INTO usdc_deposits (user_id, account_id, network, address, addr_index) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (address, network) DO NOTHING',
                 [req.user.id, account.id, network, address, index]
@@ -143,8 +157,8 @@ router.post('/api/usdc/check', authenticateToken, async (req, res) => {
                 return res.status(400).json({ success: false, message: 'Unknown network. Use base, polygon or ethereum.' });
             }
         }
-        if (!getXpub()) {
-            return res.status(503).json({ success: false, code: 'USDC_NOT_CONFIGURED', message: 'USDC deposits are not enabled yet.' });
+        if (!depositsConfigured()) {
+            return res.status(503).json({ success: false, code: 'USDC_NOT_CONFIGURED', message: 'Crypto deposits are not enabled yet. Set USDC_HOT_WALLET_KEY (0x + 64 hex) in Render to enable deposits + withdrawals.' });
         }
         await ensureTables();
         const credited = [];
