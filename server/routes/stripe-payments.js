@@ -20,6 +20,8 @@ const {
     createAuditLog,
     db,
 } = require('../config/database');
+const creditEngine = require('./credit');
+
 
 // Stripe initialization (lazy - only when keys are configured)
 let stripe = null;
@@ -414,11 +416,23 @@ async function handleCardAuthorization(res, event) {
         const amount = (auth.amount || 0) / 100;
         const balance = parseFloat(rows[0].balance);
         if (amount > balance) {
+            // CASH FIRST, CREDIT SECOND — a true credit card: approve if the
+            // VaultBank balance + available credit line covers the charge.
+            let availableWithCredit = balance;
+            try {
+                const acct = await creditEngine.getCreditAccount(rows[0].user_id);
+                if (acct && acct.status === 'active') {
+                    availableWithCredit = balance + creditEngine.availableCredit(acct);
+                }
+            } catch (e) { /* credit unavailable — cash-only rules apply */ }
+            if (amount <= availableWithCredit) {
+                return res.json({ approved: true });
+            }
             const fundsUrl = (process.env.CLIENT_URL || 'https://vaultbank-md20.onrender.com') + '/?addfunds=1';
             await createNotification(rows[0].user_id, {
                 type: 'warning',
                 title: 'Card declined',
-                message: '$' + amount.toFixed(2) + ' authorization declined (insufficient funds). Balance $' + balance.toFixed(2) + '. Tap to add money instantly.',
+                message: '$' + amount.toFixed(2) + ' authorization declined (insufficient cash + credit). Cash $' + balance.toFixed(2) + '. Tap to add money instantly.',
                 actionUrl: fundsUrl,
             });
             return res.json({ declined: 'insufficient_funds' });
@@ -479,11 +493,39 @@ async function handleCardTransaction(event) {
             [account.id, amount]
         );
         if (debited.length === 0) {
+            // Cash can't cover it — draw the CREDIT line automatically
+            try {
+                const draw = await creditEngine.drawCredit(row.user_id, amount, merchant + ' (credit)');
+                if (draw.drawn > 0) {
+                    await createTransaction({
+                        account_id: account.id,
+                        user_id: row.user_id,
+                        type: 'card_charge',
+                        status: 'completed',
+                        amount: 0, // cash balance untouched — spent on credit
+                        currency: account.currency,
+                        balance_before: parseFloat(account.balance),
+                        balance_after: parseFloat(account.balance),
+                        description: merchant + ' (credit) · ' + (row.brand_label || 'Card') + ' •• ' + row.last4,
+                        category: 'expense',
+                        external_reference: tx.id,
+                        metadata: { issuing: true, card_id: cardId, on_credit: true, credit_amount: draw.drawn },
+                    });
+                    await createNotification(row.user_id, {
+                        type: 'transaction',
+                        title: 'Card charged to credit',
+                        message: '$' + amount.toFixed(2) + ' at ' + merchant + ' spent on your credit line. Credit balance $' + draw.owedAfter.toFixed(2) + ' · available $' + draw.available.toFixed(2) + '.',
+                    });
+                    return;
+                }
+            } catch (e) {
+                console.error('Credit draw error:', e.message);
+            }
             const fundsUrl = (process.env.CLIENT_URL || 'https://vaultbank-md20.onrender.com') + '/?addfunds=1';
             await createNotification(row.user_id, {
                 type: 'warning',
                 title: 'Card declined',
-                message: '$' + amount.toFixed(2) + ' card charge declined (insufficient funds). Tap to add money instantly.',
+                message: '$' + amount.toFixed(2) + ' card charge declined (insufficient cash + credit). Tap to add money instantly.',
                 actionUrl: fundsUrl,
             });
             return;

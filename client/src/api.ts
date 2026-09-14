@@ -386,6 +386,30 @@ export const api = {
   async getIssuingCardActivity(id: string): Promise<ApiResponse> {
     return request<ApiResponse>(`api/issuing/cards/${id}/transactions`);
   },
+
+  // VaultBank Credit Engine
+  async getCreditStatus(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/credit/status');
+  },
+
+  async applyCredit(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/credit/apply', { method: 'POST', body: JSON.stringify({}) });
+  },
+
+  async repayCredit(data: { amount: number }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/credit/repay', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async toggleCreditAutopay(autopay: boolean): Promise<ApiResponse> {
+    return request<ApiResponse>('api/credit/autopay', {
+      method: 'POST',
+      body: JSON.stringify({ autopay }),
+    });
+  },
+
   async healthCheck(): Promise<ApiResponse> {
     return request<ApiResponse>('health');
   },

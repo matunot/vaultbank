@@ -190,6 +190,14 @@ vaultbank/
 4. VERIFY after user clears PayPal restriction: authed `POST /api/paypal/deposit {amount:1}` → expect `200 + approvalUrl` (order WILL create once restriction lifts — no other change needed). Prior 502 invalid_client = key/mode tab mismatch; generic 500 now only for unknown errors.
 5. SECURITY: PayPal secret was pasted in chat — user already rolled it once (new secret len 80 in Render). Good. Keep rolling if reused elsewhere.
 6. Test-machine lessons: health `/health` uptime is MILLISECONDS (Date.now-startTime), skipped by rate limiter → safe to poll; PowerShell git push prints stderr as NativeCommandError (cosmetic, push succeeds); write JSON bodies to temp file + `curl -d @file` to dodge quoting hell.
+- [x] CREDIT ENGINE LIVE + VERIFIED (2026-09-14 session 2):
+  1. BUILT: real credit line product — `008_credit_schema.sql` (`credit_accounts`, `credit_ledger`), `server/routes/credit.js` (instant underwriting from REAL activity: tenure/deposits/balance/transfers → VaultBank Score 300-850 → limit $500-$10k, APR 11.99-24.99%), routes: GET /api/credit/status, POST /api/credit/apply (idempotent), POST /api/credit/repay (atomic debit from main balance), POST /api/credit/autopay. Automation armed at boot + every 6h: daily interest accrual + autopay minimum payments.
+  2. CARDS ARE NOW TRUE CREDIT CARDS: `stripe-payments.js` authorization approves if cash + available credit covers; settled charges draw CASH FIRST, CREDIT SECOND via `creditEngine.drawCredit()` (atomic, limit-checked); declined only if both exhausted.
+  3. FRONTEND: new `CreditSection.tsx` (score ring, credit gauge, repay, autopay toggle, ledger) on new nav tab 'credit' (`data.ts`); api.ts methods getCreditStatus/applyCredit/repayCredit/toggleCreditAutopay; App.tsx lazy import + mount.
+  4. VERIFIED LIVE (local boot vs Neon): status→exists:false; apply→approved score 420, $500 @ 24.99% (real factors: 39d tenure, $4,978 balance, 3 transfers); status→active, available $500. tsc 0, node --check 0 on all touched files.
+  5. Demo user now HAS a credit account ($500 line, $0 owed) — real data, left in place.
+  6. Still user-only: Stripe Issuing activation click, STRIPE_PUBLISHABLE_KEY env var, USDC_XPUB env var if crypto rail wanted, key rolling.
+- [x] RESUME POINT — Stripe-only rail LIVE, PayPal PARKED (2026-09-14 session):
 - [x] RESUME POINT — Stripe-only rail LIVE, PayPal PARKED (2026-09-14 session):
   1. DECISION: PayPal deferred ("later"). Real money = Stripe only — zero new setup needed, everything already built + live.
   2. Live probe of `/api/issuing/status` (demo JWT): `available:true`, `mode:"test"` (banking sandbox — cards issue end-to-end NOW as test cards; auto-flips to real when Issuing activated in Stripe Dashboard), `webhookRegistered:true` (automation works), `publishableKey:null` → **one env var remains: add `STRIPE_PUBLISHABLE_KEY` (pk_test_/pk_live_) in Render** for the secure card-number reveal.

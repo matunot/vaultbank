@@ -21,6 +21,8 @@ const PaymentsSection = lazy(() => import('./components/PaymentsSection'));
 const InvestmentsSection = lazy(() => import('./components/InvestmentsSection'));
 const VaultSection = lazy(() => import('./components/VaultSection'));
 const DebtsSection = lazy(() => import('./components/DebtsSection'));
+const CreditSection = lazy(() => import('./components/CreditSection'));
+
 const SwissSection = lazy(() => import('./components/SwissSection'));
 const BudgetSection = lazy(() => import('./components/BudgetSection'));
 const TransferSection = lazy(() => import('./components/TransferSection'));
@@ -227,6 +229,8 @@ export default function App() {
                     {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} onIssueCard={(o) => store.mintRealCard(o.network, o.monthlyLimit, o.perTransactionLimit)} />}
                     {active === 'payments' && <PaymentsSection />}
                     {active === 'invest' && <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} />}
+                    {active === 'credit' && <CreditSection />}
+
                     {active === 'loans' && <DebtsSection />}
                     {active === 'budget' && <BudgetSection />}
                     {active === 'send' && <TransferSection />}

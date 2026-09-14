@@ -21,6 +21,7 @@ const reportsRoutes = require('./routes/reports');
 const accountRoutes = require('./routes/accounts');
 const issuingRoutes = require('./routes/issuing');
 const stripePaymentRoutes = require('./routes/stripe-payments');
+const creditRoutes = require('./routes/credit');
 const anomaliesRoutes = require('./routes/anomalies');
 
 // Import middleware
@@ -131,6 +132,7 @@ app.use('/', reportsRoutes);
 // â”€â”€â”€ Banking Account Routes (Real Banking) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use('/', accountRoutes);
 app.use('/', issuingRoutes);
+app.use('/', creditRoutes);
 
 // â”€â”€â”€ Stripe Payment Routes (Deposits, Withdrawals, Webhooks) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use(stripePaymentRoutes);
@@ -405,6 +407,9 @@ async function startServer() {
 startServer();
 if (typeof issuingRoutes.startIssuingAutomation === 'function') {
     issuingRoutes.startIssuingAutomation();
+}
+if (typeof creditRoutes.startCreditAutomation === 'function') {
+    creditRoutes.startCreditAutomation();
 }
 
 module.exports = app;
