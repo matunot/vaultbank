@@ -190,6 +190,14 @@ vaultbank/
 4. VERIFY after user clears PayPal restriction: authed `POST /api/paypal/deposit {amount:1}` → expect `200 + approvalUrl` (order WILL create once restriction lifts — no other change needed). Prior 502 invalid_client = key/mode tab mismatch; generic 500 now only for unknown errors.
 5. SECURITY: PayPal secret was pasted in chat — user already rolled it once (new secret len 80 in Render). Good. Keep rolling if reused elsewhere.
 6. Test-machine lessons: health `/health` uptime is MILLISECONDS (Date.now-startTime), skipped by rate limiter → safe to poll; PowerShell git push prints stderr as NativeCommandError (cosmetic, push succeeds); write JSON bodies to temp file + `curl -d @file` to dodge quoting hell.
+- [x] RESUME POINT — Stripe-only rail LIVE, PayPal PARKED (2026-09-14 session):
+  1. DECISION: PayPal deferred ("later"). Real money = Stripe only — zero new setup needed, everything already built + live.
+  2. Live probe of `/api/issuing/status` (demo JWT): `available:true`, `mode:"test"` (banking sandbox — cards issue end-to-end NOW as test cards; auto-flips to real when Issuing activated in Stripe Dashboard), `webhookRegistered:true` (automation works), `publishableKey:null` → **one env var remains: add `STRIPE_PUBLISHABLE_KEY` (pk_test_/pk_live_) in Render** for the secure card-number reveal.
+  3. FIXED REAL MONEY BUG in `server/routes/stripe-payments.js` `handleCardTransaction`: merchant refunds (`issuing_transaction.created` with NEGATIVE amount) were being ABS-debited like charges — now refunds CREDIT balance atomically + create `card_refund` transaction + notification. node --check OK.
+  4. NEW one-tap funding: insufficient-funds decline notifications (both `issuing_authorization.request` + `issuing_transaction.created` paths) now carry `actionUrl = CLIENT_URL/?addfunds=1`; App.tsx opens the deposit modal on `?addfunds=1` and on `vaultbank:addfunds` CustomEvent; "Add money" button added to card detail modal in `IssuingCardsSection.tsx`. tsc 0 errors.
+  5. Verification state: `node --check` 0, `npx tsc --noEmit` 0. NOT yet committed/pushed — commit + push to deploy.
+  6. Still manual (user, one click): activate Stripe Issuing in dashboard (everything self-configures within 30 min after), add `STRIPE_PUBLISHABLE_KEY` env var, roll pasted-in-chat keys (Stripe sk_ + PayPal).
+- [ ] RESUME HERE — PayPal $1 live verify (2026-09-13 session, updated 22:20 UTC):
 - [ ] RESUME HERE — PayPal $1 live verify (2026-09-13 session, updated 22:20 UTC):
 1. DONE: `GET /api/paypal/config-status` (admin-only, MASKED, no secret values) added in `0f6a54c` — one read-only GET now answers PayPal config status; never probe with order creation again. 7/7 paypal tests green, pushed.
 2. Verified LIVE via that endpoint on the fresh deploy (env fully re-applied): clientId set (tail `0lSY` = user's NEW key), webhookId set (tail `060L`), mode=live — but `secret: {set:false, length:0}`. **The secret is definitively NOT in the Render dashboard** (name typo / empty value field / wrong service). User has successfully saved 3 of 4 vars.
@@ -215,4 +223,4 @@ vaultbank/
 
 ---
 
-*Created: 2026-08-12 | Last updated: 2026-09-11 | Never forget: read this first, update it often.*
+*Created: 2026-08-12 | Last updated: 2026-09-14 | Never forget: read this first, update it often.*

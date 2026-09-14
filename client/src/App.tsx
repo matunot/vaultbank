@@ -93,6 +93,21 @@ export default function App() {
       }
     }
   }, []);
+  // One-tap funding deep link (?addfunds=1) — card-declined notifications point here
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('addfunds') === '1') {
+      window.history.replaceState({}, '', window.location.pathname);
+      setModal('deposit');
+    }
+  }, []);
+
+  // In-app "Add money" requests (Cards panel) open the deposit modal
+  useEffect(() => {
+    const openDeposit = () => setModal('deposit');
+    window.addEventListener('vaultbank:addfunds', openDeposit);
+    return () => window.removeEventListener('vaultbank:addfunds', openDeposit);
+  }, []);
+
 
   const handleSend = useCallback(async (recipient: string, amount: number, note?: string, recipientName?: string) => {
     await store.sendMoney(recipient, amount, note);

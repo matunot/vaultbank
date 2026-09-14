@@ -414,10 +414,12 @@ async function handleCardAuthorization(res, event) {
         const amount = (auth.amount || 0) / 100;
         const balance = parseFloat(rows[0].balance);
         if (amount > balance) {
+            const fundsUrl = (process.env.CLIENT_URL || 'https://vaultbank-md20.onrender.com') + '/?addfunds=1';
             await createNotification(rows[0].user_id, {
                 type: 'warning',
                 title: 'Card declined',
-                message: '$' + amount.toFixed(2) + ' authorization declined (insufficient funds). Balance $' + balance.toFixed(2) + '.',
+                message: '$' + amount.toFixed(2) + ' authorization declined (insufficient funds). Balance $' + balance.toFixed(2) + '. Tap to add money instantly.',
+                actionUrl: fundsUrl,
             });
             return res.json({ declined: 'insufficient_funds' });
         }
@@ -437,23 +439,57 @@ async function handleCardTransaction(event) {
         const row = rows[0];
         const account = await findAccountByUserId(row.user_id);
         if (!account) return;
-        const amount = Math.abs(tx.amount || 0) / 100;
+        const rawAmount = (tx.amount || 0) / 100; // negative = merchant refund/credit
+        const isRefund = rawAmount < 0;
+        const amount = Math.abs(rawAmount);
+        const merchant = (tx.merchant_data && (tx.merchant_data.merchant_name || tx.merchant_data.network_id)) || 'Merchant';
+        if (isRefund) {
+            // Refunds CREDIT the VaultBank balance (merchant returned money)
+            const { rows: credited } = await db.query(
+                'UPDATE accounts SET balance = balance + $2 WHERE id = $1 RETURNING balance',
+                [account.id, amount]
+            );
+            if (credited.length === 0) return;
+            const refundBalance = parseFloat(credited[0].balance);
+            const refundBefore = refundBalance - amount;
+            await createTransaction({
+                account_id: account.id,
+                user_id: row.user_id,
+                type: 'card_refund',
+                status: 'completed',
+                amount,
+                currency: account.currency,
+                balance_before: refundBefore,
+                balance_after: refundBalance,
+                description: 'Refund · ' + merchant + ' · ' + (row.brand_label || 'Card') + ' •• ' + row.last4,
+                category: 'income',
+                external_reference: tx.id,
+                metadata: { issuing: true, card_id: cardId },
+            });
+            await createNotification(row.user_id, {
+                type: 'success',
+                title: 'Card refunded',
+                message: '$' + amount.toFixed(2) + ' refunded by ' + merchant + ' to ' + (row.brand_label || 'card') + ' •• ' + row.last4 + '. New balance $' + refundBalance.toFixed(2) + '.',
+            });
+            return;
+        }
         // ponytail: atomic debit — concurrent taps can't overdraft; CHECK allows card_charge
         const { rows: debited } = await db.query(
             'UPDATE accounts SET balance = balance - $2 WHERE id = $1 AND balance >= $2 RETURNING balance',
             [account.id, amount]
         );
         if (debited.length === 0) {
+            const fundsUrl = (process.env.CLIENT_URL || 'https://vaultbank-md20.onrender.com') + '/?addfunds=1';
             await createNotification(row.user_id, {
                 type: 'warning',
                 title: 'Card declined',
-                message: '$' + amount.toFixed(2) + ' card charge declined (insufficient funds).',
+                message: '$' + amount.toFixed(2) + ' card charge declined (insufficient funds). Tap to add money instantly.',
+                actionUrl: fundsUrl,
             });
             return;
         }
         const newBalance = parseFloat(debited[0].balance);
         const balanceBefore = newBalance + amount;
-        const merchant = (tx.merchant_data && (tx.merchant_data.merchant_name || tx.merchant_data.network_id)) || 'Merchant';
         await createTransaction({
             account_id: account.id,
             user_id: row.user_id,

@@ -439,6 +439,12 @@ export default function IssuingCardsSection({ cards: demoCards, onLockCard, form
                   {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : selected.frozen ? <Unlock className="w-3.5 h-3.5" /> : <Snowflake className="w-3.5 h-3.5" />}
                   {selected.frozen ? 'Unfreeze card' : 'Freeze card'}
                 </button>
+                <button onClick={() => window.dispatchEvent(new CustomEvent('vaultbank:addfunds'))} disabled={busy}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-xs font-bold flex items-center justify-center gap-2">
+                  <Plus className="w-3.5 h-3.5" />
+                  Add money
+                </button>
+
                 <button onClick={() => revealCard(selected)} disabled={revealLoading}
                   className="flex-1 py-2.5 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-200 text-xs font-bold flex items-center justify-center gap-2">
                   {revealLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
