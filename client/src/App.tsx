@@ -11,6 +11,7 @@ import MarketTicker from './components/MarketTicker';
 import DashboardSection from './components/DashboardSection';
 import ErrorBoundary from './components/ErrorBoundary';
 import { TransferModal, DepositModal, PayBillModal, ConvertModal, WireModal, MobileModal, TradeModal, WithdrawModal } from './components/Modals';
+import VbPayModal from './components/VbPayModal';
 import { useAppStore } from './store';
 import { api } from './api';
 import { refreshBus } from './refreshBus';
@@ -22,6 +23,7 @@ const InvestmentsSection = lazy(() => import('./components/InvestmentsSection'))
 const VaultSection = lazy(() => import('./components/VaultSection'));
 const DebtsSection = lazy(() => import('./components/DebtsSection'));
 const CreditSection = lazy(() => import('./components/CreditSection'));
+const VbPaySection = lazy(() => import('./components/VbPaySection'));
 
 const SwissSection = lazy(() => import('./components/SwissSection'));
 const BudgetSection = lazy(() => import('./components/BudgetSection'));
@@ -61,6 +63,7 @@ export default function App() {
   // Handle the REAL return from Stripe Checkout (?deposit=success / cancelled)
   // and PayPal Checkout (?deposit=paypal-success&token=ORDERID)
   const [depositBanner, setDepositBanner] = useState<string | null>(null);
+const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   // Gold toast fired the moment a REAL transfer completes
   const [sendToast, setSendToast] = useState<{ name: string; amount: number } | null>(null);
   useEffect(() => {
@@ -108,6 +111,15 @@ export default function App() {
     const openDeposit = () => setModal('deposit');
     window.addEventListener('vaultbank:addfunds', openDeposit);
     return () => window.removeEventListener('vaultbank:addfunds', openDeposit);
+  }, []);
+
+  // VaultBank Pay public checkout (?pay=<requestId>)
+  useEffect(() => {
+    const payId = new URLSearchParams(window.location.search).get('pay');
+    if (payId) {
+      window.history.replaceState({}, '', window.location.pathname);
+      setPaymentRequest(payId);
+    }
   }, []);
 
 
@@ -229,6 +241,7 @@ export default function App() {
                     {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} onIssueCard={(o) => store.mintRealCard(o.network, o.monthlyLimit, o.perTransactionLimit)} />}
                     {active === 'payments' && <PaymentsSection />}
                     {active === 'invest' && <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} />}
+{active === 'pay' && <VbPaySection />}
                     {active === 'credit' && <CreditSection />}
 
                     {active === 'loans' && <DebtsSection />}
@@ -261,6 +274,9 @@ export default function App() {
       )}
       {modal === 'deposit' && (
         <DepositModal isOpen={true} onClose={closeModal} />
+      )}
+      {paymentRequest && (
+        <VbPayModal requestId={paymentRequest} onClose={() => setPaymentRequest(null)} />
       )}
       {modal === 'bill' && (
         <PayBillModal isOpen={true} onClose={closeModal} onPayBill={store.payBill} />

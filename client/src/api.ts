@@ -316,8 +316,12 @@ export const api = {
     });
   },
 
-  async usdcAddress(network?: string): Promise<ApiResponse> {
-    return request<ApiResponse>(`api/usdc/deposit-address${network ? `?network=${network}` : ''}`);
+  async usdcAddress(network?: string, token?: string): Promise<ApiResponse> {
+    const params = new URLSearchParams();
+    if (network) params.set('network', network);
+    if (token) params.set('token', token);
+    const qs = params.toString();
+    return request<ApiResponse>(`api/usdc/deposit-address${qs ? `?${qs}` : ''}`);
   },
 
   async usdcCheck(network?: string): Promise<ApiResponse> {
@@ -408,6 +412,40 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ autopay }),
     });
+  },
+
+  // VaultBank Pay — OUR OWN payment network
+  async createVbPayMerchant(data: { name: string; category?: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/vbpay/merchant', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async getVbPayMerchant(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/vbpay/merchant');
+  },
+
+  async createVbPayRequest(data: { amount: number; description?: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/vbpay/requests', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async getVbPayRequests(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/vbpay/requests');
+  },
+
+  async payVbPayRequest(id: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/vbpay/requests/${id}/pay`, { method: 'POST', body: JSON.stringify({}) });
+  },
+
+  async getVbPayRequestPublic(id: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/vbpay/requests/${id}`);
+  },
+
+  // VaultBank Chain — outbound crypto
+  async getChainStatus(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usdc/withdraw-status');
+  },
+
+  async chainWithdraw(data: { to: string; amount: number; token?: string; network?: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usdc/withdraw', { method: 'POST', body: JSON.stringify(data) });
   },
 
   async healthCheck(): Promise<ApiResponse> {

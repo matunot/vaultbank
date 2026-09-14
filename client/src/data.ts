@@ -4,6 +4,7 @@ export const navItems = [
   { id: 'swiss',    label: 'Swiss Bank', icon: 'Mountain' },
   { id: 'cards',    label: 'Cards',      icon: 'CreditCard' },
   { id: 'credit',   label: 'Credit',     icon: 'Wallet' },
+  { id: 'pay',      label: 'VB Pay',     icon: 'Zap' },
   { id: 'payments', label: 'Payments',   icon: 'Wallet' },
   { id: 'invest',   label: 'Invest',     icon: 'TrendingUp' },
   { id: 'loans',    label: 'Debts',      icon: 'Landmark' },

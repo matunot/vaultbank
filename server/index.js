@@ -22,6 +22,8 @@ const accountRoutes = require('./routes/accounts');
 const issuingRoutes = require('./routes/issuing');
 const stripePaymentRoutes = require('./routes/stripe-payments');
 const creditRoutes = require('./routes/credit');
+const vbPayRoutes = require('./routes/vbpay');
+const usdcWithdrawalRoutes = require('./routes/usdc-withdrawals');
 const anomaliesRoutes = require('./routes/anomalies');
 
 // Import middleware
@@ -133,6 +135,8 @@ app.use('/', reportsRoutes);
 app.use('/', accountRoutes);
 app.use('/', issuingRoutes);
 app.use('/', creditRoutes);
+app.use('/', vbPayRoutes);
+app.use('/', usdcWithdrawalRoutes);
 
 // â”€â”€â”€ Stripe Payment Routes (Deposits, Withdrawals, Webhooks) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 app.use(stripePaymentRoutes);
@@ -410,6 +414,12 @@ if (typeof issuingRoutes.startIssuingAutomation === 'function') {
 }
 if (typeof creditRoutes.startCreditAutomation === 'function') {
     creditRoutes.startCreditAutomation();
+}
+if (typeof vbPayRoutes.startVbPayAutomation === 'function') {
+    vbPayRoutes.startVbPayAutomation();
+}
+if (typeof usdcWithdrawalRoutes.startHotWalletMonitor === 'function') {
+    usdcWithdrawalRoutes.startHotWalletMonitor();
 }
 
 module.exports = app;
