@@ -17,7 +17,7 @@ import { api } from './api';
 import { refreshBus } from './refreshBus';
 
 // Lazy load heavy sections
-const CardsSection = lazy(() => import('./components/CardsSection'));
+const CardsSection = lazy(() => import('./components/IssuingCardsSection'));
 const PaymentsSection = lazy(() => import('./components/PaymentsSection'));
 const InvestmentsSection = lazy(() => import('./components/InvestmentsSection'));
 const VaultSection = lazy(() => import('./components/VaultSection'));
@@ -238,7 +238,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
                     {active === 'vault' && <VaultSection />}
                     {active === 'swiss' && <SwissSection />}
-                    {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} onIssueCard={(o) => store.mintRealCard(o.network, o.monthlyLimit, o.perTransactionLimit)} />}
+                    {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} />}
                     {active === 'payments' && <PaymentsSection />}
                     {active === 'invest' && <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} />}
 {active === 'pay' && <VbPaySection />}
