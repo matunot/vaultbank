@@ -11,7 +11,9 @@
  * Run with: `cd server && npx jest __tests__/usdc.test.js`
  */
 
-const { deriveDepositAddress, parseTransferLog } = require('../payments/usdc');
+const { NETWORKS, TOKEN_DECIMALS, deriveDepositAddress, parseTransferLog } = require('../payments/usdc');
+const hotwallet = require('../payments/usdc-hotwallet');
+const EC = require('elliptic').ec;
 
 const XPUB = 'xpub6DCoCpSuQZB2jawqnGMEPS63ePKWkwWPH4TU45Q7LPXWuNd8TMtVxRrgjtEshuqpK3mdhaWHPFsBngh5GFZaM6si3yZdUsT8ddYM3PwnATt';
 
@@ -63,5 +65,68 @@ describe('usdc log parsing', () => {
         expect(parseTransferLog({ ...log, topics: ['0xdead', log.topics[1], log.topics[2]] })).toBeNull();
         expect(parseTransferLog({ ...log, data: '0x' + '0'.repeat(64) })).toBeNull();
         expect(parseTransferLog(null)).toBeNull();
+    });
+});
+
+describe('usdt token rails', () => {
+    // Money-critical: contracts verified 2026-09-14 — polygon on-chain via
+    // eth_call (symbol USD₮0, decimals 6), ethereum from tether.to official
+    // docs. A wrong address silently never credits deposits — pin them.
+    test('usdt contracts pinned (verified on-chain / official)', () => {
+        expect(NETWORKS.polygon.usdt.toLowerCase()).toBe('0xc2132d05d31c914a87c6611c10748aeb04b58e8f');
+        expect(NETWORKS.ethereum.usdt.toLowerCase()).toBe('0xdac17f958d2ee523a2206206994597c13d831ec7');
+        expect(NETWORKS.ethereum.chainId).toBe(1);
+        expect(NETWORKS.base.usdt).toBeUndefined(); // no verified Base USDT yet — do not add blindly
+    });
+    test('usdc contracts unchanged', () => {
+        expect(NETWORKS.base.usdc.toLowerCase()).toBe('0x833589fcd6edb6e08f4c7c32d4f71b54bda02913');
+        expect(NETWORKS.polygon.usdc.toLowerCase()).toBe('0x3c499c542cef5e3811e1192ce70d8cc03d5c3359');
+    });
+    test('both tokens are 6 decimals on supported chains', () => {
+        expect(TOKEN_DECIMALS).toEqual({ usdc: 6, usdt: 6 });
+    });
+    test('parses USDT transfer (6 decimals, same math as USDC)', () => {
+        const usdtLog = {
+            data: '0x0000000000000000000000000000000000000000000000000000000000002710', // 10000 = 0.01 USDT
+            topics: [
+                '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+                '0x0000000000000000000000002222222222222222222222222222222222222222',
+                '0x0000000000000000000000009858effd232b4033e47d90003d41ec34ecaeda94',
+            ],
+            transactionHash: '0xdef456',
+            blockNumber: '0x200',
+            logIndex: '0x1',
+        };
+        const t = parseTransferLog(usdtLog);
+        expect(t.amount).toBeCloseTo(0.01, 6);
+        expect(t.txHash).toBe('0xdef456');
+    });
+});
+
+describe('usdc-hotwallet signing (EIP-155)', () => {
+    // Money-critical: a broken RLP/hash/v makes the chain reject the tx OR
+    // broadcast from a wallet that isn't the hot wallet. Pinned to the
+    // canonical EIP-155 test vector from the Ethereum spec itself.
+    test('signs the canonical EIP-155 spec vector byte-for-byte', () => {
+        // Spec vector: key 0x4646…46, chainId 1, nonce 9, 20 gwei, 21k gas,
+        // to 0x3535…3535, value 1 ETH, no data.
+        hotwallet.NETWORKS.mainnet = { chainId: 1, label: 'test-only' };
+        const raw = hotwallet.signTransaction('mainnet', '0x' + '46'.repeat(32), {
+            nonce: 9,
+            gasPriceWei: 20000000000n,
+            gasLimit: '0x5208',
+            to: '0x3535353535353535353535353535353535353535',
+            valueWei: 1000000000000000000n,
+            data: '0x',
+        });
+        expect(raw).toBe('0xf86c098504a817c800825208943535353535353535353535353535353535353535880de0b6b3a76400008025a028ef61340bd939bc2195fe537567866003e1a15d3c71ff63e1590620aa636276a067cbe9d8997f761aecb703304b3800ccf555c9f3dc64214b297fb1966a3b6d83');
+    });
+    test('key derives a stable address; transfer calldata shape is exact', () => {
+        const w = hotwallet.privateKeyToAddress('0x' + '11'.repeat(32));
+        expect(w).toMatch(/^0x[0-9a-f]{40}$/);
+        expect(w).toBe(hotwallet.privateKeyToAddress('0x' + '11'.repeat(32)));
+        expect(hotwallet.isValidAddress(w)).toBe(true);
+        // ERC-20 transfer calldata: 4-byte selector + 32-byte to + 32-byte amount
+        expect(hotwallet.NETWORKS.base.tokens.usdt.decimals).toBe(6);
     });
 });

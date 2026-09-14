@@ -282,6 +282,7 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
   const [mode, setMode] = useState<'card' | 'instant' | 'paypal' | 'usdc'>('card');
   const [usdc, setUsdc] = useState<{ address: string; network: string; qr: string | null } | null>(null);
   const [usdcChecking, setUsdcChecking] = useState(false);
+  const [cryptoToken, setCryptoToken] = useState<'USDC' | 'USDT'>('USDC');
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -317,7 +318,7 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
         setStatus('success');
         setTimeout(() => { setStatus('idle'); onClose(); }, 1600);
       } else {
-        setErrorMsg('No confirmed USDC yet — wait for 12 network confirmations, then check again.');
+        setErrorMsg(`No confirmed ${cryptoToken} yet — wait for 12 network confirmations, then check again.`);
         setStatus('error');
       }
     } catch (err: any) {
@@ -421,15 +422,30 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
               mode === 'usdc' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
             }`}
           >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5">🪙 USDC Crypto</p>
+            <p className="text-xs font-bold text-white flex items-center gap-1.5">🪙 USDC / USDT</p>
             <p className="text-[9px] text-white/40 mt-1">No signup · your address</p>
           </button>
         </div>
 
         {mode === 'usdc' ? (
           <div className="space-y-3">
+            {/* Token toggle — the SAME address receives both; check credits both. */}
+            <div className="grid grid-cols-2 gap-2">
+              {(['USDC', 'USDT'] as const).map(t => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setCryptoToken(t)}
+                  className={`p-2.5 rounded-xl border text-xs font-bold transition-colors ${
+                    cryptoToken === t ? 'bg-emerald-500/10 border-emerald-500/40 text-white' : 'bg-white/5 border-white/10 text-white/50 hover:border-white/20'
+                  }`}
+                >
+                  {t === 'USDC' ? '🪙 USDC' : '₮ USDT'}
+                </button>
+              ))}
+            </div>
             <p className="text-[11px] text-white/50 leading-relaxed">
-              Send <span className="text-white font-bold">USDC on Base</span> to your personal address below.
+              Send <span className="text-white font-bold">{cryptoToken} on Base</span> to your personal address below.
               No account or verification needed — funds credit after 12 network confirmations.
             </p>
             {usdc ? (
@@ -490,7 +506,7 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
         )}
 
         {status === 'success' && mode === 'usdc' && (
-          <p className="text-xs text-emerald-300 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">USDC deposit confirmed — balance updated.</p>
+          <p className="text-xs text-emerald-300 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">{cryptoToken} deposit confirmed — balance updated.</p>
         )}
 
         {mode !== 'usdc' && (

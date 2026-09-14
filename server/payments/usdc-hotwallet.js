@@ -29,7 +29,8 @@ const NETWORKS = {
     polygon: {
         label: 'Polygon PoS',
         chainId: 137,
-        rpc: process.env.POLYGON_RPC_URL || 'https://polygon-rpc.com',
+        // ponytail: polygon-rpc.com now 403s (API-key required) — publicnode
+        rpc: process.env.POLYGON_RPC_URL || 'https://polygon-bor-rpc.publicnode.com',
         explorer: 'https://polygonscan.com',
         tokens: {
             usdc: { address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', decimals: 6 },
@@ -65,10 +66,14 @@ function intToBytes(n) {
 }
 
 function hexToBytes(hex) {
+    // ponytail: plain Arrays only — Array.concat does NOT spread Uint8Array,
+    // which silently produced garbage RLP (caught by the EIP-155 vector test).
+    if (Array.isArray(hex)) return hex.map((b) => b & 0xff);
+    if (ArrayBuffer.isView(hex)) return Array.from(hex, (b) => b & 0xff);
     let h = String(hex).toLowerCase().replace(/^0x/, '');
     if (h.length % 2 === 1) h = '0' + h;
-    const out = new Uint8Array(h.length / 2);
-    for (let i = 0; i < out.length; i++) out[i] = parseInt(h.substr(i * 2, 2), 16);
+    const out = [];
+    for (let i = 0; i < h.length; i += 2) out.push(parseInt(h.substr(i, 2), 16));
     return out;
 }
 
@@ -99,7 +104,7 @@ function privateKeyToAddress(privHex) {
     let pubBytes = hexToBytes(pub);
     if (pubBytes.length === 65 && pubBytes[0] === 4) pubBytes = pubBytes.slice(1); // strip 04 prefix
     const hash = keccak256(new Uint8Array(pubBytes));
-    return '0x' + hash.slice(-40);
+    return '0x' + bytesToHex(hexToBytes(hash).slice(-20));
 }
 
 function getHotWallet() {
@@ -223,5 +228,6 @@ module.exports = {
     getHotWallet,
     getHotWalletBalances,
     sendTokens,
+    signTransaction,
 };
 

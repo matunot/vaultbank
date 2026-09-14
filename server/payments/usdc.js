@@ -12,7 +12,11 @@
  * balance increments. On-chain funds stay parked until swept with the
  * offline xpriv (a later, explicitly-authorized step — never in this repo).
  *
- * Chains: Base + Polygon (cheap fees, deep USDC liquidity), 12 confirmations.
+ * Chains: Base + Polygon (cheap fees) + Ethereum (canonical USDT), 12
+ * confirmations. Tokens: USDC (base, polygon) + USDT (polygon, ethereum).
+ * USDT contracts verified: polygon on-chain (symbol USD₮0, 6 decimals),
+ * ethereum from tether.to official docs (old ERC-20 standard — Transfer logs
+ * are standard, only transfer() return differs, which this rail never calls).
  */
 
 const { createHmac, createHash } = require('node:crypto');
@@ -29,11 +33,22 @@ const NETWORKS = {
     },
     polygon: {
         chainId: 137,
-        rpc: 'https://polygon-rpc.com',
+        // ponytail: polygon-rpc.com now 403s (API-key required) — publicnode
+        rpc: 'https://polygon-bor-rpc.publicnode.com',
         usdc: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+        usdt: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
         label: 'Polygon',
     },
+    ethereum: {
+        chainId: 1,
+        rpc: 'https://ethereum-rpc.publicnode.com',
+        usdt: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
+        label: 'Ethereum',
+    },
 };
+
+// Decimals per token on these chains (USDT on BSC is 18 — do not add blindly).
+const TOKEN_DECIMALS = { usdc: 6, usdt: 6 };
 
 const CONFIRMATIONS = 12;
 const TRANSFER_SIG = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
@@ -147,12 +162,12 @@ function padTopic(addr) {
     return '0x' + '0'.repeat(24) + addr.toLowerCase().replace(/^0x/, '');
 }
 
-function parseTransferLog(log) {
+function parseTransferLog(log, decimals = 6) {
     try {
         if (!log || !Array.isArray(log.topics) || log.topics.length < 3) return null;
         if (String(log.topics[0]).toLowerCase() !== TRANSFER_SIG) return null;
         const to = '0x' + String(log.topics[2]).slice(-40);
-        const amount = Number(BigInt(log.data || '0x0')) / 1e6; // USDC: 6 decimals
+        const amount = Number(BigInt(log.data || '0x0')) / 10 ** decimals; // USDC/USDT: 6
         if (!(amount > 0)) return null;
         return {
             to: to.toLowerCase(),
@@ -181,28 +196,31 @@ async function rpc(network, method, params) {
 }
 
 /**
- * Scan confirmed USDC transfers to `addresses` since `fromBlock`.
- * Returns { transfers, latest } where latest is the highest block SAFE to
- * advance scan state to (latest chain head minus confirmations).
+ * Scan confirmed transfers of `token` (usdc|usdt) to `addresses` since
+ * `fromBlock`. Returns { transfers, latest } where latest is the highest
+ * block SAFE to advance scan state to (latest chain head minus confirmations).
  */
-async function scanDeposits(network, addresses, fromBlock) {
+async function scanDeposits(network, addresses, fromBlock, token = 'usdc') {
     const net = NETWORKS[network];
     if (!net) throw new Error('Unknown network.');
+    const contract = net[token];
+    if (!contract) throw new Error(`Token ${token} not supported on ${network}.`);
     const head = parseInt(await rpc(network, 'eth_blockNumber', []), 16);
     const safeHead = head - CONFIRMATIONS;
     if (safeHead < fromBlock) return { transfers: [], latest: fromBlock };
     const out = [];
     const addrs = addresses.map((a) => a.toLowerCase());
+    const decimals = TOKEN_DECIMALS[token] || 6;
     // One getLogs call per address keeps RPC load tiny.
     for (const addr of addrs) {
         const logs = await rpc(network, 'eth_getLogs', [{
-            address: net.usdc,
+            address: contract,
             topics: [TRANSFER_SIG, null, padTopic(addr)],
             fromBlock: '0x' + fromBlock.toString(16),
             toBlock: '0x' + safeHead.toString(16),
         }]);
         for (const log of logs || []) {
-            const t = parseTransferLog(log);
+            const t = parseTransferLog(log, decimals);
             if (t && t.blockNumber <= safeHead) out.push(t);
         }
     }
@@ -216,6 +234,7 @@ async function checkChainId(network) {
 
 module.exports = {
     NETWORKS,
+    TOKEN_DECIMALS,
     CONFIRMATIONS,
     deriveDepositAddress,
     parseXpub,
