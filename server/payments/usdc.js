@@ -24,24 +24,31 @@ const { keccak_256 } = require('js-sha3');
 const EC = require('elliptic').ec;
 const ec = new EC('secp256k1');
 
+// Single env value read for module constants (no dotenv import here).
+function env_value(name) {
+    try { return process?.env?.[name]; } catch (e) { return undefined; }
+}
+
 const NETWORKS = {
     base: {
         chainId: 8453,
-        rpc: 'https://mainnet.base.org',
+        // ponytail: mainnet.base.org 429s on eth_getLogs (live /check evidence);
+        // publicnode is this file's existing free provider (polygon/ethereum).
+        rpc: env_value('BASE_RPC_URL') || 'https://base-rpc.publicnode.com',
         usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
         label: 'Base',
     },
     polygon: {
         chainId: 137,
         // ponytail: polygon-rpc.com now 403s (API-key required) — publicnode
-        rpc: 'https://polygon-bor-rpc.publicnode.com',
+        rpc: env_value('POLYGON_RPC_URL') || 'https://polygon-bor-rpc.publicnode.com',
         usdc: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
         usdt: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
         label: 'Polygon',
     },
     ethereum: {
         chainId: 1,
-        rpc: 'https://ethereum-rpc.publicnode.com',
+        rpc: env_value('ETHEREUM_RPC_URL') || 'https://ethereum-rpc.publicnode.com',
         usdt: '0xdAC17F958D2ee523a2206206994597C13D831ec7',
         label: 'Ethereum',
     },
@@ -206,15 +213,28 @@ function parseTransferLog(log, decimals = 6) {
 async function rpc(network, method, params) {
     const net = NETWORKS[network];
     if (!net) throw new Error('Unknown network.');
-    const r = await fetch(net.rpc, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-    });
-    if (!r.ok) throw new Error(`RPC ${network} failed: ${r.status}`);
-    const data = await r.json();
-    if (data.error) throw new Error(`RPC ${network} error: ${data.error.message}`);
-    return data.result;
+    // Free public RPCs 429 in bursts (live evidence on base getLogs); one
+    // short retry recovers those without stretching route latency.
+    let lastErr = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+        const r = await fetch(net.rpc, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        });
+        if (!r.ok) {
+            lastErr = new Error(`RPC ${network} failed: ${r.status}`);
+            if (r.status === 429 && attempt === 0) {
+                await new Promise((ok) => setTimeout(ok, 700));
+                continue;
+            }
+            throw lastErr;
+        }
+        const data = await r.json();
+        if (data.error) throw new Error(`RPC ${network} error: ${data.error.message}`);
+        return data.result;
+    }
+    throw lastErr;
 }
 
 /**

@@ -19,7 +19,8 @@ const NETWORKS = {
     base: {
         label: 'Base',
         chainId: 8453,
-        rpc: process.env.BASE_RPC_URL || 'https://mainnet.base.org',
+        // ponytail: mainnet.base.org 429s on gets (live /check evidence) — publicnode
+        rpc: process.env.BASE_RPC_URL || 'https://base-rpc.publicnode.com',
         explorer: 'https://basescan.org',
         tokens: {
             usdc: { address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6 },
