@@ -111,10 +111,11 @@ describe('getHotWallet env parsing (USDC_HOT_WALLET_KEY from Render)', () => {
         expect(hotwallet.getHotWallet()).toBeNull();
         expect(hotwallet.configStatus()).toBe('invalid_format');
     });
-    test('rejects missing 0x prefix', () => {
-        process.env.USDC_HOT_WALLET_KEY = KEY.slice(2);
+    test('rejects a bare 40-hex body (an address pasted without prefix)', () => {
+        process.env.USDC_HOT_WALLET_KEY = 'ab'.repeat(20);
         expect(hotwallet.getHotWallet()).toBeNull();
         expect(hotwallet.configStatus()).toBe('invalid_format');
+        expect(hotwallet.configFingerprint()).toEqual(['prefix_missing', 'body_all_hex', 'body_length_40']);
     });
     test('rejects internal whitespace (corrupted key)', () => {
         process.env.USDC_HOT_WALLET_KEY = '0x' + '22'.repeat(31) + ' 22';
@@ -131,10 +132,13 @@ describe('getHotWallet env parsing (USDC_HOT_WALLET_KEY from Render)', () => {
         expect(hotwallet.configFingerprint()).toEqual(['prefix_0x', 'body_all_hex', 'body_length_40']);
         expect(JSON.stringify(hotwallet.configFingerprint())).not.toContain(process.env.USDC_HOT_WALLET_KEY);
     });
-    test('configFingerprint classifies a missing 0x prefix (64 hex, no prefix)', () => {
+    test('bare 0x-less 64 hex is accepted: same bytes as the canonical form', () => {
+        // Live-evidence case (fingerprint prefix_missing+body_length_64): the
+        // operator value was the correct 32-byte secret without the 0x prefix.
         process.env.USDC_HOT_WALLET_KEY = KEY.slice(2);
-        expect(hotwallet.configFingerprint()).toEqual(['prefix_missing', 'body_all_hex', 'body_length_64']);
-        expect(JSON.stringify(hotwallet.configFingerprint())).not.toContain(process.env.USDC_HOT_WALLET_KEY);
+        expect(hotwallet.getHotWallet().address).toBe(hotwallet.privateKeyToAddress(KEY));
+        expect(hotwallet.configStatus()).toBe('valid');
+        expect(hotwallet.configFingerprint()).toEqual(['valid']);
     });
     test('configFingerprint flags uppercase 0X prefix; valid keys expose nothing', () => {
         process.env.USDC_HOT_WALLET_KEY = '0X' + KEY.slice(2);

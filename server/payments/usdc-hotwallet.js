@@ -126,6 +126,9 @@ function keyIsWellFormed(key) {
 function keyOf(raw) {
     let k = String(raw ?? '').trim();
     k = k.replace(/^["']|["']$/g, '').trim();
+    // Bare 32-byte hex (no prefix) is the same key material missing only
+    // formatting — normalize it so dashboard pastes of either style work.
+    if (/^[0-9a-fA-F]{64}$/.test(k)) k = '0x' + k;
     return k;
 }
 
