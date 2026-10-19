@@ -867,7 +867,14 @@ const seedDemoData = async () => {
     const adminEmail = 'admin@vaultbank.com';
     const isProd = process?.env?.NODE_ENV === 'production';
     const demoPass = process?.env?.DEMO_PASSWORD;
-    const adminPass = process?.env?.ADMIN_PASSWORD;
+    const adminPassRaw = process?.env?.ADMIN_PASSWORD;
+    // A known-default env value is treated as UNSET: honoring it would keep
+    // re-asserting a publicly-known credential at every boot (live evidence
+    // 2026-10-19: a default-valued env reverted a random rotation).
+    const adminPass = adminPassRaw === 'admin123' ? null : adminPassRaw;
+    if (adminPassRaw === 'admin123') {
+        console.warn('Admin user: ⚠️ ADMIN_PASSWORD is set to the known default — rotation refused; set a real value to rotate at boot');
+    }
 
     let demoUser = null;
     if (!existingEmails.has(demoEmail)) {
