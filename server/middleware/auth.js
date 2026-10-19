@@ -1,7 +1,11 @@
-const jwt = require('jsonwebtoken');
+﻿const jwt = require('jsonwebtoken');
 const { findUserById } = require('../config/database');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'vaultbank-jwt-secret-2025-production';
+// Fail closed: a missing signing secret in production would let anyone mint
+// valid tokens with this publicly-known literal, so refuse to boot instead.
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production'
+    ? (() => { console.error('[auth] FATAL: JWT_SECRET is not set - refusing to start in production.'); process.exit(1); })()
+    : 'vaultbank-jwt-secret-2025-development');
 
 /**
  * Middleware: Verify JWT token and attach user to request

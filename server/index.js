@@ -34,7 +34,12 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 const startTime = Date.now();
 
-// â”€â”€â”€ Frontend Static Serving (single-origin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Render fronts the app with a reverse proxy, so every connection arrives
+// from the proxy IP. Restore the real client IP - without this, per-IP
+// limiters (the login limiter!) and audit logs see ALL users as one shared IP.
+app.set('trust proxy', 1);
+
+// ─── Frontend Static Serving (single-origin) ────────────────────────────────
 // Serve the built React app from client/dist so the whole VaultBank app runs
 // on ONE origin (e.g. https://vaultbank-md20.onrender.com). This makes the
 // frontend impossible to go stale or lose API connectivity.
@@ -43,13 +48,13 @@ const fs = require('fs');
 const FRONTEND_DIST = path.join(__dirname, '..', 'client', 'dist');
 const hasFrontend = fs.existsSync(path.join(FRONTEND_DIST, 'index.html'));
 
-// â”€â”€â”€ Security Middleware â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Security Middleware ────────────────────────────────────────────────────
 app.use(helmet({
     crossOriginEmbedderPolicy: false,
     contentSecurityPolicy: false // Allow for development
 }));
 
-// â”€â”€â”€ CORS Configuration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── CORS Configuration ─────────────────────────────────────────────────────
 // Allow all origins. This is a public banking app and the frontend may be
 // accessed from any domain (Vercel previews, custom domains, local dev).
 // Credentials are still required for JWT auth.
@@ -60,18 +65,18 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-Requested-With']
 }));
 
-// â”€â”€â”€ Body Parsing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Body Parsing ────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// â”€â”€â”€ Logging â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Logging ─────────────────────────────────────────────────────────────────
 if (process.env.NODE_ENV !== 'test') {
     app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
     // Custom request logger for structured logging
     app.use(requestLogger);
 }
 
-// â”€â”€â”€ Rate Limiting (global) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Rate Limiting (global) ──────────────────────────────────────────────────
 app.use(generalLimiter);
 
 // Attach audit logger to request for easy use in routes
@@ -80,7 +85,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// â”€â”€â”€ Health Check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
     return res.status(200).json({
         status: 'ok',
@@ -93,7 +98,7 @@ app.get('/health', (req, res) => {
     });
 });
 
-// â”€â”€â”€ Input Sanitization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Input Sanitization ──────────────────────────────────────────────────────
 // Sanitize all request bodies and query parameters BEFORE routes so XSS
 // payloads are stripped from every endpoint, including auth.
 app.use((req, res, next) => {
@@ -115,7 +120,7 @@ app.use((req, res, next) => {
     next();
 });
 
-// â”€â”€â”€ API Routes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/', authRoutes);
 app.use('/', transferRoutes);
 app.use('/', rewardsRoutes);
@@ -131,22 +136,22 @@ app.use('/', anomaliesRoutes);
 // Register compliance reports route
 app.use('/', reportsRoutes);
 
-// â”€â”€â”€ Banking Account Routes (Real Banking) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Banking Account Routes (Real Banking) ──────────────────────────────────
 app.use('/', accountRoutes);
 app.use('/', issuingRoutes);
 app.use('/', creditRoutes);
 app.use('/', vbPayRoutes);
 app.use('/', usdcWithdrawalRoutes);
 
-// â”€â”€â”€ Stripe Payment Routes (Deposits, Withdrawals, Webhooks) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Stripe Payment Routes (Deposits, Withdrawals, Webhooks) ──────────────
 app.use(stripePaymentRoutes);
 app.use('/', require('./routes/paypal-deposits'));
 app.use('/', require('./routes/usdc-deposits'));
 
-// â”€â”€â”€ Root Route â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-// â”€â”€â”€ Frontend Static Serving (single-origin) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Root Route ──────────────────────────────────────────────────────────────
+// ─── Frontend Static Serving (single-origin) ────────────────────────────────
 // Serve the built React SPA so the app runs on one origin (frontend + API).
-// This guarantees the deployed app can always reach its own API â€” no stale
+// This guarantees the deployed app can always reach its own API — no stale
 // frontend build or cross-origin mismatch can break login again.
 if (hasFrontend) {
     app.use(express.static(FRONTEND_DIST));
@@ -233,7 +238,7 @@ app.get('/', (req, res) => {
     });
 });
 
-// â”€â”€â”€ API Info â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── API Info ────────────────────────────────────────────────────────────────
 app.get('/api', (req, res) => {
     return res.status(200).json({
         name: 'VaultBank API',
@@ -309,7 +314,7 @@ app.get('/api', (req, res) => {
     });
 });
 
-// â”€â”€â”€ SPA Fallback (after all API routes) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── SPA Fallback (after all API routes) ─────────────────────────────────────
 // Any non-API GET that didn't match an API route returns the React app, so
 // client-side routing (/dashboard, /payments, ...) works on a single origin.
 if (hasFrontend) {
@@ -318,7 +323,7 @@ if (hasFrontend) {
     });
 }
 
-// â”€â”€â”€ 404 Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── 404 Handler ─────────────────────────────────────────────────────────────
 app.use((req, res) => {
     return res.status(404).json({
         success: false,
@@ -327,7 +332,7 @@ app.use((req, res) => {
     });
 });
 
-// â”€â”€â”€ Global Error Handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Global Error Handler ────────────────────────────────────────────────────
 //The fourth argument is required by Express to identify error-handling middleware.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, _next) => {
@@ -358,7 +363,7 @@ app.use((err, req, res, _next) => {
     });
 });
 
-// â”€â”€â”€ Process Error Handlers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Process Error Handlers ──────────────────────────────────────────────────
 process.on('uncaughtException', (error) => {
     console.error('âŒ Uncaught Exception:', error);
     process.exit(1);
@@ -368,11 +373,11 @@ process.on('unhandledRejection', (reason, promise) => {
     console.error('âŒ Unhandled Rejection at:', promise, 'reason:', reason);
 });
 
-// â”€â”€â”€ Ensure Database Connection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Ensure Database Connection ───────────────────────────────────────────────
 const { ensureConnection } = require('./config/db');
 const { seedDemoData } = require('./config/database');
 
-// â”€â”€â”€ Start Server â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ─── Start Server ─────────────────────────────────────────────────────────────
 async function startServer() {
     // Wait for PostgreSQL database connection
     try {

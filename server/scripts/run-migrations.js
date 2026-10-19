@@ -1,4 +1,4 @@
-/**
+﻿/**
  * VaultBank Database Migration Runner
  * Runs all SQL migration files against the PostgreSQL database
  */
@@ -6,8 +6,9 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+require('dotenv').config(); // load the server environment file from the working directory (run from server/)
 
-const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://neondb_owner:npg_mLs4My1Qewlu@ep-aged-mud-aqlu69dv-pooler.c-8.us-east-1.aws.neon.tech/neondb?sslmode=require';
+const DATABASE_URL = process.env.DATABASE_URL || (() => { console.error('database URL is not set - run this script from the server directory with the environment file present'); process.exit(1); })();
 
 const pool = new Pool({
     connectionString: DATABASE_URL,
@@ -42,11 +43,11 @@ async function runMigrations() {
 
         for (const file of files) {
             if (executedFiles.has(file)) {
-                console.log(`⏭️  Skipping ${file} (already executed)`);
+                console.log(`â­ï¸  Skipping ${file} (already executed)`);
                 continue;
             }
 
-            console.log(`▶️  Running migration: ${file}`);
+            console.log(`â–¶ï¸  Running migration: ${file}`);
             const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
 
             try {
@@ -54,15 +55,15 @@ async function runMigrations() {
                 await client.query(sql);
                 await client.query('INSERT INTO _migrations (filename) VALUES ($1)', [file]);
                 await client.query('COMMIT');
-                console.log(`✅ ${file} - Success`);
+                console.log(`âœ… ${file} - Success`);
             } catch (err) {
                 await client.query('ROLLBACK');
-                console.error(`❌ ${file} - Failed:`, err.message);
+                console.error(`âŒ ${file} - Failed:`, err.message);
                 // Continue with next migration
             }
         }
 
-        console.log('\n✅ All migrations completed!');
+        console.log('\nâœ… All migrations completed!');
 
         // Verify tables exist
         const tables = await client.query(`
@@ -70,7 +71,7 @@ async function runMigrations() {
             WHERE table_schema = 'public' 
             ORDER BY table_name;
         `);
-        console.log('\n📊 Database tables:');
+        console.log('\nðŸ“Š Database tables:');
         tables.rows.forEach(t => console.log(`   - ${t.table_name}`));
 
     } catch (err) {

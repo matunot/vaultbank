@@ -5,6 +5,10 @@ const metrics = require('../metrics/payments');
 
 describe('metrics/payments', () => {
     test('recordPaymentAttempt increments the counters', async () => {
+        // metrics/payments creates its counters lazily on the first record call
+        // (ensure()), so seed once before the first read — on a fresh registry
+        // getSingleMetricAsString throws for a metric that does not exist yet.
+        metrics.recordPaymentAttempt({ provider: 'warmup', method: 'warmup', outcome: 'mock' });
         const before = await metrics.registry.getSingleMetricAsString('vaultbank_payment_attempts_total');
         metrics.recordPaymentAttempt({ provider: 'stripe', method: 'stripe_card', outcome: 'success', durationMs: 123 });
         metrics.recordPaymentAttempt({ provider: 'stripe', method: 'stripe_card', outcome: 'failure', reason: 'card_declined' });

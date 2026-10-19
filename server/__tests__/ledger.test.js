@@ -1,10 +1,17 @@
 /**
  * Sprint 1 — Unit tests for the payment ledger persistence helpers.
  *
- * These tests run against the demo (no-DB) path. In CI with DATABASE_URL,
- * the real `query()` would be exercised and the dedup unique index would
- * be tested with a real insert + duplicate attempt.
+ * This suite asserts the fail-open ("DB unavailable") path: `config/db` is
+ * mocked so every query rejects. Keeps the result deterministic on machines
+ * whose environment points at a live DB — with a real connection the fixed
+ * fixture `evt_test_1` persisted after the first run, so later runs saw
+ * duplicate=true and failed. In CI with DATABASE_URL,
+ * the real `query()` path is exercised elsewhere; this unit suite stays
+ * mocked anyway so its result never depends on stored fixture rows.
  */
+jest.mock('../config/db', () => ({
+    query: jest.fn().mockRejectedValue(new Error('connection refused (test: DB unavailable)')),
+}));
 const ledger = require('../payments/ledger');
 
 describe('payments/ledger', () => {
@@ -38,8 +45,9 @@ describe('payments/ledger', () => {
             payload: { id: 'evt_test_1', type: 'payment_intent.succeeded' },
         });
         expect(r).toHaveProperty('duplicate');
-        // demo mode -> no DB, so we treat as first time
+        // DB unavailable -> fail open: treat as first time so the handler still runs
         expect(r.duplicate).toBe(false);
+        expect(r.dbError).toBeTruthy();
     });
 
     test('updatePaymentStatus does not throw on demo mode', async () => {

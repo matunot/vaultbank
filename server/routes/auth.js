@@ -24,8 +24,12 @@ const {
     addRewardPoints,
 } = require('../config/database');
 const { authenticateToken, generateToken } = require('../middleware/auth');
+const { authLimiter, signupLimiter } = require('../middleware/rateLimiter');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'vaultbank-jwt-secret-2025-production';
+// Fail closed in production - see middleware/auth.js for the rationale.
+const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production'
+    ? (() => { console.error('[auth] FATAL: JWT_SECRET is not set - refusing to start in production.'); process.exit(1); })()
+    : 'vaultbank-jwt-secret-2025-development');
 
 // ============================================================
 // VALIDATION HELPERS
@@ -147,8 +151,8 @@ const handleSignup = async (req, res) => {
 };
 
 // Register both the canonical and legacy (no /api/auth prefix) signup routes
-router.post('/api/auth/signup', handleSignup);
-router.post('/signup', handleSignup);
+router.post('/api/auth/signup', signupLimiter, handleSignup);
+router.post('/signup', signupLimiter, handleSignup);
 
 // ============================================================
 // POST /api/auth/login — Sign in
@@ -281,13 +285,13 @@ const handleLogin = async (req, res) => {
 };
 
 // Register both the canonical and legacy (no /api/auth prefix) login routes
-router.post('/api/auth/login', handleLogin);
-router.post('/login', handleLogin);
+router.post('/api/auth/login', authLimiter, handleLogin);
+router.post('/login', authLimiter, handleLogin);
 
 // ============================================================
 // POST /api/auth/admin/login — Admin login
 // ============================================================
-router.post('/api/auth/admin/login', async (req, res) => {
+router.post('/api/auth/admin/login', authLimiter, async (req, res) => {
     try {
         const { email, password } = req.body;
 
