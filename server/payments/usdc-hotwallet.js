@@ -108,9 +108,42 @@ function privateKeyToAddress(privHex) {
 }
 
 function getHotWallet() {
-    const key = process.env.USDC_HOT_WALLET_KEY || '';
-    if (!/^0x[0-9a-fA-F]{64}$/.test(key)) return null;
+    const key = keyOf(process.env.USDC_HOT_WALLET_KEY);
+    if (!keyIsWellFormed(key)) return null;
     return { key, address: privateKeyToAddress(key) };
+}
+
+// Single source of truth for the format contract so the loader and the
+// diagnostic can never drift apart (a status that disagrees with the loader
+// would send operators chasing the wrong fix).
+function keyIsWellFormed(key) {
+    return /^0x[0-9a-fA-F]{64}$/.test(key);
+}
+
+// Paste-tolerant env parsing: dashboard-pasted values often carry a trailing
+// newline or wrapping quotes. Strip ONLY those artifacts, then hold the strict
+// 0x + 64-hex contract — internal corruption is still rejected.
+function keyOf(raw) {
+    let k = String(raw ?? '').trim();
+    k = k.replace(/^["']|["']$/g, '').trim();
+    return k;
+}
+
+// Diagnose the hot-wallet key WITHOUT exposing its value:
+// 'not_set' | 'invalid_format' | 'valid'
+function configStatus() {
+    const key = keyOf(process.env.USDC_HOT_WALLET_KEY);
+    if (!key) return 'not_set';
+    return keyIsWellFormed(key) ? 'valid' : 'invalid_format';
+}
+
+// Operator guidance for the invalid-format case, shared by the deposit and
+// withdrawal routes so every 503 tells the same story. Contains only
+// format guidance — never any value material. Empty string when not applicable.
+function configHint() {
+    return configStatus() === 'invalid_format'
+        ? 'USDC_HOT_WALLET_KEY is set but not a valid hot-wallet key (needs 0x prefix + exactly 64 hex characters = 66 chars; a wallet ADDRESS is only 42).'
+        : '';
 }
 
 // ---------------------------------------------------------------------------
@@ -226,6 +259,8 @@ module.exports = {
     isValidAddress,
     privateKeyToAddress,
     getHotWallet,
+    configStatus,
+    configHint,
     getHotWalletBalances,
     sendTokens,
     signTransaction,

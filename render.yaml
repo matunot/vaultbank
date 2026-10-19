@@ -50,3 +50,7 @@ services:
       # addresses, can never spend). Sweeping needs the offline xpriv.
       - key: USDC_XPUB
         sync: false
+      # ── USDC hot wallet: 0x + 64 hex key material of the HOT wallet (NOT the
+      # deposit xpub). One var enables crypto deposits AND chain withdrawals.
+      - key: USDC_HOT_WALLET_KEY
+        sync: false

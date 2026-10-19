@@ -64,6 +64,76 @@ describe('hot-wallet-rooted deposit derivation (USDC_HOT_WALLET_KEY)', () => {
     });
 });
 
+describe('getHotWallet env parsing (USDC_HOT_WALLET_KEY from Render)', () => {
+    // Money-critical: a healthy pasted key must NEVER be silently rejected.
+    // The live 503 of 2026-10 happened because a Render value with paste
+    // artifacts failed the strict regex with zero diagnosis. Env values
+    // commonly carry trailing newlines or wrapping quotes; internal
+    // corruption must still be rejected.
+    const KEY = '0x' + '22'.repeat(32);
+
+    afterEach(() => { process.env.USDC_HOT_WALLET_KEY = ''; });
+
+    test('accepts exact 0x + 64 hex', () => {
+        process.env.USDC_HOT_WALLET_KEY = KEY;
+        expect(hotwallet.getHotWallet().address).toBe(hotwallet.privateKeyToAddress(KEY));
+        expect(hotwallet.configStatus()).toBe('valid');
+    });
+    test('survives surrounding whitespace (trailing newline from paste)', () => {
+        process.env.USDC_HOT_WALLET_KEY = '  \n\t' + KEY + ' \n';
+        expect(hotwallet.getHotWallet().address).toBe(hotwallet.privateKeyToAddress(KEY));
+        expect(hotwallet.configStatus()).toBe('valid');
+    });
+    test('survives surrounding quotes (both kinds)', () => {
+        process.env.USDC_HOT_WALLET_KEY = '"' + KEY + '"';
+        expect(hotwallet.getHotWallet().address).toBe(hotwallet.privateKeyToAddress(KEY));
+        process.env.USDC_HOT_WALLET_KEY = "'" + KEY + "'";
+        expect(hotwallet.getHotWallet().address).toBe(hotwallet.privateKeyToAddress(KEY));
+        expect(hotwallet.configStatus()).toBe('valid');
+    });
+    test('cross-wrapped quotes count as paste artifacts (tolerance by design)', () => {
+        process.env.USDC_HOT_WALLET_KEY = '"' + KEY + "'";
+        expect(hotwallet.getHotWallet().address).toBe(hotwallet.privateKeyToAddress(KEY));
+        expect(hotwallet.configStatus()).toBe('valid');
+    });
+    test('configHint carries format guidance only, never a value', () => {
+        process.env.USDC_HOT_WALLET_KEY = '0x' + 'ab'.repeat(20);
+        const hint = hotwallet.configHint();
+        expect(hint).toContain('66 chars');
+        expect(hint).toMatch(/exactly 64 hex/);
+        expect(hint).not.toContain(process.env.USDC_HOT_WALLET_KEY);
+        process.env.USDC_HOT_WALLET_KEY = '';
+        expect(hotwallet.configHint()).toBe('');
+        expect(hotwallet.configHint()).toBe(hotwallet.configHint()); // stable
+    });
+    test('rejects a wallet ADDRESS (0x + 40 hex) with invalid_format status', () => {
+        process.env.USDC_HOT_WALLET_KEY = '0x' + 'ab'.repeat(20);
+        expect(hotwallet.getHotWallet()).toBeNull();
+        expect(hotwallet.configStatus()).toBe('invalid_format');
+    });
+    test('rejects missing 0x prefix', () => {
+        process.env.USDC_HOT_WALLET_KEY = KEY.slice(2);
+        expect(hotwallet.getHotWallet()).toBeNull();
+        expect(hotwallet.configStatus()).toBe('invalid_format');
+    });
+    test('rejects internal whitespace (corrupted key)', () => {
+        process.env.USDC_HOT_WALLET_KEY = '0x' + '22'.repeat(31) + ' 22';
+        expect(hotwallet.getHotWallet()).toBeNull();
+        expect(hotwallet.configStatus()).toBe('invalid_format');
+    });
+    test('unset → null + not_set status', () => {
+        process.env.USDC_HOT_WALLET_KEY = '';
+        expect(hotwallet.getHotWallet()).toBeNull();
+        expect(hotwallet.configStatus()).toBe('not_set');
+    });
+    test('status never exposes the value', () => {
+        process.env.USDC_HOT_WALLET_KEY = KEY;
+        const st = hotwallet.configStatus();
+        expect(st).toBe('valid');
+        expect(JSON.stringify(st)).not.toContain(KEY);
+    });
+});
+
 describe('usdc log parsing', () => {
     const log = {
         // 25.5 USDC = 25500000 = 0x1851960

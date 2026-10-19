@@ -44,6 +44,11 @@ async function ensureTables() {
     tablesReady = true;
 }
 
+// Route copy for the crypto 503s: precise hint when the configured value is
+// present-but-invalid, plain how-to otherwise (compose-before-message).
+const withdrawConfigMessage = () => chain.configHint()
+    || 'Set USDC_HOT_WALLET_KEY (0x + 64 hex chars) in Render to enable chain withdrawals.';
+
 // GET /api/usdc/withdraw-status — hot wallet config + balances
 router.get('/api/usdc/withdraw-status', authenticateToken, async (req, res) => {
     try {
@@ -52,7 +57,7 @@ router.get('/api/usdc/withdraw-status', authenticateToken, async (req, res) => {
             return res.json({
                 success: true,
                 configured: false,
-                message: 'Set USDC_HOT_WALLET_KEY (0x + 64 hex chars) in Render to enable chain withdrawals.',
+                message: withdrawConfigMessage(),
             });
         }
         const base = await chain.getHotWalletBalances('base', wallet.address);
@@ -79,7 +84,7 @@ router.post('/api/usdc/withdraw', authenticateToken, async (req, res) => {
             return res.status(503).json({
                 success: false,
                 code: 'USDC_WITHDRAWALS_NOT_CONFIGURED',
-                message: 'Set USDC_HOT_WALLET_KEY (0x + 64 hex chars) in Render to enable chain withdrawals.',
+                message: withdrawConfigMessage(),
             });
         }
 

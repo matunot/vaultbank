@@ -103,7 +103,9 @@ router.get('/api/usdc/deposit-address', authenticateToken, async (req, res) => {
         }
         const xpub = getXpub();
         if (!depositsConfigured()) {
-            return res.status(503).json({ success: false, code: 'USDC_NOT_CONFIGURED', message: 'Crypto deposits are not enabled yet. Set USDC_HOT_WALLET_KEY (0x + 64 hex) in Render to enable deposits + withdrawals.' });
+            const hint = hotwallet.configHint()
+                || 'Set USDC_HOT_WALLET_KEY (0x + 64 hex) in Render to enable deposits + withdrawals.';
+            return res.status(503).json({ success: false, code: 'USDC_NOT_CONFIGURED', message: 'Crypto deposits are not enabled yet. ' + hint });
         }
         await ensureTables();
         const account = await findAccountByUserId(req.user.id);
@@ -158,7 +160,9 @@ router.post('/api/usdc/check', authenticateToken, async (req, res) => {
             }
         }
         if (!depositsConfigured()) {
-            return res.status(503).json({ success: false, code: 'USDC_NOT_CONFIGURED', message: 'Crypto deposits are not enabled yet. Set USDC_HOT_WALLET_KEY (0x + 64 hex) in Render to enable deposits + withdrawals.' });
+            const hint = hotwallet.configHint()
+                || 'Set USDC_HOT_WALLET_KEY (0x + 64 hex) in Render to enable deposits + withdrawals.';
+            return res.status(503).json({ success: false, code: 'USDC_NOT_CONFIGURED', message: 'Crypto deposits are not enabled yet. ' + hint });
         }
         await ensureTables();
         const credited = [];
