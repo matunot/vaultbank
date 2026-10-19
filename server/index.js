@@ -396,11 +396,6 @@ async function startServer() {
   ðŸ“‹ API docs: http://localhost:${PORT}/api
   ðŸ” Auth: POST http://localhost:${PORT}/login
   ðŸ“Š Admin: POST http://localhost:${PORT}/api/auth/login
-
-  Credentials:
-  â”œâ”€â”€ User:  demo@vaultbank.com  / password
-  â””â”€â”€ Admin: admin@vaultbank.com / admin123
-
   Mode: ðŸ—„ï¸  PostgreSQL (Neon) - Real Database
 
 â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•

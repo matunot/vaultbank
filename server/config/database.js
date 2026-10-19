@@ -858,39 +858,72 @@ const seedDemoData = async () => {
     );
     const existingEmails = new Set(existingUsers.map(u => u.email));
 
-    // Demo user (password: "password")
-    let demoUser = null;
-    if (!existingEmails.has('demo@vaultbank.com')) {
-        const demoPassHash = await bcrypt.hash('password', 12);
-        const result = await db.query(`
-            INSERT INTO users (email, password_hash, full_name, phone, role, subscription, kyc_status, status, email_verified)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            ON CONFLICT (email) DO NOTHING
-            RETURNING *
-        `, ['demo@vaultbank.com', demoPassHash, 'Demo User', '+1234567890', 'user', 'basic', 'verified', 'active', true]);
-        demoUser = result.rows[0] || null;
-    } else {
-        const { rows } = await db.query('SELECT * FROM users WHERE email = $1', ['demo@vaultbank.com']);
-        demoUser = rows[0] || null;
-    }
-    console.log('Demo user:', demoUser ? `✅ found (${demoUser.email})` : '⚠️ not found');
+    // Demo + admin accounts: env-provided passwords (DEMO_PASSWORD /
+    // ADMIN_PASSWORD) always win and rotate existing rows at boot. The old
+    // public defaults are only allowed when NOT running in production, so a
+    // fresh production database can never be born with known credentials.
+    // Explicit default-credential usage is detected and reported on boot.
+    const demoEmail = 'demo@vaultbank.com';
+    const adminEmail = 'admin@vaultbank.com';
+    const isProd = process?.env?.NODE_ENV === 'production';
+    const demoPass = process?.env?.DEMO_PASSWORD;
+    const adminPass = process?.env?.ADMIN_PASSWORD;
 
-    // Admin user (password: "admin123")
-    let adminUser = null;
-    if (!existingEmails.has('admin@vaultbank.com')) {
-        const adminPassHash = await bcrypt.hash('admin123', 12);
-        const result = await db.query(`
-            INSERT INTO users (email, password_hash, full_name, phone, role, subscription, kyc_status, status, email_verified)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-            ON CONFLICT (email) DO NOTHING
-            RETURNING *
-        `, ['admin@vaultbank.com', adminPassHash, 'Admin User', '+1234567891', 'super_admin', 'business', 'verified', 'active', true]);
-        adminUser = result.rows[0] || null;
+    let demoUser = null;
+    if (!existingEmails.has(demoEmail)) {
+        if (demoPass || !isProd) {
+            const demoPassHash = await bcrypt.hash(demoPass || 'password', 12);
+            const result = await db.query(`
+                INSERT INTO users (email, password_hash, full_name, phone, role, subscription, kyc_status, status, email_verified)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ON CONFLICT (email) DO NOTHING
+                RETURNING *
+            `, [demoEmail, demoPassHash, 'Demo User', '+1234567890', 'user', 'basic', 'verified', 'active', true]);
+            demoUser = result.rows[0] || null;
+            console.log('Demo user: ✅ created');
+        } else {
+            console.log('Demo user: ⚠️ not created (production requires the DEMO_PASSWORD env secret to provision it)');
+        }
     } else {
-        const { rows } = await db.query('SELECT * FROM users WHERE email = $1', ['admin@vaultbank.com']);
-        adminUser = rows[0] || null;
+        const { rows } = await db.query('SELECT * FROM users WHERE email = $1', [demoEmail]);
+        demoUser = rows[0] || null;
+        if (demoUser && demoPass) {
+            const demoPassHash = await bcrypt.hash(demoPass, 12);
+            await db.query('UPDATE users SET password_hash = $1 WHERE email = $2', [demoPassHash, demoEmail]);
+            console.log('Demo user: ✅ rotated to the env-provided secret');
+        } else {
+            console.log('Demo user: ✅ found');
+        }
     }
-    console.log('Admin user:', adminUser ? `✅ found (${adminUser.email})` : '⚠️ not found');
+
+    let adminUser = null;
+    if (!existingEmails.has(adminEmail)) {
+        if (adminPass || !isProd) {
+            const adminPassHash = await bcrypt.hash(adminPass || 'admin123', 12);
+            const result = await db.query(`
+                INSERT INTO users (email, password_hash, full_name, phone, role, subscription, kyc_status, status, email_verified)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                ON CONFLICT (email) DO NOTHING
+                RETURNING *
+            `, [adminEmail, adminPassHash, 'Admin User', '+1234567891', 'super_admin', 'business', 'verified', 'active', true]);
+            adminUser = result.rows[0] || null;
+            console.log('Admin user: ✅ created');
+        } else {
+            console.log('Admin user: ⚠️ not created (production requires the ADMIN_PASSWORD env secret to provision super_admin)');
+        }
+    } else {
+        const { rows } = await db.query('SELECT * FROM users WHERE email = $1', [adminEmail]);
+        adminUser = rows[0] || null;
+        if (adminUser && adminPass) {
+            const adminPassHash = await bcrypt.hash(adminPass, 12);
+            await db.query('UPDATE users SET password_hash = $1 WHERE email = $2', [adminPassHash, adminEmail]);
+            console.log('Admin user: ✅ rotated to the env-provided secret');
+        } else if (adminUser && await bcrypt.compare('admin123', adminUser.password_hash)) {
+            console.warn('Admin user: ⚠️ still authenticates with its original default password — set ADMIN_PASSWORD in Render to rotate it at next boot');
+        } else {
+            console.log('Admin user: ✅ found');
+        }
+    }
 
     // Seed demo account + rewards (only if demo user was newly created or account missing)
     if (demoUser) {
