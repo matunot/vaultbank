@@ -126,6 +126,24 @@ describe('getHotWallet env parsing (USDC_HOT_WALLET_KEY from Render)', () => {
         expect(hotwallet.getHotWallet()).toBeNull();
         expect(hotwallet.configStatus()).toBe('not_set');
     });
+    test('configFingerprint classifies an address paste (value-free)', () => {
+        process.env.USDC_HOT_WALLET_KEY = '0x' + 'ab'.repeat(20);
+        expect(hotwallet.configFingerprint()).toEqual(['prefix_0x', 'body_all_hex', 'body_length_40']);
+        expect(JSON.stringify(hotwallet.configFingerprint())).not.toContain(process.env.USDC_HOT_WALLET_KEY);
+    });
+    test('configFingerprint classifies a missing 0x prefix (64 hex, no prefix)', () => {
+        process.env.USDC_HOT_WALLET_KEY = KEY.slice(2);
+        expect(hotwallet.configFingerprint()).toEqual(['prefix_missing', 'body_all_hex', 'body_length_64']);
+        expect(JSON.stringify(hotwallet.configFingerprint())).not.toContain(process.env.USDC_HOT_WALLET_KEY);
+    });
+    test('configFingerprint flags uppercase 0X prefix; valid keys expose nothing', () => {
+        process.env.USDC_HOT_WALLET_KEY = '0X' + KEY.slice(2);
+        expect(hotwallet.configFingerprint()).toEqual(['prefix_0X_uppercase', 'body_all_hex', 'body_length_64']);
+        process.env.USDC_HOT_WALLET_KEY = KEY;
+        const fp = hotwallet.configFingerprint();
+        expect(fp).toEqual(['valid']);
+        expect(JSON.stringify(fp)).not.toContain(KEY);
+    });
     test('status never exposes the value', () => {
         process.env.USDC_HOT_WALLET_KEY = KEY;
         const st = hotwallet.configStatus();

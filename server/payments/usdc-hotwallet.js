@@ -129,12 +129,31 @@ function keyOf(raw) {
     return k;
 }
 
-// Diagnose the hot-wallet key WITHOUT exposing its value:
+// Diagnose the hash-key config WITHOUT exposing its value:
 // 'not_set' | 'invalid_format' | 'valid'
 function configStatus() {
     const key = keyOf(process.env.USDC_HOT_WALLET_KEY);
     if (!key) return 'not_set';
     return keyIsWellFormed(key) ? 'valid' : 'invalid_format';
+}
+
+// Value-free shape diagnostics for an operator value that failed the format.
+// Says exactly WHAT shape arrived (prefix present? all hex? body length?) so
+// the operator can fix it in one try. For a valid key returns ['valid'] and
+// nothing else — a valid secret's shape (length) is never disclosed.
+function configFingerprint() {
+    const key = keyOf(process.env.USDC_HOT_WALLET_KEY ?? '');
+    if (keyIsWellFormed(key)) return ['valid'];
+    if (!key) return ['not_set'];
+    const classes = [];
+    if (/^0x/.test(key)) classes.push('prefix_0x');
+    else if (/^0X/.test(key)) classes.push('prefix_0X_uppercase');
+    else classes.push('prefix_missing');
+    const body = key.replace(/^0x/i, '');
+    classes.push(/^[0-9a-fA-F]*$/.test(body) ? 'body_all_hex' : 'body_non_hex');
+    classes.push(`body_length_${body.length}`);
+    if (/\s/.test(key)) classes.push('internal_whitespace');
+    return classes;
 }
 
 // Operator guidance for the invalid-format case, shared by the deposit and
@@ -261,6 +280,7 @@ module.exports = {
     getHotWallet,
     configStatus,
     configHint,
+    configFingerprint,
     getHotWalletBalances,
     sendTokens,
     signTransaction,
