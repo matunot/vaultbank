@@ -225,12 +225,15 @@ export default function LoginPage({ onLogin, onSwitchToSignup }: Props) {
 
             {/* Account Input */}
             <div className="space-y-1.5">
-              <label className="text-[9px] text-white/35 tracking-[0.3em] font-semibold ml-1 block">ACCOUNT NUMBER</label>
+              <label htmlFor="login-account" className="text-[9px] text-white/35 tracking-[0.3em] font-semibold ml-1 block">ACCOUNT NUMBER</label>
               <div className="relative">
                 <div className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors ${focused === 'account' ? 'text-amber-400' : 'text-white/30'}`}>
                   <User className="w-4 h-4" />
                 </div>
                 <input
+                  id="login-account"
+                  name="account"
+                  autoComplete="username"
                   type="text"
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); setError(''); }}
@@ -249,12 +252,15 @@ export default function LoginPage({ onLogin, onSwitchToSignup }: Props) {
 
             {/* Password Input */}
             <div className="space-y-1.5">
-              <label className="text-[9px] text-white/35 tracking-[0.3em] font-semibold ml-1 block">SECURITY CODE</label>
+              <label htmlFor="login-password" className="text-[9px] text-white/35 tracking-[0.3em] font-semibold ml-1 block">SECURITY CODE</label>
               <div className="relative">
                 <div className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors ${focused === 'password' ? 'text-amber-400' : 'text-white/30'}`}>
                   <Lock className="w-4 h-4" />
                 </div>
                 <input
+                  id="login-password"
+                  name="password"
+                  autoComplete="current-password"
                   type={showPass ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); setError(''); }}
@@ -270,6 +276,7 @@ export default function LoginPage({ onLogin, onSwitchToSignup }: Props) {
                 />
                 <button
                   onClick={() => setShowPass(!showPass)}
+                  aria-label={showPass ? 'Hide security code' : 'Show security code'}
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 hover:text-amber-400/60 transition-colors"
                 >
                   {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -292,7 +299,7 @@ export default function LoginPage({ onLogin, onSwitchToSignup }: Props) {
             {/* Remember + Forgot */}
             <div className="flex items-center justify-between text-xs">
               <label className="flex items-center gap-2 text-white/45 cursor-pointer hover:text-white/60 transition-colors">
-                <input type="checkbox" className="w-3.5 h-3.5 rounded accent-amber-500" defaultChecked />
+                <input id="login-remember" name="remember" type="checkbox" className="w-3.5 h-3.5 rounded accent-amber-500" defaultChecked />
                 Remember this device
               </label>
               <button className="text-amber-400/50 hover:text-amber-300 transition-colors">

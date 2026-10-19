@@ -44,6 +44,9 @@ const Header = memo(function Header({ theme, onThemeChange, user }: { theme: The
         <div className="relative flex-1 max-w-md">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" />
           <input
+            id="hdr-search"
+            name="search"
+            aria-label="Search transactions, cards, contacts"
             type="text"
             placeholder="Search transactions, cards, contacts…"
             className="w-full glass-input pl-10 pr-4 py-2 rounded-xl text-sm text-white placeholder-white/30 focus:outline-none"

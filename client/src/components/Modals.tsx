@@ -143,6 +143,9 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
               <div className="relative">
                 <UserSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
                 <input
+                  id="send-recipient"
+                  name="recipient"
+                  aria-label="Search recipient by name, email or account number"
                   type="text"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
@@ -205,10 +208,13 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
         )}
 
         <div>
-          <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
+          <label htmlFor="send-amount" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-amber-400 font-display text-2xl">$</span>
             <input
+              id="send-amount"
+              name="amount"
+              aria-label="Send amount in dollars"
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -218,8 +224,11 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
           </div>
         </div>
         <div>
-          <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">NOTE (OPTIONAL)</label>
+          <label htmlFor="send-note" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">NOTE (OPTIONAL)</label>
           <input
+            id="send-note"
+            name="note"
+            aria-label="Transfer note (optional)"
             type="text"
             value={note}
             onChange={(e) => setNote(e.target.value)}
@@ -474,10 +483,13 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
         ) : (
         <>
         <div>
-          <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
+          <label htmlFor="deposit-amount" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 font-display text-2xl">$</span>
             <input
+              id="deposit-amount"
+              name="amount"
+              aria-label="Deposit amount in dollars"
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -569,10 +581,13 @@ export function WithdrawModal({ isOpen, onClose }: ModalProps) {
         </div>
 
         <div>
-          <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
+          <label htmlFor="withdraw-amount" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-400 font-display text-2xl">$</span>
             <input
+              id="withdraw-amount"
+              name="withdrawAmount"
+              aria-label="Withdrawal amount in dollars"
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -652,10 +667,13 @@ export function PayBillModal({ isOpen, onClose, onPayBill }: ModalProps & { onPa
           ))}
         </div>
         <div>
-          <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
+          <label htmlFor="paybill-amount" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
           <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-400 font-display text-2xl">$</span>
             <input
+              id="paybill-amount"
+              name="amount"
+              aria-label="Bill payment amount in dollars"
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
@@ -767,8 +785,11 @@ export function TradeModal({ isOpen, onClose, onTrade, investments, available }:
 
         {/* Asset Selector */}
         <div>
-          <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">SELECT ASSET</label>
+          <label htmlFor="trade-asset" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">SELECT ASSET</label>
           <select
+            id="trade-asset"
+            name="asset"
+            aria-label="Asset to trade"
             value={ticker}
             onChange={(e) => setTicker(e.target.value)}
             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-amber-500/40 cursor-pointer"
@@ -793,8 +814,11 @@ export function TradeModal({ isOpen, onClose, onTrade, investments, available }:
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">SHARES / UNITS</label>
+            <label htmlFor="trade-shares" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">SHARES / UNITS</label>
             <input
+              id="trade-shares"
+              name="shares"
+              aria-label="Number of shares"
               type="number"
               min="0.0001"
               step="any"

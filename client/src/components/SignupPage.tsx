@@ -233,12 +233,15 @@ export default function SignupPage({ onSignup, onSwitchToLogin }: Props) {
 
             {/* Full Name Input */}
             <div className="space-y-1.5">
-              <label className="text-[9px] text-white/35 tracking-[0.3em] font-semibold ml-1 block">FULL NAME</label>
+              <label htmlFor="signup-name" className="text-[9px] text-white/35 tracking-[0.3em] font-semibold ml-1 block">FULL NAME</label>
               <div className="relative">
                 <div className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors ${focused === 'name' ? 'text-amber-400' : 'text-white/30'}`}>
                   <User className="w-4 h-4" />
                 </div>
                 <input
+                  id="signup-name"
+                  name="name"
+                  autoComplete="name"
                   type="text"
                   value={fullName}
                   onChange={(e) => { setFullName(e.target.value); setError(''); }}
@@ -257,12 +260,15 @@ export default function SignupPage({ onSignup, onSwitchToLogin }: Props) {
 
             {/* Email Input */}
             <div className="space-y-1.5">
-              <label className="text-[9px] text-white/35 tracking-[0.3em] font-semibold ml-1 block">EMAIL</label>
+              <label htmlFor="signup-email" className="text-[9px] text-white/35 tracking-[0.3em] font-semibold ml-1 block">EMAIL</label>
               <div className="relative">
                 <div className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors ${focused === 'email' ? 'text-amber-400' : 'text-white/30'}`}>
                   <Mail className="w-4 h-4" />
                 </div>
                 <input
+                  id="signup-email"
+                  name="email"
+                  autoComplete="email"
                   type="email"
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); setError(''); }}
@@ -281,12 +287,15 @@ export default function SignupPage({ onSignup, onSwitchToLogin }: Props) {
 
             {/* Password Input */}
             <div className="space-y-1.5">
-              <label className="text-[9px] text-white/35 tracking-[0.3em] font-semibold ml-1 block">PASSWORD</label>
+              <label htmlFor="signup-password" className="text-[9px] text-white/35 tracking-[0.3em] font-semibold ml-1 block">PASSWORD</label>
               <div className="relative">
                 <div className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors ${focused === 'password' ? 'text-amber-400' : 'text-white/30'}`}>
                   <Lock className="w-4 h-4" />
                 </div>
                 <input
+                  id="signup-password"
+                  name="password"
+                  autoComplete="new-password"
                   type={showPass ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => { setPassword(e.target.value); setError(''); }}

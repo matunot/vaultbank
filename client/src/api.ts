@@ -73,6 +73,14 @@ async function request<T = any>(endpoint: string, options: RequestInit = {}): Pr
       const response = await fetch(buildUrl(endpoint), { ...options, headers });
       const data = await response.json();
       if (!response.ok) {
+        // Expired/invalidated session: clear cached credentials and return to
+        // the login screen. Auth endpoints themselves are exempt - there a 401
+        // means wrong credentials, not a dead session (no redirect loops).
+        const isAuthCall = /(^|\/)(login|signup)(\/|$)/.test(endpoint);
+        if (response.status === 401 && token && !isAuthCall) {
+          for (const k of ['vaultbank_token', 'vaultbank_user', 'vaultbank_account']) localStorage.removeItem(k);
+          window.location.href = '/';
+        }
         throw new ApiError(data.message || 'Request failed', response.status);
       }
       return data as T;
