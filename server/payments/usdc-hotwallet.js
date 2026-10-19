@@ -11,9 +11,13 @@
  */
 
 const { keccak256 } = require('js-sha3');
-const EC = require('elliptic').ec;
-
-const ec = new EC('secp256k1');
+// secp256k1 via @noble (audited, maintained). Replaces elliptic, which has no
+// upstream fix for GHSA-848j-6mx2-7j84. RFC6979 deterministic k needs the
+// explicit hmac wiring in v1.
+const secp = require('@noble/secp256k1');
+const { hmac } = require('@noble/hashes/hmac');
+const { sha256 } = require('@noble/hashes/sha256');
+secp.utils.hmacSha256Sync = (key, ...msgs) => hmac(sha256, key, secp.utils.concatBytes(...msgs));
 
 const NETWORKS = {
     base: {
@@ -100,11 +104,9 @@ function isValidAddress(addr) {
 }
 
 function privateKeyToAddress(privHex) {
-    const key = ec.keyFromPrivate(String(privHex).replace(/^0x/, ''), 'hex');
-    let pub = key.getPublic(false, 'hex'); // uncompressed (may include 04 prefix)
-    let pubBytes = hexToBytes(pub);
-    if (pubBytes.length === 65 && pubBytes[0] === 4) pubBytes = pubBytes.slice(1); // strip 04 prefix
-    const hash = keccak256(new Uint8Array(pubBytes));
+    const pub = secp.getPublicKey(String(privHex).replace(/^0x/, ''), false); // 65 bytes: 04 || X || Y
+    const pubBytes = pub.subarray(1); // strip 04 prefix
+    const hash = keccak256(pubBytes);
     return '0x' + bytesToHex(hexToBytes(hash).slice(-20));
 }
 
@@ -224,15 +226,12 @@ function signTransaction(network, privKey, { nonce, gasPriceWei, gasLimit, to, v
         '0x',
         '0x',
     ];
-    const sigHash = hexToBytes(keccak256(new Uint8Array(hexToBytes(rlpEncode(unsigned)))));
-    const key = ec.keyFromPrivate(String(privKey).replace(/^0x/, ''), 'hex');
-    const sig = key.sign(sigHash, { canonical: true });
-    const n = ec.curve.n;
-    let s = sig.s.toArrayLike ? Buffer.from(sig.s.toArray('be')) : hexToBytes(sig.s.toString(16));
-    let recovery = sig.recoveryParam;
-    if (Buffer.compare(s, Buffer.from(n.subn(1).toArray('be')) ) > 0) {
-        s = Buffer.from(n.sub(s).toArray('be'));
-    }
+    const sigHash = new Uint8Array(hexToBytes(keccak256(new Uint8Array(hexToBytes(rlpEncode(unsigned))))));
+    // RFC6979 deterministic k (byte-identical to the pinned spec vectors);
+    // noble enforces the low-s form elliptic normalized manually.
+    // noble v1 returns [sig64, recoveryParam]; RFC6979 deterministic k
+    // (byte-identical to the pinned spec vectors); low-s enforced by noble.
+    const [sigBytes, recovery] = secp.signSync(sigHash, String(privKey).replace(/^0x/, ''), { recovered: true, der: false });
     if (recovery === null || recovery === undefined) throw new Error('Signing failed: no recovery param');
     const v = chainId * 2 + 35 + recovery;
     const signed = [
@@ -243,8 +242,8 @@ function signTransaction(network, privKey, { nonce, gasPriceWei, gasLimit, to, v
         toRlpInt('0x' + valueWei.toString(16)),
         data.toLowerCase(),
         toRlpInt(v),
-        toRlpInt('0x' + sig.r.toString(16)),
-        toRlpInt('0x' + bytesToHex(s)),
+        toRlpInt('0x' + bytesToHex(sigBytes.subarray(0, 32))),
+        toRlpInt('0x' + bytesToHex(sigBytes.subarray(32, 64))),
     ];
     return '0x' + rlpEncode(signed);
 }

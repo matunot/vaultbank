@@ -21,8 +21,10 @@
 
 const { createHmac, createHash } = require('node:crypto');
 const { keccak_256 } = require('js-sha3');
-const EC = require('elliptic').ec;
-const ec = new EC('secp256k1');
+// secp256k1 via @noble (audited, maintained) — replaces elliptic, which has no
+// upstream fix for GHSA-848j-6mx2-7j84. The jest suite keeps elliptic as an
+// independent oracle over the same pinned vectors.
+const secp = require('@noble/secp256k1');
 
 // Single env value read for module constants (no dotenv import here).
 function env_value(name) {
@@ -131,15 +133,14 @@ function deriveChildPub(parentPub, parentChain, index) {
     const I = createHmac('sha512', parentChain).update(Buffer.concat([parentPub, idx])).digest();
     const IL = I.subarray(0, 32);
     const IR = I.subarray(32);
-    // childPub = G*IL + parentPub (elliptic, pure JS)
-    const parentPoint = ec.keyFromPublic(parentPub).getPublic();
-    const childPoint = ec.g.mul(IL).add(parentPoint);
-    return { pub: Buffer.from(childPoint.encodeCompressed()), chainCode: IR };
+    // childPub = G*IL + parentPub (noble, pure JS)
+    const parentPoint = secp.Point.fromHex(parentPub);
+    const childPoint = secp.Point.BASE.multiply(BigInt('0x' + IL.toString('hex'))).add(parentPoint);
+    return { pub: Buffer.from(childPoint.toRawBytes(true)), chainCode: IR };
 }
 
 function pubToAddress(pubCompressed) {
-    const key = ec.keyFromPublic(pubCompressed);
-    const uncompressed = Buffer.from(key.getPublic(false, 'array')).subarray(1);
+    const uncompressed = secp.Point.fromHex(pubCompressed).toRawBytes(false).subarray(1);
     const hash = keccak(uncompressed);
     const addr = hash.subarray(-20).toString('hex');
     // EIP-55 checksum
@@ -174,13 +175,13 @@ function deriveDepositAddressFromRoot(rootKeyHex, index) {
     const root = String(rootKeyHex || '').toLowerCase().replace(/^0x/, '');
     if (!/^[0-9a-f]{64}$/.test(root)) throw new Error('Invalid root key.');
     const rootBytes = Buffer.from(root, 'hex');
-    const nBig = BigInt(ec.curve.n.toString(10));
+    const nBig = secp.CURVE.n;
     for (let counter = 0; ; counter++) {
         const label = Buffer.from('vaultbank-deposit/v1/' + index + (counter ? '/' + counter : ''), 'ascii');
         const I = createHmac('sha512', rootBytes).update(label).digest();
         const sBig = BigInt('0x' + I.subarray(0, 32).toString('hex'));
         if (sBig === 0n || sBig >= nBig) continue; // astronomically rare — re-derive
-        return pubToAddress(Buffer.from(ec.keyFromPrivate(I.subarray(0, 32)).getPublic(true, 'array')));
+        return pubToAddress(Buffer.from(secp.getPublicKey(I.subarray(0, 32), true)));
     }
 }
 
