@@ -85,6 +85,21 @@ app.use((req, res, next) => {
     next();
 });
 
+// Boot-time auth self-check: rounds a throwaway hash so /health reports a
+// real bcrypt runtime state (native-module failures must be visible, not a
+// silent 500 on every login). Uses only non-secret strings.
+let bcryptProbe = 'not_started';
+try {
+    const b = require('bcrypt');
+    b.hash('pb', 4)
+        .then((h) => b.compare('pb', h))
+        .then((ok) => { bcryptProbe = ok ? 'ok' : 'mismatch'; })
+        .catch((e) => { bcryptProbe = 'compare_error: ' + e.message; });
+} catch (e) {
+    try { const b2 = require('bcryptjs'); b2.compare('pb', b2.hashSync('pb', 4)); bcryptProbe = 'ok (bcryptjs fallback)'; }
+    catch (e2) { bcryptProbe = 'unavailable: ' + e2.message; }
+}
+
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
     return res.status(200).json({
@@ -95,6 +110,7 @@ app.get('/health', (req, res) => {
         environment: process.env.NODE_ENV || 'development',
         memory: typeof process.memoryUsage === 'function' ? process.memoryUsage() : {},
         usdcTestnet: require('./payments/usdc-testnet').MODE || undefined,
+        authProbe: bcryptProbe,
         message: 'ðŸ¦ VaultBank API is running!'
     });
 });
