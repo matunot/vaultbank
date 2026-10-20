@@ -147,8 +147,12 @@ const defaultDbPairs = () => ([
     ['COALESCE(SUM(amount), 0)', () => ({ rows: [{ total: '0' }] })],
     ['UPDATE accounts SET balance = balance -', () => ({ rows: [{ balance: '999.00' }] })],
     ['INSERT INTO usdc_withdrawals', () => ({ rows: [{ id: 'w1' }] })],
+    ['SET tx_hash = $2', () => ({ rows: [] })], // persist broadcast hash on the row
     ['SET balance = balance +', () => ({ rows: [] })], // refund
     [`SET status = 'failed'`, () => ({ rows: [] })],
+    [`SET status = 'reconciliation_required'`, () => ({ rows: [] })], // ambiguous hold
+    ['INSERT INTO audit_logs', () => ({ rows: [] })],
+    ['SELECT id FROM users WHERE role', () => ({ rows: [{ id: 'admin-1' }] })], // page admins (one in sandbox script)
 ]);
 function resetDb() { scriptDb(defaultDbPairs()); CDB.findAccountByUserId.mockResolvedValue({ id: ACCOUNT_ID, currency: 'USD' }); }
 
@@ -313,7 +317,7 @@ describe('deposit scan + credit loop /api/usdc/check (fully simulated chain)', (
 });
 
 describe('chain withdrawal /api/usdc/withdraw (fully simulated broadcast)', () => {
-    test('happy path: atomic debit -> record -> broadcast; ledger entry carries the external txHash', async () => {
+    test('happy path: atomic debit -> record -> tx_hash persisted -> broadcast; ledger entry carries the external txHash', async () => {
         const res = await call(withdrawalsRouter, 'post', '/api/usdc/withdraw', mkReq.post({ network: 'base', token: 'usdc', to: DEST_ADDRESS, amount: 1 }));
         expect(res.body.success).toBe(true);
         expect(res.body.txHash).toBe(WTX);
@@ -322,13 +326,20 @@ describe('chain withdrawal /api/usdc/withdraw (fully simulated broadcast)', () =
         expect(String(debit[0])).toContain('WHERE id = $1 AND balance >= $2'); // atomic guard
         expect(debit[1]).toEqual([ACCOUNT_ID, 1]);
         expect(CDB.createTransaction.mock.calls[0][0]).toMatchObject({ type: 'withdrawal', amount: -1, external_reference: WTX });
+        const hashRow = CDB.db.query.mock.calls.find((c) => String(c[0]).includes('SET tx_hash = $2'));
+        expect(hashRow[1]).toEqual(['w1', WTX]); // reconciler can always find the tx
         const calls = CDB.db.query.mock.calls.map((c) => String(c[0]));
         expect(calls.findIndex((s) => s.includes('balance = balance -'))).toBeLessThan(calls.findIndex((s) => s.includes('INSERT INTO usdc_withdrawals')));
         expect(chain.sendTokens).toHaveBeenCalledWith('base', 'usdc', HOT_KEY, HOT_ADDR, DEST_ADDRESS, 1000000n); // exactly 1.00 USDC in 6dp units
+        const audited = CDB.db.query.mock.calls.filter((c) => String(c[0]).includes('INSERT INTO audit_logs'));
+        expect(audited).toHaveLength(1); // broadcast audited with the txHash
     });
 
-    test('broadcast failure: auto-refund + row marked failed + 502, refund AFTER the debit', async () => {
-        chain.sendTokens.mockRejectedValue(new Error('nonce too low'));
+    test('provable node rejection (typed safe error): auto-refund + row failed + 502 BROADCAST_FAILED', async () => {
+        // 'nonce too low' etc. are NOT in the safe list (the nonce may have
+        // been consumed by an earlier broadcast of the same row) — use a
+        // provable rejection for the refund path.
+        chain.sendTokens.mockRejectedValue(Object.assign(new Error('intrinsic gas too low'), { stage: 'broadcast', safe: true }));
         const res = await call(withdrawalsRouter, 'post', '/api/usdc/withdraw', mkReq.post({ network: 'base', token: 'usdc', to: DEST_ADDRESS, amount: 1 }));
         expect(res.code).toBe(502);
         expect(res.body.code).toBe('BROADCAST_FAILED');
@@ -341,6 +352,23 @@ describe('chain withdrawal /api/usdc/withdraw (fully simulated broadcast)', () =
         const order = CDB.db.query.mock.calls.map((c) => String(c[0]));
         expect(order.findIndex((s) => s.includes('balance = balance -'))).toBeLessThan(order.findIndex((s) => s.includes('SET balance = balance +')));
         expect(CDB.createTransaction).not.toHaveBeenCalled(); // no phantom ledger entry
+    });
+
+    test('ambiguous broadcast (RPC died mid-send): NO refund, row HELD in reconciliation_required, admin paged', async () => {
+        // Plain error: no stage/safe marker — the outcome is unknowable, so
+        // auto-refunding could double-payout if the tx actually landed.
+        chain.sendTokens.mockRejectedValue(new Error('socket hang up'));
+        const res = await call(withdrawalsRouter, 'post', '/api/usdc/withdraw', mkReq.post({ network: 'base', token: 'usdc', to: DEST_ADDRESS, amount: 1 }));
+        expect(res.code).toBe(502);
+        expect(res.body.code).toBe('BROADCAST_RECONCILIATION');
+        expect(res.body.withdrawalId).toBe('w1');
+        const refunds = CDB.db.query.mock.calls.filter((c) => String(c[0]).includes('SET balance = balance +'));
+        expect(refunds).toHaveLength(0); // never auto-refund an ambiguous broadcast
+        expect(CDB.createTransaction).not.toHaveBeenCalled();
+        const held = CDB.db.query.mock.calls.find((c) => String(c[0]).includes(`SET status = 'reconciliation_required'`));
+        expect(held[1]).toEqual(['w1']);
+        expect(CDB.createNotification).toHaveBeenCalled(); // operator paged (admin select returned zero rows in sandbox script, but prod path attempts)
+        expect(String(res.body.message)).toContain('HELD');
     });
 
     test('insufficient VaultBank balance: guarded UPDATE returns no row -> 400 INSUFFICIENT_FUNDS, nothing broadcast', async () => {

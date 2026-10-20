@@ -71,14 +71,15 @@ function scriptFetch(map) {
     });
 }
 
-// No ledger mutation happened — table setup (CREATE TABLE) is the only
-// permitted db traffic for validation-failure flows.
+// No ledger mutation happened — table setup (CREATE TABLE) plus the
+// additive widening (DO $$) of the sandbox withdrawal-status contract are the
+// only permitted db traffic for validation-failure flows.
 function onlyTableSetup() {
     const calls = DBMOCK.db.query.mock.calls.map((c) => String(c[0]));
     for (const s of calls) {
         expect(s.includes('INSERT INTO')).toBe(false);
         expect(s.includes('UPDATE')).toBe(false);
-        expect(s.includes('SELECT ') || s.includes('CREATE TABLE')).toBe(true);
+        expect(s.includes('SELECT ') || s.includes('CREATE TABLE') || s.includes('DO $$')).toBe(true);
     }
 }
 
@@ -129,7 +130,10 @@ const defaultDbPairs = () => ([
     ['INSERT INTO sandbox_transactions', () => undefined],
     ['FROM usdc_test_withdrawals', () => ({ rows: [{ total: '0' }] })],
     ['INSERT INTO usdc_test_withdrawals', () => ({ rows: [{ id: 'w1' }] })],
+    ['SET tx_hash = $2', () => undefined], // hash persisted on the sandbox row
     [`SET status = 'failed'`, () => undefined],
+    [`SET status = 'reconciliation_required'`, () => undefined],
+    ['DO $$', () => undefined], // additive status-contract widening in testnet.ensureTables
 ]);
 
 const okRuntime = () => ({

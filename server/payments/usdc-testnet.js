@@ -95,9 +95,21 @@ async function ensureTables(db) {
             to_address TEXT NOT NULL,
             amount NUMERIC(15,2) NOT NULL,
             tx_hash TEXT,
-            status TEXT NOT NULL DEFAULT 'broadcast' CHECK (status IN ('broadcast','failed')),
+            status TEXT NOT NULL DEFAULT 'broadcast' CHECK (status IN ('broadcast','succeeded','failed','refunded','reconciliation_required')),
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
+    `);
+    // Same additive widening as the production table: sandbox DBs created
+    // before the reconciliation states existed must accept the wide statuses.
+    await db.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'usdc_test_withdrawals_status_wide') THEN
+                ALTER TABLE usdc_test_withdrawals DROP CONSTRAINT IF EXISTS usdc_test_withdrawals_status_check;
+                ALTER TABLE usdc_test_withdrawals ADD CONSTRAINT usdc_test_withdrawals_status_wide
+                    CHECK (status IN ('broadcast','succeeded','failed','refunded','reconciliation_required'));
+            END IF;
+        END $$;
     `);
     sandboxReady = true;
 }
@@ -147,7 +159,8 @@ async function recordTransaction(db, t) {
 async function dailyTotal(db, userId) {
     return db.query(
         `SELECT COALESCE(SUM(amount), 0) AS total FROM usdc_test_withdrawals
-         WHERE user_id = $1 AND status = 'broadcast' AND created_at >= CURRENT_DATE`,
+         WHERE user_id = $1 AND status IN ('broadcast','reconciliation_required')
+           AND created_at >= CURRENT_DATE`,
         [userId]
     );
 }

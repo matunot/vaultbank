@@ -6,7 +6,9 @@
  *
  * Env: USDC_HOT_WALLET_KEY (0x…64 hex). Without it: 503 + how-to.
  * Safety: atomic balance debit, daily per-user limit, idempotent records,
- * auto-refund on broadcast failure, hot-wallet low-balance alerts to admins.
+ * typed broadcast-failure taxonomy (provable pre-chain rejections auto-refund
+ * while ambiguous broadcasts are HELD in reconciliation_required — never
+ * auto-refunded), hot-wallet low-balance alerts to admins.
  */
 
 const express = require('express');
@@ -49,7 +51,33 @@ async function ensureTables() {
             created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
     `);
+    // Additive status widening (never destructive to data): 'succeeded'
+    // (chain-confirmed via reconciler), 'refunded' (operator teardown after an
+    // ambiguous broadcast), and 'reconciliation_required' (the RPC died
+    // mid-broadcast — outcome unknowable, funds held for operator review).
+    await db.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'usdc_withdrawals_status_wide') THEN
+                ALTER TABLE usdc_withdrawals DROP CONSTRAINT IF EXISTS usdc_withdrawals_status_check;
+                ALTER TABLE usdc_withdrawals ADD CONSTRAINT usdc_withdrawals_status_wide
+                    CHECK (status IN ('broadcast','succeeded','failed','refunded','reconciliation_required'));
+            END IF;
+        END $$;
+    `);
     tablesReady = true;
+}
+
+// Audit trail for money-path decisions (never fatal; skipped in test mode —
+// the sandbox namespace never touches production tables).
+async function auditWithdrawal(action, req, userId, withdrawalId, details) {
+    if (testnet.MODE) return;
+    try {
+        await db.query(
+            'INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details, ip_address, user_agent) VALUES ($1, $2, $3, $4, $5, $6, $7)',
+            [userId || null, action, 'usdc_withdrawal', withdrawalId, details || '{}', req.ip || null, (req.headers && req.headers['user-agent']) || null]
+        );
+    } catch (e) { console.error('audit log error:', e.message); }
 }
 
 // Route copy for the crypto 503s: precise hint when the configured value is
@@ -121,7 +149,8 @@ router.post('/api/usdc/withdraw', authenticateToken, async (req, res) => {
         const wdTable = testnet.MODE ? testnet.T.withdrawals : 'usdc_withdrawals';
         const { rows: sent } = await db.query(
             `SELECT COALESCE(SUM(amount), 0) AS total FROM ${wdTable}
-             WHERE user_id = $1 AND status = 'broadcast' AND created_at >= CURRENT_DATE`,
+             WHERE user_id = $1 AND status IN ('broadcast','reconciliation_required')
+              AND created_at >= CURRENT_DATE`,
             [req.user.id]
         );
         if (parseFloat(sent[0].total) + amount > DAILY_LIMIT) {
@@ -158,6 +187,10 @@ router.post('/api/usdc/withdraw', authenticateToken, async (req, res) => {
             const units = BigInt(Math.round(amount * 1e6)); // 6 decimals
             const { txHash } = await chain.sendTokens(network, token, wallet.key, wallet.address, toAddress, units);
 
+            // Persist the hash on the row first: support and the reconciler
+            // need it even if the ledger write below dies mid-flight.
+            await db.query(`UPDATE ${wdTable} SET tx_hash = $2 WHERE id = $1`, [withdrawalId, txHash]);
+
             const ledgerEntry = {
                 account_id: account.id,
                 user_id: req.user.id,
@@ -174,16 +207,26 @@ router.post('/api/usdc/withdraw', authenticateToken, async (req, res) => {
             };
             // TEST MODE records in the sandbox namespace — production ledger
             // untouched; sandbox notifications are skipped on purpose.
-            if (testnet.MODE) {
-                await testnet.recordTransaction(db, ledgerEntry);
-            } else {
-                await createTransaction(ledgerEntry);
-                await createNotification(req.user.id, {
-                    type: 'transaction',
-                    title: 'Chain withdrawal sent',
-                    message: '$' + amount.toFixed(2) + ' ' + token.toUpperCase() + ' sent on ' + chain.NETWORKS[network].label + '. Track it: ' + chain.NETWORKS[network].explorer + '/tx/' + txHash,
-                });
+            // Non-fatal by design: the broadcast is already live on-chain, so
+            // a failed ledger/notification write must never turn into a 5xx —
+            // scripts/reconcile-withdrawals.js repairs the gap.
+            try {
+                if (testnet.MODE) {
+                    await testnet.recordTransaction(db, ledgerEntry);
+                } else {
+                    await createTransaction(ledgerEntry);
+                    await createNotification(req.user.id, {
+                        type: 'transaction',
+                        title: 'Chain withdrawal sent',
+                        message: '$' + amount.toFixed(2) + ' ' + token.toUpperCase() + ' sent on ' + chain.NETWORKS[network].label + '. Track it: ' + chain.NETWORKS[network].explorer + '/tx/' + txHash,
+                    });
+                }
+            } catch (ledgerErr) {
+                console.error('Chain withdrawal ledger write failed (broadcast is live):', ledgerErr.message);
+                await auditWithdrawal('usdc_withdrawal_ledger_gap', req, req.user.id, withdrawalId, JSON.stringify({ txHash, error: ledgerErr.message }));
             }
+
+            await auditWithdrawal('usdc_withdrawal_broadcast', req, req.user.id, withdrawalId, JSON.stringify({ txHash, amount, network, token }));
 
             res.json({
                 success: true,
@@ -195,16 +238,53 @@ router.post('/api/usdc/withdraw', authenticateToken, async (req, res) => {
                 message: '$' + amount.toFixed(2) + ' ' + token.toUpperCase() + ' sent to ' + toAddress.slice(0, 10) + '…' + toAddress.slice(-6) + ' on ' + chain.NETWORKS[network].label + '.',
             });
         } catch (broadcastError) {
-            // Auto-refund — no money may ever be stuck. TEST MODE refunds the
-            // sandbox account and marks the sandbox row failed.
-            if (testnet.MODE) {
-                await testnet.credit(db, account.id, amount);
-            } else {
-                await db.query('UPDATE accounts SET balance = balance + $2, available_balance = available_balance + $2 WHERE id = $1', [account.id, amount]);
+            // Typed taxonomy from chain.sendTokens: only a PROVABLE rejection
+            // (never submitted or provably rejected by the node) may auto-refund.
+            const safe = !!broadcastError && (
+                broadcastError.stage === 'pre_broadcast' || broadcastError.safe === true
+            );
+
+            if (safe) {
+                // Auto-refund — the transfer provably never left. TEST MODE
+                // refunds the sandbox account and marks the sandbox row failed.
+                if (testnet.MODE) {
+                    await testnet.credit(db, account.id, amount);
+                    await db.query(`UPDATE ${testnet.T.withdrawals} SET status = 'failed' WHERE id = $1`, [withdrawalId]);
+                } else {
+                    await db.query('UPDATE accounts SET balance = balance + $2, available_balance = available_balance + $2 WHERE id = $1', [account.id, amount]);
+                    await db.query(`UPDATE ${wdTable} SET status = 'failed' WHERE id = $1`, [withdrawalId]);
+                    await auditWithdrawal('usdc_withdrawal_refund', req, req.user.id, withdrawalId, JSON.stringify({ error: broadcastError.message, amount, network, token }));
+                }
+                console.error('Chain broadcast failed (safe):', broadcastError.message);
+                return res.status(502).json({ success: false, code: 'BROADCAST_FAILED', message: 'Chain broadcast failed — balance refunded. ' + broadcastError.message });
             }
-            await db.query(`UPDATE ${testnet.MODE ? testnet.T.withdrawals : 'usdc_withdrawals'} SET status = 'failed' WHERE id = $1`, [withdrawalId]);
-            console.error('Chain broadcast failed:', broadcastError.message);
-            return res.status(502).json({ success: false, code: 'BROADCAST_FAILED', message: 'Chain broadcast failed — balance refunded. ' + broadcastError.message });
+
+            // AMBIGUOUS: the RPC died mid-broadcast, answered garbage, or threw
+            // an unknown error — the signed raw tx may already be on-chain.
+            // Auto-refunding here risks a double payout, so the debit is HELD
+            // in reconciliation_required for operator resolution.
+            console.error('Chain broadcast AMBIGUOUS:', broadcastError.message);
+            await db.query(`UPDATE ${wdTable} SET status = 'reconciliation_required' WHERE id = $1`, [withdrawalId]);
+            if (!testnet.MODE) {
+                await auditWithdrawal('usdc_withdrawal_reconciliation', req, req.user.id, withdrawalId, JSON.stringify({ error: broadcastError.message, amount, network, token }));
+                try {
+                    // Page the operators (production only — sandbox money is not page-worthy).
+                    const { rows: admins } = await db.query("SELECT id FROM users WHERE role IN ('super_admin', 'admin')");
+                    for (const a of admins) {
+                        await createNotification(a.id, {
+                            type: 'warning',
+                            title: 'USDC withdrawal needs reconciliation',
+                            message: 'Withdrawal ' + withdrawalId + ' ($' + amount.toFixed(2) + ' ' + token.toUpperCase() + ' on ' + chain.NETWORKS[network].label + ') ended ambiguous after broadcast: ' + broadcastError.message + ' Funds are held in reconciliation_required — resolve via scripts/reconcile-withdrawals.js.',
+                        });
+                    }
+                } catch (e) { /* the row update already secured the money state */ }
+            }
+            return res.status(502).json({
+                success: false,
+                code: 'BROADCAST_RECONCILIATION',
+                withdrawalId,
+                message: 'Withdrawal broadcast outcome is unknown — funds are HELD (not refunded) while the transaction is reconciled. Reference: ' + withdrawalId,
+            });
         }
     } catch (error) {
         console.error('usdc withdraw error:', error.message);

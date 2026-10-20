@@ -299,24 +299,57 @@ function buildTransferData(tokenAddress, toAddress, amountUnits) {
     return '0x' + selector + toPart + amountHex;
 }
 
+// Broadcast failures are classified so the withdrawal route can always tell
+// "provably never submitted" (safe → refund OK) apart from "may have reached
+// the chain" (ambiguous → reconciliation, never auto-refund).
+class ChainSendError extends Error {
+    constructor(message, { stage, safe }) {
+        super(message);
+        this.stage = stage; // 'pre_broadcast' | 'broadcast'
+        this.safe = !!safe;
+    }
+}
+
+// Node clients reject an unsent transaction with these well-known phrases —
+// anything else (unknown RPC error, HTTP failure, duplicate broadcast) may
+// have been accepted, so it defaults to AMBIGUOUS (safe=false).
+const SAFE_REJECT_RE =
+    /insufficient funds|intrinsic gas too low|nonce too high|too high a nonce|execution reverted|gas price below|exceeds block gas limit|overlaps with an existing transaction/i;
+
 // Full send: sign + broadcast an ERC-20 transfer from the hot wallet.
-// Returns { txHash }
+// Returns { txHash }. Throws ChainSendError with { stage, safe }:
+//   pre_broadcast (always safe) — nonce/gas/sign failures, nothing submitted.
+//   broadcast:
+//     safe=true  — node rejected the raw tx outright.
+//     safe=false — an identical tx may already be in flight ("nonce too low",
+//                  "already known", "replacement underpriced") or the RPC
+//                  failed before answering; the outcome is unknowable here.
 async function sendTokens(network, token, privKey, walletAddress, toAddress, amountUnits) {
     const tokenCfg = NETWORKS[network].tokens[token];
-    if (!tokenCfg) throw new Error('Unknown token: ' + token);
-    const nonce = await getNonce(network, walletAddress);
-    const gasPriceWei = await getGasPrice(network);
-    const data = buildTransferData(tokenCfg.address, toAddress, amountUnits);
-    const raw = signTransaction(network, privKey, {
-        nonce,
-        gasPriceWei,
-        gasLimit: 120000,
-        to: tokenCfg.address,
-        valueWei: BigInt(0),
-        data,
-    });
-    const txHash = await rpc(network, 'eth_sendRawTransaction', [raw]);
-    return { txHash };
+    if (!tokenCfg) throw new ChainSendError('Unknown token: ' + token, { stage: 'pre_broadcast', safe: true });
+    let raw;
+    try {
+        const nonce = await getNonce(network, walletAddress);
+        const gasPriceWei = await getGasPrice(network);
+        const data = buildTransferData(tokenCfg.address, toAddress, amountUnits);
+        raw = signTransaction(network, privKey, {
+            nonce,
+            gasPriceWei,
+            gasLimit: 120000,
+            to: tokenCfg.address,
+            valueWei: BigInt(0),
+            data,
+        });
+    } catch (e) {
+        throw new ChainSendError('Pre-broadcast failure: ' + e.message, { stage: 'pre_broadcast', safe: true });
+    }
+    try {
+        const txHash = await rpc(network, 'eth_sendRawTransaction', [raw]);
+        return { txHash };
+    } catch (e) {
+        const safe = SAFE_REJECT_RE.test(String(e.message || ''));
+        throw new ChainSendError(e.message, { stage: 'broadcast', safe });
+    }
 }
 
 module.exports = {
