@@ -165,6 +165,9 @@ app.use(stripePaymentRoutes);
 app.use('/', require('./routes/paypal-deposits'));
 app.use('/', require('./routes/usdc-deposits'));
 
+// ─── Provider Payout Webhooks (authenticated server-to-server) ─────────────
+app.use('/', require('./routes/provider-webhooks'));
+
 // ─── Root Route ──────────────────────────────────────────────────────────────
 // ─── Frontend Static Serving (single-origin) ────────────────────────────────
 // Serve the built React SPA so the app runs on one origin (frontend + API).
