@@ -80,12 +80,22 @@ let fetchCalls;  // captured { url, method }
 function scriptFetch(map) {
     fetchScript = map;
     fetchCalls = [];
+    let getLogsDelivered = false; // chunked catch-up windows re-call eth_getLogs; chunks after the first see no NEW logs
     global.fetch = jest.fn(async (url, opts) => {
         const method = JSON.parse(opts.body).method;
         fetchCalls.push({ url, method });
         const queue = fetchScript[method];
-        if (!queue || queue.length === 0) throw new Error('UNEXPECTED RPC CALL: ' + method);
+        if (!queue || queue.length === 0) {
+            if (method === 'eth_getLogs' && getLogsDelivered) {
+                return { ok: true, status: 200, json: async () => ({ jsonrpc: '2.0', id: 1, result: [] }) };
+            }
+            throw new Error('UNEXPECTED RPC CALL: ' + method);
+        }
+        if (method === 'eth_getLogs' && queue.length === 1 && getLogsDelivered) {
+            return { ok: true, status: 200, json: async () => ({ jsonrpc: '2.0', id: 1, result: [] }) };
+        }
         const result = queue.shift();
+        if (method === 'eth_getLogs') getLogsDelivered = true;
         return { ok: true, status: 200, json: async () => ({ jsonrpc: '2.0', id: 1, result }) };
     });
 }
@@ -258,9 +268,10 @@ describe('deposit scan + credit loop /api/usdc/check (fully simulated chain)', (
             { to: OTHER_ADDRESS, amount: 99, txHash: TX1, blockNumber: 5320, logIndex: 9 }, // route's byAddr map must catch this one
             { to: MY_ADDRESS, amount: 2.5, txHash: TX1, blockNumber: 5320, logIndex: 3 },
         ]);
-        // single getLogs per address (RPC-load contract), pointed at Base USDC:
+        // getLogs per address walks the window in bounded 120-block chunks
+        // (public-RPC payload caps); every chunk targets the Base USDC contract:
         const l = fetchCalls.filter((f) => f.method === 'eth_getLogs');
-        expect(l).toHaveLength(1);
+        expect(l).toHaveLength(Math.ceil((safeHead - 90 + 1) / 120));
         expect(parseTransferLog({ topics: [TOPIC, '0', '0'], data: '0x0' }, 6)).toBeNull(); // zero-amount rejected
     });
 
@@ -276,7 +287,8 @@ describe('deposit scan + credit loop /api/usdc/check (fully simulated chain)', (
         expect(res.code).toBe(200);
         expect(res.body.credited).toHaveLength(1);
         const l = fetchCalls.filter((f) => f.method === 'eth_getLogs');
-        expect(l).toHaveLength(1); // bounded backfill ran exactly once per token
+        // bounded backfill (head-2000 .. head-CONFIRMATIONS) walked in 120-block chunks
+        expect(l).toHaveLength(Math.ceil((head - CONFIRMATIONS - (head - 2000) + 1) / 120));
     });
 
     test('unknown network in check body -> 400 before any chain call', async () => {

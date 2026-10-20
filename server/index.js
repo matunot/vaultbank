@@ -94,6 +94,7 @@ app.get('/health', (req, res) => {
         version: '1.0.0',
         environment: process.env.NODE_ENV || 'development',
         memory: typeof process.memoryUsage === 'function' ? process.memoryUsage() : {},
+        usdcTestnet: require('./payments/usdc-testnet').MODE || undefined,
         message: 'ðŸ¦ VaultBank API is running!'
     });
 });

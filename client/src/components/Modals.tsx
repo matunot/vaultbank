@@ -290,6 +290,7 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
 export function DepositModal({ isOpen, onClose }: ModalProps) {
   const [mode, setMode] = useState<'card' | 'instant' | 'paypal' | 'usdc'>('card');
   const [usdc, setUsdc] = useState<{ address: string; network: string; qr: string | null } | null>(null);
+  const [usdcTestnet, setUsdcTestnet] = useState(false);
   const [usdcChecking, setUsdcChecking] = useState(false);
   const [cryptoToken, setCryptoToken] = useState<'USDC' | 'USDT'>('USDC');
   const [amount, setAmount] = useState('');
@@ -308,9 +309,12 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
   // Fetch your personal USDC address when the USDC rail opens (no signup needed).
   useEffect(() => {
     if (!isOpen || mode !== 'usdc' || usdc) return;
-    api.usdcAddress('base')
+    api.usdcAddress()
       .then((r) => {
-        if (r.success && r.address) setUsdc({ address: r.address, network: r.network || 'base', qr: r.qr || null });
+        if (r.success && r.address) {
+          setUsdc({ address: r.address, network: r.network || 'base', qr: r.qr || null });
+          setUsdcTestnet(!!(r as Record<string, unknown>).testnet);
+        }
         else throw new Error(r.message || 'USDC deposits are not enabled yet.');
       })
       .catch((err: any) => { setErrorMsg(err?.message || 'USDC deposits are not enabled yet.'); setStatus('error'); });
@@ -320,7 +324,7 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
     setUsdcChecking(true);
     setErrorMsg('');
     try {
-      const r = await api.usdcCheck('base');
+      const r = await api.usdcCheck();
       if (!r.success) throw new Error(r.message || 'Scan failed.');
       const n = (r.credited || []).length;
       if (n > 0) {
@@ -454,9 +458,14 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
               ))}
             </div>
             <p className="text-[11px] text-white/50 leading-relaxed">
-              Send <span className="text-white font-bold">{cryptoToken} on Base</span> to your personal address below.
+              Send <span className="text-white font-bold">{cryptoToken} on {usdcTestnet ? 'Base Sepolia (TESTNET)' : 'Base'}</span> to your personal address below.
               No account or verification needed — funds credit after 12 network confirmations.
             </p>
+            {usdcTestnet && (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-2.5 text-[11px] text-amber-300 font-bold text-center">
+                🧪 TESTNET MODE — sandbox balance, no real-world value
+              </div>
+            )}
             {usdc ? (
               <>
                 {usdc.qr && <img src={usdc.qr} alt="USDC deposit QR" className="w-40 h-40 mx-auto rounded-xl bg-white p-2" />}

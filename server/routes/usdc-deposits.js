@@ -31,8 +31,9 @@ const {
     createNotification,
     db,
 } = require('../config/database');
-const { NETWORKS, TOKEN_DECIMALS, deriveDepositAddress, deriveDepositAddressFromRoot, scanDeposits } = require('../payments/usdc');
+const { NETWORKS, TOKEN_DECIMALS, deriveDepositAddress, deriveDepositAddressFromRoot, scanDeposits, rpc: chainRpc } = require('../payments/usdc');
 const hotwallet = require('../payments/usdc-hotwallet');
+const testnet = require('../payments/usdc-testnet');
 
 const SUPPORTED_TOKENS = Object.keys(TOKEN_DECIMALS); // ['usdc', 'usdt']
 
@@ -40,6 +41,12 @@ let tablesReady = false;
 async function ensureTables() {
     if (tablesReady) return;
     await db.ensureConnection();
+    // Test mode keeps its own namespace — production tables are never touched.
+    if (testnet.MODE) {
+        await testnet.ensureTables(db);
+        tablesReady = true;
+        return;
+    }
     await db.query(`
         CREATE TABLE IF NOT EXISTS usdc_deposits (
             id SERIAL PRIMARY KEY,
@@ -82,10 +89,14 @@ const getXpub = () => {
 };
 
 // Crypto deposits are active if an xpub OR the hot wallet key is configured.
-// The hot wallet key derives per-user deposit addresses on the fly — private
-// keys are never stored. One env var (USDC_HOT_WALLET_KEY) enables BOTH
-// deposits and chain withdrawals.
-const depositsConfigured = () => !!(getXpub() || hotwallet.getHotWallet());
+// The hot wallet key derives per-user deposit addresses on the fly — the key
+// material is never stored. One env var enables BOTH deposits and chain
+// withdrawals. TEST MODE: the xpub path is intentionally disabled (deriving
+// from the mainnet xpub would collide with mainnet addresses) — the dedicated
+// testnet signer is required.
+const depositsConfigured = () => testnet.MODE
+    ? !!hotwallet.getHotWallet()
+    : !!(getXpub() || hotwallet.getHotWallet());
 
 // ============================================================================
 // GET /api/usdc/deposit-address — your personal deposit address (per network)
@@ -93,7 +104,7 @@ const depositsConfigured = () => !!(getXpub() || hotwallet.getHotWallet());
 // ============================================================================
 router.get('/api/usdc/deposit-address', authenticateToken, async (req, res) => {
     try {
-        const network = String(req.query.network || 'base').toLowerCase();
+        const network = String(req.query.network || hotwallet.defaultNetwork()).toLowerCase();
         const token = String(req.query.token || 'usdc').toLowerCase();
         if (!NETWORKS[network]) {
             return res.status(400).json({ success: false, message: 'Unknown network. Use base, polygon or ethereum.' });
@@ -101,10 +112,9 @@ router.get('/api/usdc/deposit-address', authenticateToken, async (req, res) => {
         if (!NETWORKS[network][token]) {
             return res.status(400).json({ success: false, message: `${token.toUpperCase()} is not supported on ${NETWORKS[network].label}.` });
         }
-        const xpub = getXpub();
+        const xpub = testnet.MODE ? null : getXpub();
         if (!depositsConfigured()) {
-            const hint = hotwallet.configHint()
-                || 'Set USDC_HOT_WALLET_KEY (0x + 64 hex) in Render to enable deposits + withdrawals.';
+            const hint = hotwallet.configHint() || hotwallet.configHowTo();
             return res.status(503).json({
                 success: false,
                 code: 'USDC_NOT_CONFIGURED',
@@ -112,23 +122,35 @@ router.get('/api/usdc/deposit-address', authenticateToken, async (req, res) => {
                 fingerprint: hotwallet.configFingerprint(),
             });
         }
+        // TEST MODE fails closed before any ledger interaction: the RPC must
+        // really be Base Sepolia and the pinned contract must verify.
+        if (testnet.MODE) {
+            try {
+                await testnet.verifyRuntime(chainRpc);
+            } catch (e) {
+                return res.status(503).json({ success: false, code: 'USDC_TESTNET_UNSAFE', message: e.message });
+            }
+        }
         await ensureTables();
-        const account = await findAccountByUserId(req.user.id);
+        const depTable = testnet.MODE ? testnet.T.deposits : 'usdc_deposits';
+        const account = testnet.MODE
+            ? await testnet.getSandboxAccount(db, req.user.id)
+            : await findAccountByUserId(req.user.id);
         if (!account) {
             return res.status(404).json({ success: false, message: 'Account not found.' });
         }
         let row = (await db.query(
-            'SELECT address FROM usdc_deposits WHERE user_id = $1 AND network = $2 LIMIT 1',
+            `SELECT address FROM ${depTable} WHERE user_id = $1 AND network = $2 LIMIT 1`,
             [req.user.id, network]
         )).rows[0];
         if (!row) {
-            const n = await db.query('SELECT COUNT(*) AS n FROM usdc_deposits WHERE network = $1', [network]);
+            const n = await db.query(`SELECT COUNT(*) AS n FROM ${depTable} WHERE network = $1`, [network]);
             const index = parseInt(n.rows[0].n || '0', 10);
             const address = xpub
                 ? deriveDepositAddress(xpub, index)
                 : deriveDepositAddressFromRoot(hotwallet.getHotWallet().key, index);
             await db.query(
-                'INSERT INTO usdc_deposits (user_id, account_id, network, address, addr_index) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (address, network) DO NOTHING',
+                `INSERT INTO ${depTable} (user_id, account_id, network, address, addr_index) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (address, network) DO NOTHING`,
                 [req.user.id, account.id, network, address, index]
             );
             row = { address };
@@ -143,7 +165,9 @@ router.get('/api/usdc/deposit-address', authenticateToken, async (req, res) => {
             network,
             token: token.toUpperCase(),
             qr,
-            note: `Send only ${token.toUpperCase()} on ` + NETWORKS[network].label + ' to this address. Funds credit after 12 confirmations.',
+            testnet: testnet.MODE || undefined,
+            note: `Send only ${token.toUpperCase()} on ` + NETWORKS[network].label + ' to this address. Funds credit after 12 confirmations.'
+                + (testnet.MODE ? ' TESTNET: sandbox balance with no real-world value.' : ''),
         });
     } catch (error) {
         console.error('USDC address error:', error.message);
@@ -165,8 +189,7 @@ router.post('/api/usdc/check', authenticateToken, async (req, res) => {
             }
         }
         if (!depositsConfigured()) {
-            const hint = hotwallet.configHint()
-                || 'Set USDC_HOT_WALLET_KEY (0x + 64 hex) in Render to enable deposits + withdrawals.';
+            const hint = hotwallet.configHint() || hotwallet.configHowTo();
             return res.status(503).json({
                 success: false,
                 code: 'USDC_NOT_CONFIGURED',
@@ -174,16 +197,27 @@ router.post('/api/usdc/check', authenticateToken, async (req, res) => {
                 fingerprint: hotwallet.configFingerprint(),
             });
         }
+        // TEST MODE fails closed before any ledger interaction: the RPC must
+        // really be Base Sepolia and the pinned contract must verify.
+        if (testnet.MODE) {
+            try {
+                await testnet.verifyRuntime(chainRpc);
+            } catch (e) {
+                return res.status(503).json({ success: false, code: 'USDC_TESTNET_UNSAFE', message: e.message });
+            }
+        }
         await ensureTables();
+        const depTable = testnet.MODE ? testnet.T.deposits : 'usdc_deposits';
+        const stateTable = testnet.MODE ? testnet.T.scanState : 'usdc_scan_state';
         const credited = [];
         for (const network of networks) {
             const mine = await db.query(
-                'SELECT address, account_id FROM usdc_deposits WHERE user_id = $1 AND network = $2',
+                `SELECT address, account_id FROM ${depTable} WHERE user_id = $1 AND network = $2`,
                 [req.user.id, network]
             );
             if (mine.rows.length === 0) continue;
             const byAddr = new Map(mine.rows.map((r) => [r.address.toLowerCase(), r.account_id]));
-            const st = await db.query('SELECT last_block FROM usdc_scan_state WHERE network = $1', [network]);
+            const st = await db.query(`SELECT last_block FROM ${stateTable} WHERE network = $1`, [network]);
             let fromBlock = st.rows[0] ? parseInt(st.rows[0].last_block, 10) : 0;
             if (!fromBlock) {
                 // First scan: bound the backfill so public RPCs stay happy.
@@ -199,17 +233,23 @@ router.post('/api/usdc/check', authenticateToken, async (req, res) => {
                     const accountId = byAddr.get(t.to);
                     if (!accountId) continue;
                     const ref = `${t.txHash}:${t.logIndex}`;
-                    const dup = await db.query('SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1', [ref]);
+                    // TEST MODE: duplicate check + credit + record go to the
+                    // sandbox namespace — the production ledger is unreachable.
+                    const dup = testnet.MODE
+                        ? await testnet.findDuplicate(db, ref)
+                        : await db.query('SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1', [ref]);
                     if (dup.rows.length > 0) continue;
                     const label = token.toUpperCase();
                     // ponytail: atomic increment — concurrent checks can't double-credit
-                    const upd = await db.query(
-                        'UPDATE accounts SET balance = balance + $2, available_balance = available_balance + $2 WHERE id = $1 RETURNING balance',
-                        [accountId, t.amount]
-                    );
+                    const upd = testnet.MODE
+                        ? await testnet.credit(db, accountId, t.amount)
+                        : await db.query(
+                            'UPDATE accounts SET balance = balance + $2, available_balance = available_balance + $2 WHERE id = $1 RETURNING balance',
+                            [accountId, t.amount]
+                        );
                     if (upd.rows.length === 0) continue;
                     const newBalance = parseFloat(upd.rows[0].balance);
-                    await createTransaction({
+                    const ledgerEntry = {
                         account_id: accountId,
                         user_id: req.user.id,
                         type: 'deposit',
@@ -222,24 +262,29 @@ router.post('/api/usdc/check', authenticateToken, async (req, res) => {
                         category: 'income',
                         external_reference: ref,
                         metadata: { provider: token, network, tx_hash: t.txHash },
-                    });
-                    await createNotification(req.user.id, {
-                        type: 'transaction',
-                        title: `${label} Deposit Confirmed`,
-                        message: `$${t.amount.toFixed(2)} ${label} received on ${NETWORKS[network].label}. New balance: $${newBalance.toFixed(2)}`,
-                    });
+                    };
+                    if (testnet.MODE) {
+                        await testnet.recordTransaction(db, ledgerEntry);
+                    } else {
+                        await createTransaction(ledgerEntry);
+                        await createNotification(req.user.id, {
+                            type: 'transaction',
+                            title: `${label} Deposit Confirmed`,
+                            message: `$${t.amount.toFixed(2)} ${label} received on ${NETWORKS[network].label}. New balance: $${newBalance.toFixed(2)}`,
+                        });
+                    }
                     credited.push({ amount: t.amount, txHash: t.txHash, network, token: label });
                 }
             }
             if (latestBlock !== null) {
                 await db.query(
-                    `INSERT INTO usdc_scan_state (network, last_block) VALUES ($1, $2)
-                     ON CONFLICT (network) DO UPDATE SET last_block = GREATEST(usdc_scan_state.last_block, $2), updated_at = NOW()`,
+                    `INSERT INTO ${stateTable} (network, last_block) VALUES ($1, $2)
+                     ON CONFLICT (network) DO UPDATE SET last_block = GREATEST(${stateTable}.last_block, $2), updated_at = NOW()`,
                     [network, latestBlock]
                 );
             }
         }
-        return res.status(200).json({ success: true, credited });
+        return res.status(200).json({ success: true, testnet: testnet.MODE || undefined, credited });
     } catch (error) {
         console.error('USDC check error:', error.message);
         return res.status(500).json({ success: false, message: 'USDC scan failed. Try again in a minute.' });
