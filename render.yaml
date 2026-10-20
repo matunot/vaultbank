@@ -29,8 +29,11 @@ services:
         generateValue: true
       - key: ADMIN_EMAIL
         value: admin@vaultbank.com
+      # ADMIN_PASSWORD must be supplied in the Render dashboard (never a
+      # committed default; the server refuses well-known/default role
+      # passwords at boot).
       - key: ADMIN_PASSWORD
-        value: admin123
+        sync: false
       # ── Real Money Providers (set these in Render dashboard when you have keys) ──
       - key: PAYMENT_PROVIDER_STRIPE_KEY
         sync: false
@@ -53,4 +56,15 @@ services:
       # ── USDC hot wallet: 0x + 64 hex key material of the HOT wallet (NOT the
       # deposit xpub). One var enables crypto deposits AND chain withdrawals.
       - key: USDC_HOT_WALLET_KEY
+        sync: false
+      # Base Sepolia TEST MODE — leave unset in production. Setting
+      # USDC_TESTNET_MODE to exactly 'base-sepolia' switches the USDC rail to
+      # Base Sepolia (84532, Circle test USDC) with a SANDBOX ledger
+      # (sandbox_* / usdc_test_* tables); production tables and the
+      # production hot-wallet key are never loaded in test mode.
+      - key: USDC_TESTNET_MODE
+        sync: false
+      - key: USDC_BASE_SEPOLIA_HOT_WALLET_KEY
+        sync: false
+      - key: USDC_BASE_SEPOLIA_RPC_URL
         sync: false
