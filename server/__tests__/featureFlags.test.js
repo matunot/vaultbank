@@ -6,6 +6,11 @@
  * focus on the pure helpers: `hashToFraction()` and
  * `shouldUseLiveProvider()`.
  */
+// Hermetic by design (see header): the DB seam is faked so the suite can
+// never hang on Neon connection saturation (or touch live data) when the
+// whole battery runs in parallel workers. flags.js consumes only
+// query() which here always resolves with no rows -> cache-only behavior.
+jest.mock('../config/db', () => ({ query: jest.fn(async () => ({ rows: [] })) }));
 const flags = require('../flags/flags');
 
 describe('flags/flags', () => {
