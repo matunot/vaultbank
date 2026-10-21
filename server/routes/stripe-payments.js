@@ -19,6 +19,7 @@ const {
     createNotification,
     createAuditLog,
     db,
+    isDemo,
 } = require('../config/database');
 const creditEngine = require('./credit');
 
@@ -35,6 +36,29 @@ const getStripe = () => {
     }
     return stripe;
 };
+
+// Stripe event dedupe reuses the provider webhook-events table
+// (UNIQUE (provider, event_id)). Ensured locally so the Stripe webhook path
+// does not depend on the provider-payouts route having run first.
+let stripeDedupeReady = false;
+async function ensureStripeDedupe() {
+    if (stripeDedupeReady) return;
+    await db.query(`
+        CREATE TABLE IF NOT EXISTS provider_webhook_events (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            provider TEXT NOT NULL,
+            event_id TEXT NOT NULL,
+            payment_id TEXT,
+            status_seen TEXT,
+            applied BOOLEAN NOT NULL DEFAULT false,
+            note TEXT,
+            payload JSONB,
+            received_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE (provider, event_id)
+        )
+    `);
+    stripeDedupeReady = true;
+}
 
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -59,7 +83,15 @@ router.post('/api/stripe/deposit', authenticateToken, async (req, res) => {
 
         const stripeInstance = getStripe();
         if (!stripeInstance) {
-            // Demo mode - simulate deposit
+            if (!isDemo) {
+                // Fail closed in real mode: no card-acquiring connection — never simulate a credit.
+                return res.status(503).json({
+                    success: false,
+                    code: 'CARD_PAYMENTS_NOT_CONFIGURED',
+                    message: 'Card deposits are not available yet. Please use account deposit or USDC funding.'
+                });
+            }
+            // Demo platform only - simulate deposit
             const account = await findAccountByUserId(req.user.id);
             if (!account) {
                 return res.status(404).json({ success: false, message: 'No account found.' });
@@ -167,7 +199,7 @@ router.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), as
         }
         if (!event) {
             console.error('Webhook signature verification failed:', lastSigErr && lastSigErr.message);
-            return res.status(400).send('Webhook Error: ' + (lastSigErr && lastSigErr.message));
+            return res.status(400).json({ success: false, message: 'Webhook signature verification failed.' });
         }
 
         // Real-time card authorizations MUST be answered synchronously.
@@ -179,37 +211,69 @@ router.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), as
         switch (event.type) {
             case 'checkout.session.completed': {
                 const session = event.data.object;
-                const { userId, accountId } = session.metadata;
+                const { userId, accountId } = session.metadata || {};
 
                 if (userId && accountId) {
-                    const account = await db.query('SELECT * FROM accounts WHERE id = $1', [accountId]);
-                    if (account.rows.length > 0) {
-                        const acc = account.rows[0];
-                        const amount = session.amount_total / 100; // from cents
-                        const balanceBefore = parseFloat(acc.balance);
-                        const newBalance = balanceBefore + amount;
+                    const amount = session.amount_total / 100; // from cents
 
-                        await updateAccountBalance(accountId, newBalance);
-                        await createTransaction({
-                            account_id: accountId,
-                            user_id: userId,
-                            type: 'stripe_deposit',
-                            status: 'completed',
-                            amount,
-                            currency: (session.currency || 'usd').toUpperCase(),
-                            balance_before: balanceBefore,
-                            balance_after: newBalance,
-                            description: `Stripe deposit - $${amount.toFixed(2)}`,
-                            category: 'income',
-                            external_reference: session.payment_intent,
-                            metadata: { stripeSessionId: session.id }
-                        });
+                    if (amount > 0) {
+                        await ensureStripeDedupe();
 
-                        await createNotification(userId, {
-                            type: 'transaction',
-                            title: 'Deposit Confirmed',
-                            message: `$${amount.toFixed(2)} deposit confirmed via Stripe. New balance: $${newBalance.toFixed(2)}`
-                        });
+                        // Claim the event id exactly once (replay guard).
+                        const claim = await db.query(
+                            `INSERT INTO provider_webhook_events (provider, event_id, payment_id, status_seen, payload)
+                             VALUES ('stripe', $1, $2, 'processing', $3)
+                             ON CONFLICT (provider, event_id) DO NOTHING`,
+                            [event.id, session.id, JSON.stringify({ type: event.type, session: session.id, amount: session.amount_total })]
+                        );
+                        if (claim.rowCount === 0) {
+                            console.log('Stripe webhook replay ignored:', event.id);
+                            break;
+                        }
+
+                        // Ledger-side guard: if the session was already credited
+                        // under a different event id (crash/reprocess), do not credit twice.
+                        const seen = await db.query(
+                            'SELECT id FROM transactions WHERE account_id = $1 AND type = $2 AND external_reference = $3 LIMIT 1',
+                            [accountId, 'stripe_deposit', session.id]
+                        );
+                        if (seen.rows.length === 0) {
+                            // Atomic server-side credit; balance math comes from RETURNING, never JS.
+                            const upd = await db.query(
+                                'UPDATE accounts SET balance = balance + $2 WHERE id = $1 RETURNING (balance - $2) AS balance_before, balance AS balance_after',
+                                [accountId, amount]
+                            );
+                            if (upd.rows.length > 0) {
+                                const balanceBefore = parseFloat(upd.rows[0].balance_before);
+                                const balanceAfter = parseFloat(upd.rows[0].balance_after);
+
+                                await createTransaction({
+                                    account_id: accountId,
+                                    user_id: userId,
+                                    type: 'stripe_deposit',
+                                    status: 'completed',
+                                    amount,
+                                    currency: (session.currency || 'usd').toUpperCase(),
+                                    balance_before: balanceBefore,
+                                    balance_after: balanceAfter,
+                                    description: `Stripe deposit - $${amount.toFixed(2)}`,
+                                    category: 'income',
+                                    external_reference: session.id,
+                                    metadata: { stripeSessionId: session.id }
+                                });
+
+                                await createNotification(userId, {
+                                    type: 'transaction',
+                                    title: 'Deposit Confirmed',
+                                    message: `$${amount.toFixed(2)} deposit confirmed via card. New balance: $${balanceAfter.toFixed(2)}`
+                                });
+                            }
+                        }
+
+                        await db.query(
+                            "UPDATE provider_webhook_events SET status_seen = 'processed' WHERE provider = 'stripe' AND event_id = $1",
+                            [event.id]
+                        );
                     }
                 }
                 break;
@@ -304,6 +368,16 @@ router.post('/api/stripe/withdraw', authenticateToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Invalid amount.' });
         }
 
+        const stripeInstance = getStripe();
+        if (!stripeInstance && !isDemo) {
+            // Fail closed in real mode: no card-payout connection — never simulate movement.
+            return res.status(503).json({
+                success: false,
+                code: 'STRIPE_PAYOUTS_NOT_CONFIGURED',
+                message: 'Card-account payouts are not available yet. Please use the USDC withdrawal rail.'
+            });
+        }
+
         const account = await findAccountByUserId(req.user.id);
         if (!account) {
             return res.status(404).json({ success: false, message: 'No account found.' });
@@ -320,9 +394,8 @@ router.post('/api/stripe/withdraw', authenticateToken, async (req, res) => {
             });
         }
 
-        const stripeInstance = getStripe();
         if (!stripeInstance) {
-            // Demo mode
+            // Demo platform only (real-mode no-key case returned 503 above)
             const newBalance = balanceBefore - withdrawAmount;
             await updateAccountBalance(account.id, newBalance);
             await createTransaction({
