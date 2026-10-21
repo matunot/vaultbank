@@ -399,6 +399,18 @@ const { seedDemoData } = require('./config/database');
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 async function startServer() {
+    // Payment-safety boot diagnostic: logs which providers are enabled but
+    // unconfigured in production. Never throws — the per-call requireRealKey
+    // guard stays the authoritative fail-closed mechanism.
+    try {
+        const { validateProductionConfig } = require('./payments/safety');
+        const { ok, errors } = validateProductionConfig({ silent: true });
+        if (!ok) {
+            console.error('[payments-safety] production configuration gaps:');
+            errors.forEach((e) => console.error('  - ' + e));
+        }
+    } catch (_) { /* diagnostic only */ }
+
     // Wait for PostgreSQL database connection
     try {
         await ensureConnection();

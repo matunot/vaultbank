@@ -24,7 +24,7 @@
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authenticateToken } = require('../middleware/auth');
-const { demoStore } = require('../config/database');
+const { demoStore, isDemo, findAccountByUserId } = require('../config/database');
 const { logAudit } = require('../utils/audit');
 const paymentProviders = require('../payments');
 const stripeAdapter = require('../payments/stripe');
@@ -33,6 +33,7 @@ const paypalAdapter = require('../payments/paypal');
 const upiAdapter = require('../payments/upi');
 const walletAdapter = require('../payments/wallet');
 const ledger = require('../payments/ledger');
+const paypalDeposits = require('./paypal-deposits');
 
 const router = express.Router();
 
@@ -91,6 +92,26 @@ router.post('/api/payments/transfer', authenticateToken, async (req, res) => {
         }
         if (!method) {
             return res.status(400).json({ success: false, message: 'Payment method is required.' });
+        }
+
+        // Simulation rails: bank/upi have no live provider connection, and
+        // wallet/email internal money movement belongs to the atomic account
+        // transfer rail (/api/account/transfer) — never to a demo-store adapter.
+        if (!isDemo) {
+            if (method === 'bank' || method === 'upi') {
+                return res.status(503).json({
+                    success: false,
+                    code: method === 'bank' ? 'BANK_TRANSFERS_NOT_CONFIGURED' : 'UPI_NOT_CONFIGURED',
+                    message: 'This method has no live provider connection configured.',
+                });
+            }
+            if (method === 'wallet' || method === 'email') {
+                return res.status(503).json({
+                    success: false,
+                    code: 'INTERNAL_TRANSFER_USES_ACCOUNT_RAIL',
+                    message: 'Internal transfers run on /api/account/transfer and VaultBank Pay.',
+                });
+            }
         }
 
         if (idempotencyKey) {
@@ -224,6 +245,29 @@ router.post('/api/payments/webhook/:provider', async (req, res) => {
     try {
         const { provider } = req.params;
 
+        // PayPal: cryptographic signature verification BEFORE any database
+        // write (claim, status update or credit). Unverified or unconfigured
+        // keys fail closed with 400 — nothing is recorded.
+        if (provider === 'paypal' && !isDemo) {
+            let event = req.body;
+            if (typeof event === 'string') {
+                try { event = JSON.parse(event); } catch (_) { event = null; }
+            }
+            const h = (req && req.headers) || {};
+            const ok = event && await paypalAdapter.verifyWebhookSignature({
+                transmissionId: h['paypal-transmission-id'],
+                transmissionTime: h['paypal-transmission-time'],
+                certUrl: h['paypal-cert-url'],
+                authAlgo: h['paypal-auth-algo'],
+                transmissionSig: h['paypal-transmission-sig'],
+                event,
+            });
+            if (!ok) {
+                console.error('[PayPal] Webhook signature verification failed — ignored.');
+                return res.status(400).json({ success: false, message: 'Webhook signature verification failed.' });
+            }
+        }
+
         const result = await paymentProviders.verifyWebhook(provider, req);
         if (!result.verified) {
             console.error(`[${provider}] Webhook verification failed:`, result.error);
@@ -280,9 +324,17 @@ router.post('/api/payments/webhook/:provider', async (req, res) => {
     }
 });
 
-router.get('/api/payments/wallet/balance', authenticateToken, (req, res) => {
+router.get('/api/payments/wallet/balance', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.id;
+        if (!isDemo) {
+            // Real mode: never fabricate a balance — read the real account.
+            const account = await findAccountByUserId(userId);
+            if (!account) {
+                return res.status(404).json({ success: false, message: 'No account found.' });
+            }
+            return res.status(200).json({ success: true, balance: account.balance, currency: account.currency, accountId: account.id });
+        }
         const balance = walletAdapter.getBalance(userId);
         return res.status(200).json({ success: true, ...balance });
     } catch (error) {
@@ -296,6 +348,14 @@ router.get('/api/payments/wallet/balance', authenticateToken, (req, res) => {
 
 router.post('/api/payments/upi/initiate', authenticateToken, async (req, res) => {
     try {
+        if (!isDemo) {
+            // UPI deep links have no PSP settlement confirmation wired — fail closed.
+            return res.status(503).json({
+                success: false,
+                code: 'UPI_NOT_CONFIGURED',
+                message: 'UPI payments are not available yet — no UPI PSP settlement confirmation is wired.',
+            });
+        }
         const { amount, upiId, description, currency } = req.body;
         const userId = req.user.id;
         if (!amount || !upiId) {
@@ -326,11 +386,38 @@ router.post('/api/payments/paypal/initiate', authenticateToken, async (req, res)
         if (!amount) {
             return res.status(400).json({ success: false, message: 'Amount is required.' });
         }
+        const missing = paypalDeposits.missingPayPalKeys();
+        if (missing.length) {
+            return res.status(503).json({
+                success: false,
+                code: 'PAYPAL_NOT_CONFIGURED',
+                message: 'PayPal payments are not enabled yet. Missing env: ' + missing.join(', '),
+            });
+        }
+        const account = await findAccountByUserId(userId);
+        if (!account) {
+            return res.status(404).json({ success: false, message: 'No account found.' });
+        }
         const result = await paypalAdapter.createPaymentIntent({
             amount: parseFloat(amount),
             currency: currency || 'USD',
             description: description || 'PayPal Payment',
             userId,
+            // Credit marker: the verified webhook parses custom_id to credit this account.
+            customId: `${userId}:${account.id}`,
+        });
+        if (!result || result.mock || !result.approvalUrl) {
+            return res.status(503).json({ success: false, code: 'PAYPAL_NOT_CONFIGURED', message: 'PayPal payments are not enabled yet.' });
+        }
+        await ledger.upsertPayment({
+            provider: 'paypal',
+            provider_id: result.providerId,
+            user_id: userId,
+            amount: parseFloat(amount),
+            currency: (currency || 'USD').toUpperCase(),
+            status: result.status || 'CREATED',
+            method: 'paypal',
+            metadata: { kind: 'payment', account_id: account.id },
         });
         return res.status(200).json({
             success: true,
@@ -378,6 +465,14 @@ router.post('/api/payments/stripe/initiate', authenticateToken, async (req, res)
 
 router.post('/api/payments/bank/initiate', authenticateToken, async (req, res) => {
     try {
+        if (!isDemo) {
+            // The bank adapter is a wall-clock simulation; no bank connection exists.
+            return res.status(503).json({
+                success: false,
+                code: 'BANK_TRANSFERS_NOT_CONFIGURED',
+                message: 'Bank transfers are not available yet — no bank connection is configured.',
+            });
+        }
         const bankAdapter = require('../payments/bank');
         const { amount, currency, description, recipientAccount, recipientName, routingNumber, transferType } = req.body;
         const userId = req.user.id;
@@ -404,20 +499,31 @@ router.post('/api/payments/bank/initiate', authenticateToken, async (req, res) =
 router.post('/api/payments/paypal/success', authenticateToken, async (req, res) => {
     try {
         const { paymentId } = req.body;
-        if (paymentId) {
-            const captureResult = await paypalAdapter.capturePayment(paymentId);
-            return res.status(200).json({
-                success: true,
-                message: 'Payment completed successfully.',
-                data: { paymentId, status: captureResult.status, captureId: captureResult.captureId },
+        if (!paymentId) {
+            return res.status(400).json({ success: false, message: 'paymentId is required.' });
+        }
+        const missing = paypalDeposits.missingPayPalKeys();
+        if (missing.length) {
+            return res.status(503).json({
+                success: false,
+                code: 'PAYPAL_NOT_CONFIGURED',
+                message: 'PayPal payments are not enabled yet. Missing env: ' + missing.join(', '),
             });
+        }
+        // Same money path as /api/paypal/capture: capture + exactly-once credit.
+        const out = await paypalDeposits.captureAndCredit(req.user.id, String(paymentId));
+        if (out.error) {
+            return res.status(out.error).json({ success: false, message: out.message });
         }
         return res.status(200).json({
             success: true,
+            credited: out.credited,
+            duplicate: out.duplicate,
+            newBalance: out.newBalance,
             message: 'Payment completed successfully.',
-            data: { paymentId, status: 'completed' },
         });
     } catch (error) {
+        console.error('PayPal success error:', error);
         return res.status(500).json({ success: false, message: 'Error processing payment.' });
     }
 });

@@ -180,6 +180,51 @@ router.post('/api/paypal/deposit', authenticateToken, async (req, res) => {
 });
 
 // ============================================================================
+// Shared capture+credit core — ONE money path used by /api/paypal/capture and
+// the legacy /api/payments/paypal/success route (no divergent copies).
+// ============================================================================
+async function captureAndCredit(userId, orderId) {
+    const status = await paypalAdapter.getStatus(orderId);
+    let capture = null;
+    let orderAmount = null;
+    let orderCurrency = 'USD';
+    if (status.status === 'APPROVED') {
+        capture = await paypalAdapter.capturePayment(orderId);
+        if (!capture || (capture.status !== 'COMPLETED' && capture.status !== 'completed')) {
+            return { error: 400, message: 'PayPal capture was not completed.' };
+        }
+        orderAmount = parseFloat(capture.amount && capture.amount.value);
+        orderCurrency = (capture.amount && capture.amount.currency_code) || 'USD';
+    } else if (status.status === 'COMPLETED') {
+        const pu = status.details && status.details.purchaseUnits && status.details.purchaseUnits[0];
+        orderAmount = pu && pu.amount ? parseFloat(pu.amount.value) : NaN;
+        orderCurrency = (pu && pu.amount && pu.amount.currency_code) || 'USD';
+    } else {
+        return { error: 400, message: `Order is ${status.status}. Approve it in PayPal first.` };
+    }
+    if (!(orderAmount > 0)) {
+        return { error: 400, message: 'Could not determine the captured amount.' };
+    }
+    const account = await findAccountByUserId(userId);
+    if (!account) {
+        return { error: 404, message: 'Account not found.' };
+    }
+    const captureId = (capture && capture.captureId) || orderId;
+    const out = await creditPayPalDeposit({
+        userId,
+        accountId: account.id,
+        amount: orderAmount,
+        currency: orderCurrency,
+        captureId,
+        orderId,
+    });
+    if (!out.credited && out.reason !== 'duplicate') {
+        return { error: 400, message: 'Deposit could not be credited.' };
+    }
+    return { credited: out.credited, duplicate: out.reason === 'duplicate', newBalance: out.newBalance };
+}
+
+// ============================================================================
 // POST /api/paypal/capture — capture an approved order, credit the account
 // ============================================================================
 router.post('/api/paypal/capture', authenticateToken, async (req, res) => {
@@ -198,44 +243,11 @@ router.post('/api/paypal/capture', authenticateToken, async (req, res) => {
                 ...paypalConfigInfo(),
             });
         }
-        const status = await paypalAdapter.getStatus(orderId);
-        let capture = null;
-        let orderAmount = null;
-        let orderCurrency = 'USD';
-        if (status.status === 'APPROVED') {
-            capture = await paypalAdapter.capturePayment(orderId);
-            if (!capture || (capture.status !== 'COMPLETED' && capture.status !== 'completed')) {
-                return res.status(400).json({ success: false, message: 'PayPal capture was not completed.' });
-            }
-            orderAmount = parseFloat(capture.amount && capture.amount.value);
-            orderCurrency = (capture.amount && capture.amount.currency_code) || 'USD';
-        } else if (status.status === 'COMPLETED') {
-            const pu = status.details && status.details.purchaseUnits && status.details.purchaseUnits[0];
-            orderAmount = pu && pu.amount ? parseFloat(pu.amount.value) : NaN;
-            orderCurrency = (pu && pu.amount && pu.amount.currency_code) || 'USD';
-        } else {
-            return res.status(400).json({ success: false, message: `Order is ${status.status}. Approve it in PayPal first.` });
+        const out = await captureAndCredit(req.user.id, orderId);
+        if (out.error) {
+            return res.status(out.error).json({ success: false, message: out.message });
         }
-        if (!(orderAmount > 0)) {
-            return res.status(400).json({ success: false, message: 'Could not determine the captured amount.' });
-        }
-        const account = await findAccountByUserId(req.user.id);
-        if (!account) {
-            return res.status(404).json({ success: false, message: 'Account not found.' });
-        }
-        const captureId = (capture && capture.captureId) || orderId;
-        const out = await creditPayPalDeposit({
-            userId: req.user.id,
-            accountId: account.id,
-            amount: orderAmount,
-            currency: orderCurrency,
-            captureId,
-            orderId,
-        });
-        if (!out.credited && out.reason !== 'duplicate') {
-            return res.status(400).json({ success: false, message: 'Deposit could not be credited.' });
-        }
-        return res.status(200).json({ success: true, credited: out.credited, duplicate: out.reason === 'duplicate', newBalance: out.newBalance });
+        return res.status(200).json({ success: true, credited: out.credited, duplicate: out.duplicate, newBalance: out.newBalance });
     } catch (error) {
         console.error('PayPal capture error:', error.message);
         return res.status(500).json({ success: false, message: 'Failed to capture PayPal deposit.' });
@@ -244,3 +256,5 @@ router.post('/api/paypal/capture', authenticateToken, async (req, res) => {
 
 module.exports = router;
 module.exports.creditPayPalDeposit = creditPayPalDeposit;
+module.exports.missingPayPalKeys = missingPayPalKeys;
+module.exports.captureAndCredit = captureAndCredit;

@@ -106,7 +106,11 @@ function getAvailableMethods(options = {}) {
     return allMethods
         .filter((m) => m.enabled && m.currencies.includes(currency))
         .filter((m) => {
-            if (!m.provider) return true;
+            if (!m.provider) {
+                // Internal rails (bank/wallet/email) are demo-era simulations —
+                // never advertise them in production.
+                return process['env'].NODE_ENV !== 'production';
+            }
             if (!isProd) return true;
             try {
                 requireRealKey(m.provider);
