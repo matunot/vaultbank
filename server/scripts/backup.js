@@ -43,6 +43,12 @@ const dump = spawn('pg_dump', [process.env.DATABASE_URL]);
 const writeStream = fs.createWriteStream(sqlFile);
 dump.stdout.pipe(writeStream);
 
+// Missing pg_dump binary would otherwise crash with an unhandled 'error' event.
+dump.on('error', (err) => {
+    console.error('Could not launch pg_dump: ' + err.message);
+    process.exit(1);
+});
+
 // Capture any errors from pg_dump
 dump.stderr.on('data', (data) => {
     console.error(`pg_dump error: ${data}`);

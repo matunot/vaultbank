@@ -428,3 +428,51 @@ describe('isolation guarantees of this suite', () => {
         expect(fetchCalls).toHaveLength(0); // hot-wallet balances came from the seam
     });
 });
+
+describe('withdrawal-hold monitor (operator alerting)', () => {
+    const testnet = require('../payments/usdc-testnet');
+    const wasMode = testnet.MODE;
+
+    afterEach(() => {
+        testnet.MODE = wasMode;
+        CDB.createNotification.mockClear();
+        CDB.db.query.mockClear();
+    });
+
+    test('pages admins for fresh reconciliation_required rows (chain + provider), then dedupes', async () => {
+        scriptDb([
+            ['FROM usdc_withdrawals WHERE', () => ({ rows: [{ id: 'w-hold-1', amount: '25.00', token: 'usdc', network: 'base' }] })],
+            ['FROM provider_payouts WHERE', () => ({ rows: [{ provider: 'nium', request_id: 'req-9' }] })],
+            ["role IN ('super_admin', 'admin')", () => ({ rows: [{ id: 'admin-1' }, { id: 'admin-2' }] })],
+        ]);
+        await withdrawalsRouter.monitorWithdrawalHolds();
+        expect(CDB.createNotification).toHaveBeenCalledTimes(2); // one per admin
+        const msg = CDB.createNotification.mock.calls[0][1];
+        expect(msg.title).toBe('Funds held for reconciliation');
+        expect(msg.message).toContain('w-hold-1');
+        expect(msg.message).toContain('nium:req-9');
+        expect(msg.message).toContain('reconcile-withdrawals');
+
+        // Same unresolved rows again -> no repeat spam.
+        CDB.createNotification.mockClear();
+        await withdrawalsRouter.monitorWithdrawalHolds();
+        expect(CDB.createNotification).not.toHaveBeenCalled();
+
+        // A NEW held row re-arms the alert.
+        scriptDb([
+            ['FROM usdc_withdrawals WHERE', () => ({ rows: [{ id: 'w-hold-2', amount: '5.00', token: 'usdt', network: 'polygon' }] })],
+            ['FROM provider_payouts WHERE', () => ({ rows: [] })],
+            ["role IN ('super_admin', 'admin')", () => ({ rows: [{ id: 'admin-1' }] })],
+        ]);
+        await withdrawalsRouter.monitorWithdrawalHolds();
+        expect(CDB.createNotification).toHaveBeenCalled(); // pager sent for w-hold-2
+    });
+
+    test('test mode never queries or pages', async () => {
+        testnet.MODE = 'base-sepolia';
+        scriptDb([['FROM usdc_withdrawals WHERE', () => ({ rows: [{ id: 'w-hold-3', amount: '1.00', token: 'usdc', network: 'base' }] })]]);
+        await withdrawalsRouter.monitorWithdrawalHolds();
+        expect(CDB.db.query).not.toHaveBeenCalled();
+        expect(CDB.createNotification).not.toHaveBeenCalled();
+    });
+});

@@ -317,9 +317,54 @@ function startHotWalletMonitor() {
     if (isDemo || testnet.MODE) return;
     setTimeout(() => { monitorHotWallet(); }, 20000);
     setInterval(() => { monitorHotWallet(); }, 30 * 60 * 1000);
-    console.log('CHAIN HOT-WALLET MONITOR ARMED — low-balance alerts automatic');
+    setTimeout(() => { monitorWithdrawalHolds(); }, 20000);
+    setInterval(() => { monitorWithdrawalHolds(); }, 30 * 60 * 1000);
+    console.log('HOT-WALLET + HELD-FUNDS MONITORS ARMED — low-balance and reconciliation alerts automatic');
+}
+
+// Automation: HELD-funds pager — flags every withdrawal row still sitting in
+// reconciliation_required (chain withdrawals + provider payouts). The direct
+// failure path already paged admins at hold time; this loop is the safety
+// net for holds that happened while paging failed or the process was down.
+// Alerts once per row per process lifetime (re-alerts after a restart).
+// TEST MODE never pages — play-money holds are visible in the sandbox UI.
+const alertedHolds = new Set();
+async function monitorWithdrawalHolds() {
+    try {
+        if (testnet.MODE) return;
+        const { rows: chainHolds } = await db.query(
+            "SELECT id, amount, token, network FROM usdc_withdrawals WHERE status = 'reconciliation_required'"
+        );
+        const { rows: providerHolds } = await db.query(
+            "SELECT provider, request_id FROM provider_payouts WHERE status = 'reconciliation_required'"
+        );
+        const chainFresh = chainHolds.filter((r) => !alertedHolds.has('w:' + r.id));
+        const providerFresh = providerHolds.filter((r) => !alertedHolds.has('p:' + r.provider + ':' + r.request_id));
+        if (!chainFresh.length && !providerFresh.length) return;
+        chainFresh.forEach((r) => alertedHolds.add('w:' + r.id));
+        providerFresh.forEach((r) => alertedHolds.add('p:' + r.provider + ':' + r.request_id));
+        const parts = [];
+        if (chainFresh.length) {
+            parts.push(chainFresh.length + ' chain withdrawal(s) held: ' +
+                chainFresh.map((r) => r.id + ' ($' + Number(r.amount).toFixed(2) + ' ' + r.token + '/' + r.network + ')').join(', '));
+        }
+        if (providerFresh.length) {
+            parts.push(providerFresh.length + ' provider payout(s) held: ' +
+                providerFresh.map((r) => r.provider + ':' + r.request_id).join(', '));
+        }
+        const message = parts.join('. ') + '. Funds are HELD in reconciliation_required — resolve chain holds via scripts/reconcile-withdrawals.js and provider holds via the payout queue.';
+        const { rows: admins } = await db.query("SELECT id FROM users WHERE role IN ('super_admin', 'admin')");
+        for (const a of admins) {
+            await createNotification(a.id, {
+                type: 'warning',
+                title: 'Funds held for reconciliation',
+                message,
+            });
+        }
+    } catch (e) { /* best-effort pager — the route-level alert remains the primary */ }
 }
 
 module.exports = router;
 module.exports.startHotWalletMonitor = startHotWalletMonitor;
+module.exports.monitorWithdrawalHolds = monitorWithdrawalHolds;
 
