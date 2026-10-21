@@ -149,6 +149,11 @@ async function addLedger(creditAccountId, userId, kind, amount, owedAfter, descr
 async function drawCredit(userId, amount, description) {
     const amt = Math.round(amount * 100) / 100;
     if (!(amt > 0)) return { drawn: 0, reason: 'invalid' };
+    if (!isDemo) {
+        // Real mode: no authorized lender/funding source — extending credit
+        // here would mint money. Existing owed balances stay serviceable.
+        return { drawn: 0, reason: 'credit-unavailable' };
+    }
     const acct = await getCreditAccount(userId);
     if (!acct || acct.status !== 'active') return { drawn: 0, reason: 'no-credit-account' };
     const { rows } = await db.query(
@@ -208,38 +213,13 @@ router.get('/api/credit/status', authenticateToken, async (req, res) => {
 router.post('/api/credit/apply', authenticateToken, async (req, res) => {
     try {
         if (isDemo) return res.status(400).json({ success: false, message: 'Credit requires a live account.' });
-        const existing = await getCreditAccount(req.user.id);
-        if (existing) {
-            return res.json({
-                success: true,
-                alreadyApproved: true,
-                creditScore: existing.credit_score,
-                creditLimit: parseFloat(existing.credit_limit),
-                apr: parseFloat(existing.apr),
-                message: 'You already have a VaultBank credit line.',
-            });
-        }
-        const decision = await underwrite(req.user.id);
-        const { rows } = await db.query(
-            `INSERT INTO credit_accounts (user_id, credit_limit, balance_owed, apr, credit_score, status)
-             VALUES ($1, $2, 0, $3, $4, 'active')
-             RETURNING credit_limit, apr, credit_score`,
-            [req.user.id, decision.creditLimit, decision.apr, decision.score]
-        );
-        await createNotification(req.user.id, {
-            type: 'success',
-            title: 'Credit line approved instantly',
-            message: 'You are approved for $' + decision.creditLimit.toFixed(2) + ' at ' + decision.apr + '% APR. VaultBank Credit Score: ' + decision.score + '. Your cards now spend cash first, credit second.',
-        });
-        res.json({
-            success: true,
-            approved: true,
-            instant: true,
-            creditLimit: parseFloat(rows[0].credit_limit),
-            apr: parseFloat(rows[0].apr),
-            creditScore: rows[0].credit_score,
-            factors: decision.factors,
-            message: 'Approved in seconds — no paperwork. Your VaultBank cards now draw cash first, then credit.',
+        // Real mode: VaultBank has no authorized lender/funding source — a
+        // credit line here would be fabricated lending. Existing lines remain
+        // fully serviceable (repay + autopay are untouched).
+        return res.status(503).json({
+            success: false,
+            code: 'CREDIT_UNAVAILABLE',
+            message: 'Credit lines are not available yet — no authorized lender or funding source is connected. Existing balances and repayments are unaffected.'
         });
     } catch (error) {
         console.error('Credit apply error:', error.message);

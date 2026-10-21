@@ -1,16 +1,16 @@
 /**
  * ACCOUNT-MONEY ATOMICITY contract (internal ledger rail).
  *
- * The classic account routes (deposit / withdraw / internal transfer) must
- * move balances with SERVER-SIDE arithmetic, never with JavaScript
- * read-compute-write values. Read-compute-write lets two concurrent requests
- * of 80 against 100 both pass the check and overdraw / lose an update.
- *
- * Contract per route:
- *   deposit   — UPDATE accounts SET balance = balance + $2 RETURNING before/after
- *   withdraw  — guarded UPDATE ... AND balance >= $2 ... (no row -> 400)
- *   transfer  — pooled transaction: guarded debit + credit, COMMIT, and a
- *               ROLLBACK (no COMMIT, no ledger record) when either half fails
+ * The classic account routes must never fabricate external settlement in
+ * real-DB production mode (a database balance update is never proof of an
+ * external rail). Contract per route:
+ *   deposit   -> 503 DEPOSITS_USE_VERIFIED_RAIL — money enters ONLY via the
+ *                admin-verified bank-transfer rail (bank-deposits.js)
+ *   withdraw  -> 503 OUTBOUND_TRANSFERS_NOT_CONFIGURED — never debit and
+ *                report success without a rail accepting the payout
+ *   transfer  -> internal rail stays live: pooled transaction, guarded debit
+ *                + credit, COMMIT, and a ROLLBACK (no COMMIT, no ledger
+ *                record) when either half fails
  *
  * 100% SIMULATED: config/database is a scripted seam; no real database is
  * contacted from these tests.
@@ -69,34 +69,20 @@ describe('atomic account money (real-database mode)', () => {
         CDB.createTransaction.mockResolvedValue({ id: 'tx-1' });
     });
 
-    test('deposit credits with SERVER-side arithmetic and reports the returned balance', async () => {
-        CDB.db.query.mockResolvedValue({ rows: [{ balance_before: '100.00', balance_after: '105.00' }] });
+    test('deposit fails closed in real-DB mode: no self-credit without a verified rail', async () => {
         const res = await call('/api/account/deposit', { amount: 5, description: 'cash' });
-        expect(res.code).toBeNull();
-        expect(res.body.success).toBe(true);
-        expect(res.body.balance.current).toBe(105);
-        const sql = CDB.db.query.mock.calls[0][0];
-        expect(sql).toContain('balance = balance + $2');
-        expect(sql).toContain('RETURNING');
+        expect(res.code).toBe(503);
+        expect(res.body.code).toBe('DEPOSITS_USE_VERIFIED_RAIL');
+        expect(CDB.db.query).not.toHaveBeenCalled();
+        expect(CDB.createTransaction).not.toHaveBeenCalled();
     });
 
-    test('withdraw is a guarded decrement: concurrent overdraw is impossible (no row -> 400)', async () => {
-        CDB.db.query.mockResolvedValue({ rows: [] });
+    test('withdraw fails closed in real-DB mode: no debit, no phantom payout success', async () => {
         const res = await call('/api/account/withdraw', { amount: 80 });
-        expect(res.code).toBe(400);
-        expect(res.body.message).toBe('Insufficient funds.');
-        const sql = CDB.db.query.mock.calls[0][0];
-        expect(sql).toContain('balance = balance - $2');
-        expect(sql).toContain('AND balance >= $2');
-        expect(CDB.updateAccountBalance).not.toHaveBeenCalled();
-    });
-
-    test('withdraw success uses the RETURNING balance, no JS math', async () => {
-        CDB.db.query.mockResolvedValue({ rows: [{ balance_before: '100.00', balance_after: '95.00' }] });
-        const res = await call('/api/account/withdraw', { amount: 5 });
-        expect(res.body.success).toBe(true);
-        expect(res.body.balance.current).toBe(95);
-        expect(CDB.updateAccountBalance).not.toHaveBeenCalled();
+        expect(res.code).toBe(503);
+        expect(res.body.code).toBe('OUTBOUND_TRANSFERS_NOT_CONFIGURED');
+        expect(CDB.db.query).not.toHaveBeenCalled();
+        expect(CDB.createTransaction).not.toHaveBeenCalled();
     });
 
     test('transfer runs in a pooled transaction and commits when both halves return rows', async () => {

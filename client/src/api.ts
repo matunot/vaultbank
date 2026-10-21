@@ -324,6 +324,22 @@ export const api = {
     });
   },
 
+  // Bank-transfer deposit rail — instructions + admin-verified settlement.
+  async bankDepositConfig(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/bank-deposits/config');
+  },
+
+  async createBankDepositInstruction(data: { amount: number; currency?: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/bank-deposits/instructions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getBankDepositInstruction(id: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/bank-deposits/instructions/${id}`);
+  },
+
   async usdcAddress(network?: string, token?: string): Promise<ApiResponse> {
     const params = new URLSearchParams();
     if (network) params.set('network', network);

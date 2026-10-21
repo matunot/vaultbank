@@ -171,3 +171,44 @@ check against the configured RPC (Base mainnet expected default):
 - Exit 0 = read path proven. It never signs, sends, or prints key material.
 - Expected pre-funding state: balances 0/0 and nonce 0 until the wallet is
   funded â€” funding is the explicit operator prerequisite for live transfers.
+
+## 10. Bank-transfer deposit rail — manual statement verification (2026-10-21)
+
+The bank rail (`routes/bank-deposits.js`) credits a real balance ONLY after an
+authorized admin confirms the arrival on an authentic bank statement. It is
+MANUAL by design — never describe it as automatic settlement.
+
+Daily review procedure (admin, authenticated):
+1. `GET /api/bank-deposits/admin/instructions?status=pending` — the review queue
+   (reference, customer, expected amount, created/expires).
+2. Open the actual bank statement (authorized banking portal). Find the incoming
+   transfer that carries a `VB-BD-...` reference. The reference, sender,
+   amount, and currency must ALL match a pending instruction.
+3. `POST /api/bank-deposits/admin/instructions/:id/verify` with
+   `settlementAmount` (the amount that ACTUALLY arrived), `note` (>=10 chars:
+   statement date, sender, the matched reference line) and optionally
+   `externalTxnRef` (the bank-side transaction id).
+   - The claim (pending/settling only) + ledger guard + atomic RETURNING credit
+     make retries and double-clicks safe: a second verify returns 409 and never
+     credits twice.
+   - If the arrived amount differs from the instructed amount, credit the
+     actual `settlementAmount` and say so in the note; both values stay in the
+     audit trail.
+4. Transfers that never arrived (or bounced): `POST .../:id/fail` with a note.
+   No credit is ever made.
+5. Chargebacks/recalls on settled deposits: `POST .../:id/reverse` — a
+   compensating guarded debit (type `adjustment`) is posted, ledger history is
+   never deleted. If the customer balance is insufficient, the instruction
+   becomes `reversal_required` — resolve manually, never force a negative
+   balance.
+6. Unmatched statement lines (no `VB-BD-...` reference): do NOT credit anyone.
+   There is no instruction to match — handle via support.
+
+Audit trail: every create/cancel/verify/fail/reverse writes an `audit_logs`
+row (`bank_deposit_*`), and every credit writes a `transactions` row whose
+`external_reference` is the unique `VB-BD-...` reference.
+
+Config prerequisite: the rail reports `enabled: false` until the owner sets
+VB_BANK_DEPOSIT_ENABLED, VB_BANK_RECEIVING_BANK_NAME, VB_BANK_RECEIVING_HOLDER,
+VB_BANK_RECEIVING_DETAILS and VB_BANK_RECEIVING_CURRENCY in the Render
+environment (a new deploy must start after saving).

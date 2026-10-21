@@ -182,6 +182,16 @@ router.post('/api/account/deposit', authenticateToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Maximum single deposit is $50,000.' });
         }
 
+        if (!isDemo) {
+            // Real mode: a balance credit is only ever the RESULT of verified
+            // external settlement. Self-serve instant deposits would mint money.
+            return res.status(503).json({
+                success: false,
+                code: 'DEPOSITS_USE_VERIFIED_RAIL',
+                message: 'Instant self-service deposits are unavailable. Fund your account with a bank transfer — open Deposits and choose the Bank option.'
+            });
+        }
+
         const account = await findAccountByUserId(req.user.id);
         if (!account) {
             return res.status(404).json({ success: false, message: 'No account found.' });
@@ -265,6 +275,16 @@ router.post('/api/account/withdraw', authenticateToken, async (req, res) => {
 
         if (!amount || amount <= 0) {
             return res.status(400).json({ success: false, message: 'Invalid withdrawal amount.' });
+        }
+
+        if (!isDemo) {
+            // Real mode: no authorized payout rail exists. Never debit a
+            // balance and report success — the money would simply vanish.
+            return res.status(503).json({
+                success: false,
+                code: 'OUTBOUND_TRANSFERS_NOT_CONFIGURED',
+                message: 'Outbound transfers are not available yet — no payout rail is connected. Your balance stays fully available for internal transfers and payments.'
+            });
         }
 
         const account = await findAccountByUserId(req.user.id);

@@ -163,6 +163,7 @@ app.use('/', usdcWithdrawalRoutes);
 // ─── Stripe Payment Routes (Deposits, Withdrawals, Webhooks) ──────────────
 app.use(stripePaymentRoutes);
 app.use('/', require('./routes/paypal-deposits'));
+app.use('/', require('./routes/bank-deposits'));
 app.use('/', require('./routes/usdc-deposits'));
 
 // ─── Provider Payout Webhooks (authenticated server-to-server) ─────────────

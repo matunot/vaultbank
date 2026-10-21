@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Plus, Receipt, ArrowRightLeft, Globe, Smartphone, CheckCircle2, Loader2, TrendingUp, UserSearch, CreditCard, Zap, Banknote } from 'lucide-react';
+import { X, Send, Plus, Receipt, ArrowRightLeft, Globe, Smartphone, CheckCircle2, Loader2, TrendingUp, UserSearch, CreditCard, Zap, Banknote, Building2 } from 'lucide-react';
 import RichIcon from './RichIcon';
 import Avatar from './Avatar';
 import { api } from '../api';
@@ -288,7 +288,7 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
 }
 
 export function DepositModal({ isOpen, onClose }: ModalProps) {
-  const [mode, setMode] = useState<'card' | 'instant' | 'paypal' | 'usdc'>('card');
+  const [mode, setMode] = useState<'card' | 'instant' | 'paypal' | 'usdc' | 'bank'>('card');
   const [usdc, setUsdc] = useState<{ address: string; network: string; qr: string | null } | null>(null);
   const [usdcTestnet, setUsdcTestnet] = useState(false);
   const [usdcChecking, setUsdcChecking] = useState(false);
@@ -297,6 +297,17 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [stripeMode, setStripeMode] = useState<'live' | 'demo' | null>(null);
+  const [bankCfg, setBankCfg] = useState<any>(null);
+  const [bankInstr, setBankInstr] = useState<any>(null);
+
+  // Bank-transfer rail: real instructions appear ONLY when a verified
+  // receiving account is configured server-side.
+  useEffect(() => {
+    if (!isOpen || mode !== 'bank' || bankCfg) return;
+    api.bankDepositConfig()
+      .then((r) => setBankCfg(r.success ? r : { enabled: false }))
+      .catch(() => setBankCfg({ enabled: false }));
+  }, [isOpen, mode, bankCfg]);
 
   // Detect whether real Stripe keys are configured (LIVE vs SANDBOX)
   useEffect(() => {
@@ -345,6 +356,23 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === 'usdc') return; // USDC flow uses the address panel + check button.
+    if (mode === 'bank') {
+      if (bankInstr) return; // Instructions already issued — use the panel.
+      const amt = parseFloat(amount);
+      if (!amt || amt <= 0) return;
+      setStatus('loading');
+      setErrorMsg('');
+      try {
+        const res = await api.createBankDepositInstruction({ amount: amt });
+        if (!res.success || !res.instruction) throw new Error(res.message || 'Could not create the deposit instruction.');
+        setBankInstr(res);
+        setStatus('success');
+      } catch (err: any) {
+        setErrorMsg(err?.message || 'Could not create the deposit instruction.');
+        setStatus('error');
+      }
+      return;
+    }
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) return;
     setStatus('loading');
@@ -378,6 +406,39 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
       setStatus('error');
     }
   };
+
+  const amountFields = (
+    <>
+      <div>
+        <label htmlFor="deposit-amount" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
+        <div className="relative">
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 font-display text-2xl">$</span>
+          <input
+            id="deposit-amount"
+            name="amount"
+            aria-label="Deposit amount in dollars"
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="0.00"
+            className="w-full bg-white/5 border border-white/10 rounded-xl p-4 pl-10 text-2xl font-display text-white focus:outline-none focus:border-emerald-500/40 transition-colors"
+          />
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {['100', '500', '1000', '2500', '5000', '10000'].map(v => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setAmount(v)}
+            className="py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white/60 hover:text-white hover:border-emerald-500/30 transition-colors"
+          >
+            ${v}
+          </button>
+        ))}
+      </div>
+    </>
+  );
 
   return (
     <BaseModal isOpen={isOpen} onClose={onClose} icon={Plus} title="Deposit Funds" subtitle="REAL MONEY IN">
@@ -438,9 +499,79 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
             <p className="text-xs font-bold text-white flex items-center gap-1.5">🪙 USDC / USDT</p>
             <p className="text-[9px] text-white/40 mt-1">No signup · your address</p>
           </button>
+          <button
+            type="button"
+            onClick={() => { setMode('bank'); setBankInstr(null); setStatus('idle'); setErrorMsg(''); }}
+            className={`p-3 rounded-xl border text-left transition-colors ${
+              mode === 'bank' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
+            }`}
+          >
+            <p className="text-xs font-bold text-white flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> Bank Transfer</p>
+            <p className="text-[9px] text-white/40 mt-1">Wire/SEPA · verified on statement</p>
+          </button>
         </div>
 
-        {mode === 'usdc' ? (
+        {mode === 'bank' ? (
+          <div className="space-y-3">
+            {!bankCfg && <p className="text-xs text-white/40 text-center py-4">Checking bank transfer availability…</p>}
+            {bankCfg && !bankCfg.enabled && (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[11px] text-amber-300 font-bold text-center leading-relaxed">
+                Bank transfers are not set up yet — a verified receiving account isn't configured. Please use another rail for now.
+              </div>
+            )}
+            {bankCfg && bankCfg.enabled && !bankInstr && (
+              <>
+                <p className="text-[11px] text-white/50 leading-relaxed">
+                  Create an instruction to get a unique payment reference, then send the transfer from your bank.
+                  Your balance is credited only after our team verifies the arrival on the bank statement (manual verification, typically 1-3 business days).
+                </p>
+                {amountFields}
+              </>
+            )}
+            {bankCfg && bankCfg.enabled && bankInstr && (
+              <div className="space-y-2.5">
+                <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 space-y-1.5">
+                  <p className="text-[9px] text-emerald-300/70 tracking-wider font-bold">PAYMENT REFERENCE — INCLUDE IT IN YOUR TRANSFER</p>
+                  <button
+                    type="button"
+                    onClick={() => { navigator.clipboard.writeText(bankInstr.instruction.reference); }}
+                    className="w-full font-mono text-sm text-emerald-200 bg-black/20 rounded-lg p-2.5 break-all hover:text-white transition-colors"
+                    title="Tap to copy"
+                  >
+                    {bankInstr.instruction.reference}
+                  </button>
+                </div>
+                <div className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-1 text-[11px] text-white/70">
+                  <p><span className="text-white/40 font-bold">Send to:</span> {bankInstr.transfer.holder} — {bankInstr.transfer.bankName}</p>
+                  <p className="font-mono break-all"><span className="text-white/40 font-bold">Account:</span> {bankInstr.transfer.details}</p>
+                  <p><span className="text-white/40 font-bold">Amount:</span> {bankInstr.transfer.currency} {Number(bankInstr.transfer.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                </div>
+                <div className={`rounded-xl border p-2.5 text-[11px] font-bold text-center ${
+                  bankInstr.instruction.status === 'settled'
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                    : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                }`}>
+                  {bankInstr.instruction.status === 'settled'
+                    ? '● VERIFIED — funds credited to your balance'
+                    : '○ PENDING — awaiting bank arrival + statement verification'}
+                </div>
+                <p className="text-[10px] text-white/40 leading-relaxed">{bankInstr.transfer.note}</p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const r = await api.getBankDepositInstruction(bankInstr.instruction.id);
+                      if (r.success && r.instruction) setBankInstr({ ...bankInstr, instruction: r.instruction });
+                    } catch { /* status refresh is best-effort */ }
+                  }}
+                  className="w-full py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white/60 hover:text-white hover:border-emerald-500/30 transition-colors"
+                >
+                  Refresh status
+                </button>
+              </div>
+            )}
+          </div>
+        ) : mode === 'usdc' ? (
           <div className="space-y-3">
             {/* Token toggle — the SAME address receives both; check credits both. */}
             <div className="grid grid-cols-2 gap-2">
@@ -491,34 +622,7 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
           </div>
         ) : (
         <>
-        <div>
-          <label htmlFor="deposit-amount" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 font-display text-2xl">$</span>
-            <input
-              id="deposit-amount"
-              name="amount"
-              aria-label="Deposit amount in dollars"
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="w-full bg-white/5 border border-white/10 rounded-xl p-4 pl-10 text-2xl font-display text-white focus:outline-none focus:border-emerald-500/40 transition-colors"
-            />
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {['100', '500', '1000', '2500', '5000', '10000'].map(v => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setAmount(v)}
-              className="py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white/60 hover:text-white hover:border-emerald-500/30 transition-colors"
-            >
-              ${v}
-            </button>
-          ))}
-        </div>
+          {amountFields}
         </>
         )}
 
@@ -530,8 +634,8 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
           <p className="text-xs text-emerald-300 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">{cryptoToken} deposit confirmed — balance updated.</p>
         )}
 
-        {mode !== 'usdc' && (
-        <SubmitButton status={status} idleText={mode === 'card' ? 'Pay with Card — Real Money' : mode === 'paypal' ? 'Pay with PayPal — Real Money' : 'Deposit Instantly'} color="emerald" />
+        {mode !== 'usdc' && !(mode === 'bank' && bankInstr) && (
+        <SubmitButton status={status} idleText={mode === 'card' ? 'Pay with Card — Real Money' : mode === 'paypal' ? 'Pay with PayPal — Real Money' : mode === 'bank' ? 'Get Bank Transfer Instructions' : 'Deposit Instantly'} color="emerald" />
         )}
       </form>
     </BaseModal>
