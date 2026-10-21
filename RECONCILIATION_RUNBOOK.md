@@ -156,3 +156,18 @@ persistence check. Exit 0 all green, 2 partial (app/DB steps unavailable),
 - **Before enabling live payouts:** explicit operator switch (provider envs),
   contract review, and a signed sign-off that VaultBank's business model is
   approved by the provider — credentials alone are not authorization.
+
+## 9. Chain readiness probe
+
+`node scripts/probe-chain.js [network] [address]` — read-only preparation
+check against the configured RPC (Base mainnet expected default):
+
+- Proves network identity (live `eth_chainId` vs configured chainId), native
+  USDC contract presence, hot-wallet USDC/native balances, and the nonce pair
+  (latest vs pending — pending > latest means sends still in flight).
+- Run `node scripts/probe-chain.js base` on a machine with the hot-wallet key
+  to also prove local signer derivation; on other machines pass the wallet
+  ADDRESS as the second argument (address mode — no secret accessed).
+- Exit 0 = read path proven. It never signs, sends, or prints key material.
+- Expected pre-funding state: balances 0/0 and nonce 0 until the wallet is
+  funded — funding is the explicit operator prerequisite for live transfers.
