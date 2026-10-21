@@ -163,7 +163,7 @@ router.post('/api/bank-deposits/instructions', authenticateToken, async (req, re
         }
         const amount = Math.round(parseFloat(req.body.amount) * 100) / 100;
         if (!(amount >= MIN_AMOUNT) || amount > MAX_AMOUNT) {
-            return res.status(400).json({ success: false, message: `Amount must be between $${MIN_AMOUNT} and $${MAX_AMOUNT}.` });
+            return res.status(400).json({ success: false, message: `Amount must be between ${cfg.currency} ${MIN_AMOUNT} and ${cfg.currency} ${MAX_AMOUNT}.` });
         }
         const account = await findAccountByUserId(req.user.id);
         if (!account) {
@@ -384,7 +384,7 @@ router.post('/api/bank-deposits/admin/instructions/:id/verify', requireAdmin, as
             await createNotification(instruction.user_id, {
                 type: 'transaction',
                 title: 'Deposit verified',
-                message: `$${settlementAmount.toFixed(2)} bank transfer credited (ref ${instruction.reference}). New balance: $${newBalance.toFixed(2)}.`,
+                message: `${instruction.currency} ${settlementAmount.toFixed(2)} bank transfer credited (ref ${instruction.reference}). New balance: ${instruction.currency} ${newBalance.toFixed(2)}.`,
             });
         }
         await db.query(

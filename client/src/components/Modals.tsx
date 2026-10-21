@@ -407,12 +407,15 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
     }
   };
 
+  // Bank mode shows the configured receiving currency; all USD rails keep "$".
+  const amountPrefix = mode === 'bank' && bankCfg && bankCfg.currency ? bankCfg.currency : '$';
+
   const amountFields = (
     <>
       <div>
         <label htmlFor="deposit-amount" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
         <div className="relative">
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 font-display text-2xl">$</span>
+          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 font-display text-2xl">{amountPrefix}</span>
           <input
             id="deposit-amount"
             name="amount"
@@ -433,7 +436,7 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
             onClick={() => setAmount(v)}
             className="py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white/60 hover:text-white hover:border-emerald-500/30 transition-colors"
           >
-            ${v}
+            ${amountPrefix}{v}
           </button>
         ))}
       </div>
