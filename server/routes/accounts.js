@@ -21,6 +21,7 @@ const {
     createNotification,
     createAuditLog,
     db,
+    isDemo,
 } = require('../config/database');
 
 // ============================================================
@@ -186,11 +187,26 @@ router.post('/api/account/deposit', authenticateToken, async (req, res) => {
             return res.status(404).json({ success: false, message: 'No account found.' });
         }
 
-        const balanceBefore = parseFloat(account.balance);
-        const newBalance = balanceBefore + parseFloat(amount);
-
-        // Update balance
-        await updateAccountBalance(account.id, newBalance);
+        // Atomic credit: arithmetic stays in Postgres, so concurrent deposits
+        // cannot lose updates (no read-compute-write race).
+        let balanceBefore;
+        let newBalance;
+        if (isDemo) {
+            // In-memory demo store is single-process; legacy path is safe there.
+            balanceBefore = parseFloat(account.balance);
+            newBalance = balanceBefore + parseFloat(amount);
+            await updateAccountBalance(account.id, newBalance);
+        } else {
+            const upd = await db.query(
+                'UPDATE accounts SET balance = balance + $2 WHERE id = $1 RETURNING (balance - $2) AS balance_before, balance AS balance_after',
+                [account.id, parseFloat(amount)]
+            );
+            if (!upd.rows.length) {
+                return res.status(404).json({ success: false, message: 'No account found.' });
+            }
+            balanceBefore = parseFloat(upd.rows[0].balance_before);
+            newBalance = parseFloat(upd.rows[0].balance_after);
+        }
 
         // Record transaction
         await createTransaction({
@@ -256,7 +272,7 @@ router.post('/api/account/withdraw', authenticateToken, async (req, res) => {
             return res.status(404).json({ success: false, message: 'No account found.' });
         }
 
-        const balanceBefore = parseFloat(account.balance);
+        let balanceBefore = parseFloat(account.balance);
         const withdrawAmount = parseFloat(amount);
 
         if (withdrawAmount > balanceBefore) {
@@ -267,9 +283,29 @@ router.post('/api/account/withdraw', authenticateToken, async (req, res) => {
             });
         }
 
-        const newBalance = balanceBefore - withdrawAmount;
-
-        await updateAccountBalance(account.id, newBalance);
+        // Atomic guarded decrement: the `balance >= $2` guard in the UPDATE is
+        // the authoritative check, so two concurrent withdrawals of the same
+        // funds cannot both succeed (one is left with no row -> 400).
+        let newBalance;
+        if (isDemo) {
+            // In-memory demo store is single-process; legacy path is safe there.
+            newBalance = balanceBefore - withdrawAmount;
+            await updateAccountBalance(account.id, newBalance);
+        } else {
+            const upd = await db.query(
+                'UPDATE accounts SET balance = balance - $2 WHERE id = $1 AND balance >= $2 RETURNING (balance + $2) AS balance_before, balance AS balance_after',
+                [account.id, withdrawAmount]
+            );
+            if (!upd.rows.length) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Insufficient funds.',
+                    availableBalance: balanceBefore
+                });
+            }
+            balanceBefore = parseFloat(upd.rows[0].balance_before);
+            newBalance = parseFloat(upd.rows[0].balance_after);
+        }
 
         await createTransaction({
             account_id: account.id,
@@ -344,7 +380,7 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
         }
 
         const transferAmount = parseFloat(amount);
-        const senderBalance = parseFloat(senderAccount.balance);
+        let senderBalance = parseFloat(senderAccount.balance);
 
         if (transferAmount > senderBalance) {
             return res.status(400).json({ success: false, message: 'Insufficient funds.', availableBalance: senderBalance });
@@ -353,12 +389,48 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
         // Calculate fee (free for internal, small fee for external)
         const fee = 0; // Internal transfers are free for now
 
-        // Execute transfer (in a real bank, this would be in a transaction)
-        const newSenderBalance = senderBalance - transferAmount - fee;
-        const recipientBalance = parseFloat(recipientAccount.balance) + transferAmount;
-
-        await updateAccountBalance(senderAccount.id, newSenderBalance);
-        await updateAccountBalance(recipientAccount.id, recipientBalance);
+        // Atomic transfer: guarded debit + credit inside ONE pooled
+        // transaction, so either both halves commit or neither does. No more
+        // "in a real bank, this would be in a transaction" — it now is.
+        let newSenderBalance;
+        let recipientBalance;
+        if (isDemo) {
+            // In-memory demo store is single-process; legacy path is safe there.
+            newSenderBalance = senderBalance - transferAmount - fee;
+            recipientBalance = parseFloat(recipientAccount.balance) + transferAmount;
+            await updateAccountBalance(senderAccount.id, newSenderBalance);
+            await updateAccountBalance(recipientAccount.id, recipientBalance);
+        } else {
+            const client = await db.getClient();
+            try {
+                await client.query('BEGIN');
+                const debit = await client.query(
+                    'UPDATE accounts SET balance = balance - $2 WHERE id = $1 AND balance >= $2 RETURNING (balance + $2) AS balance_before, balance AS balance_after',
+                    [senderAccount.id, transferAmount + fee]
+                );
+                if (!debit.rows.length) {
+                    await client.query('ROLLBACK');
+                    return res.status(400).json({ success: false, message: 'Insufficient funds.', availableBalance: senderBalance });
+                }
+                const credit = await client.query(
+                    'UPDATE accounts SET balance = balance + $2 WHERE id = $1 RETURNING (balance - $2) AS balance_before, balance AS balance_after',
+                    [recipientAccount.id, transferAmount]
+                );
+                if (!credit.rows.length) {
+                    await client.query('ROLLBACK');
+                    return res.status(404).json({ success: false, message: 'Recipient account not found.' });
+                }
+                await client.query('COMMIT');
+                senderBalance = parseFloat(debit.rows[0].balance_before);
+                newSenderBalance = parseFloat(debit.rows[0].balance_after);
+                recipientBalance = parseFloat(credit.rows[0].balance_after);
+            } catch (e) {
+                try { await client.query('ROLLBACK'); } catch (_) { /* releasing anyway */ }
+                throw e;
+            } finally {
+                client.release();
+            }
+        }
 
         // Record sender transaction
         await createTransaction({

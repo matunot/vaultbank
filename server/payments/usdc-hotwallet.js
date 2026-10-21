@@ -324,7 +324,28 @@ const SAFE_REJECT_RE =
 //     safe=false — an identical tx may already be in flight ("nonce too low",
 //                  "already known", "replacement underpriced") or the RPC
 //                  failed before answering; the outcome is unknowable here.
+// One hot wallet = one nonce source. Two concurrent withdrawals would both
+// read the same 'pending' nonce and the loser hits the node's duplicate-nonce
+// rejection, which the taxonomy classifies as AMBIGUOUS (funds held for no
+// reason). Serialize the read-nonce -> broadcast span per wallet: each caller
+// queues behind the previous sign+send, so every read sees a fresh nonce.
+const sendQueues = new Map();
+
 async function sendTokens(network, token, privKey, walletAddress, toAddress, amountUnits) {
+    const key = String(walletAddress || '').toLowerCase();
+    const prev = sendQueues.get(key) || Promise.resolve();
+    const run = prev.catch(() => {}).then(() => sendTokensInner(network, token, privKey, walletAddress, toAddress, amountUnits));
+    sendQueues.set(key, run);
+    try {
+        return await run;
+    } finally {
+        // Drop the map entry only if this run is still the tail (a later
+        // caller has already chained onto it otherwise).
+        if (sendQueues.get(key) === run) sendQueues.delete(key);
+    }
+}
+
+async function sendTokensInner(network, token, privKey, walletAddress, toAddress, amountUnits) {
     const tokenCfg = NETWORKS[network].tokens[token];
     if (!tokenCfg) throw new ChainSendError('Unknown token: ' + token, { stage: 'pre_broadcast', safe: true });
     let raw;
