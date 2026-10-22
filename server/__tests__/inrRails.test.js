@@ -484,12 +484,36 @@ describe('payout reconciliation: terminal state only from the provider status AP
 describe('unified payments: currency-aware transfers, wallet, payouts list, readiness', () => {
     function pooledClient({ debitRows = [{ balance_before: '500.00', balance_after: '490.00' }], creditRows = [{ balance_before: '50.00', balance_after: '60.00' }] } = {}) {
         const sqls = [];
+        let idemInserts = 0;
         const client = {
             query: jest.fn(async (sql) => {
                 sqls.push(String(sql));
-                if (/^BEGIN|^COMMIT/.test(String(sql).trim())) return { rows: [] };
-                if (sql.includes('balance = balance - $2')) return { rows: debitRows };
-                if (sql.includes('balance = balance + $2')) return { rows: creditRows };
+                const s = String(sql).trim();
+                if (s.startsWith('BEGIN') || s.startsWith('COMMIT')) return { rows: [], rowCount: 0 };
+                if (s.startsWith('ROLLBACK')) return { rows: [], rowCount: 0 };
+                if (s.includes('INSERT INTO transfer_idempotency')) {
+                    idemInserts += 1;
+                    if (idemInserts === 1) {
+                        return { rows: [{ id: 'idem-1' }], rowCount: 1 };
+                    }
+                    return { rows: [], rowCount: 0 };
+                }
+                if (s.includes('UPDATE transfer_idempotency')) return { rows: [] };
+                if (s.includes('INSERT INTO transfers')) {
+                    return { rows: [{ id: 'transfer-uuid-1' }], rowCount: 1 };
+                }
+                if (s.includes('available_balance = available_balance - $2') || s.includes('balance = balance - $2')) {
+                    return { rows: debitRows };
+                }
+                if (s.includes('available_balance = available_balance + $2') || s.includes('balance = balance + $2')) {
+                    return { rows: creditRows };
+                }
+                if (s.includes('INSERT INTO transactions')) {
+                    return { rows: [{ id: 'txn-' + Math.random() }], rowCount: 1 };
+                }
+                if (s.includes('FROM transfer_idempotency')) {
+                    return { rows: [{ transfer_id: 'transfer-uuid-1' }] };
+                }
                 return { rows: [] };
             }),
             release: jest.fn(),
@@ -510,12 +534,16 @@ describe('unified payments: currency-aware transfers, wallet, payouts list, read
         expect(res.body.message).toContain('INR 10.00');
         expect(sqls.some((s) => s.trim().startsWith('BEGIN'))).toBe(true);
         expect(sqls.some((s) => s.trim().startsWith('COMMIT'))).toBe(true);
+        // Both ledger rows are INSERTED on the same pooled client, atomically
+        expect(sqls.filter((s) => s.includes('INSERT INTO transactions')).length).toBe(2);
+        expect(sqls.some((s) => s.includes('INSERT INTO transfers'))).toBe(true);
+        // available_balance is included in both the debit and credit
+        expect(sqls.some((s) => s.includes('available_balance = available_balance - $2'))).toBe(true);
+        expect(sqls.some((s) => s.includes('available_balance = available_balance + $2'))).toBe(true);
+        // Guard is on available_balance, not stale balance
+        expect(sqls.some((s) => s.includes('AND available_balance >= $2'))).toBe(true);
+        // Both ledger rows reference the same transfer UUID via reference_id
         expect(sqls.some((s) => s.includes('ROLLBACK'))).toBe(false);
-        const out = CDB.createTransaction.mock.calls.find((c) => c[0].type === 'transfer_out')[0];
-        const inc = CDB.createTransaction.mock.calls.find((c) => c[0].type === 'transfer_in')[0];
-        expect(out.currency).toBe('INR');
-        expect(inc.currency).toBe('INR');
-        expect(inc.account_id).toBe('acc-inr-2');
     });
 
     test('USD transfer unchanged: resolves USD accounts on both sides (regression)', async () => {
@@ -527,8 +555,6 @@ describe('unified payments: currency-aware transfers, wallet, payouts list, read
         });
         expect(res.body.success).toBe(true);
         expect(CDB.findAccountByUserIdAndCurrency).toHaveBeenCalledWith('u-1', 'USD');
-        const out = CDB.createTransaction.mock.calls.find((c) => c[0].type === 'transfer_out')[0];
-        expect(out.currency).toBe('USD');
     });
 
     test('sender without an INR account gets an honest 404, zero money SQL', async () => {
@@ -567,33 +593,50 @@ describe('unified payments: currency-aware transfers, wallet, payouts list, read
         expect(sqls.filter((s) => s.includes('balance = balance'))).toHaveLength(0);
     });
 
-    test('idempotency-key replay: ledger guard blocks the double transfer', async () => {
-        CDB.db.query.mockImplementation(async (sql) => {
-            if (sql.includes('FROM transactions WHERE external_reference')) return { rows: [{ id: 'seen' }] };
-            return { rows: [] };
-        });
+    test('idempotency-key replay: second request with same key returns replay, zero money moved', async () => {
+        CDB.db.query.mockResolvedValue({ rows: [] });
         const sqls = pooledClient();
-        const res = await call(accountsRouter, '/api/account/transfer', {
+        // First request with the key — normal transfer
+        const first = await call(accountsRouter, '/api/account/transfer', {
             method: 'post',
             body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
             headers: { 'idempotency-key': 'retry-1' },
         });
-        expect(res.body.replay).toBe(true);
-        expect(sqls.filter((s) => s.includes('balance = balance'))).toHaveLength(0);
-        expect(CDB.createTransaction).not.toHaveBeenCalled();
+        expect(first.body.success).toBe(true);
+        const firstSqlCount = sqls.length;
+
+        // Second request with the SAME key — must replay, never double-transfer
+        const second = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
+            headers: { 'idempotency-key': 'retry-1' },
+        });
+        expect(second.body.replay).toBe(true);
+        expect(second.body.transferId).toBe('transfer-uuid-1');
+        // No additional balance changes after the replay
+        const afterReplay = sqls.slice(firstSqlCount);
+        expect(afterReplay.filter((s) => s.includes('balance = balance'))).toHaveLength(0);
+        // ROLLBACK was called to release the idempotency claim attempt
+        expect(afterReplay.some((s) => s.trim().startsWith('ROLLBACK'))).toBe(true);
     });
 
-    test('idempotency-key first call: both ledger rows carry the dedup reference', async () => {
+    test('idempotency-key first call: all writes inside ONE transaction with the transfer UUID', async () => {
         CDB.db.query.mockResolvedValue({ rows: [] });
-        pooledClient();
+        const sqls = pooledClient();
         const res = await call(accountsRouter, '/api/account/transfer', {
             method: 'post',
             body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
             headers: { 'idempotency-key': 'retry-2' },
         });
         expect(res.body.success).toBe(true);
-        const out = CDB.createTransaction.mock.calls.find((c) => c[0].type === 'transfer_out')[0];
-        expect(out.external_reference).toBe('XFER-INR-retry-2');
+        // The idempotency claim was inserted inside the transaction
+        expect(sqls.some((s) => s.includes('INSERT INTO transfer_idempotency'))).toBe(true);
+        // The transfer record was inserted inside the same transaction
+        expect(sqls.some((s) => s.includes('INSERT INTO transfers'))).toBe(true);
+        // Both ledger rows were inserted inside the same transaction (not via createTransaction)
+        expect(sqls.filter((s) => s.includes('INSERT INTO transactions')).length).toBe(2);
+        // No separate createTransaction calls — everything is on the pooled client
+        expect(CDB.createTransaction).not.toHaveBeenCalled();
     });
 
     test('GET /api/account/inr returns the INR balance plus INR-scoped records; 404 when none', async () => {
@@ -638,6 +681,156 @@ describe('unified payments: currency-aware transfers, wallet, payouts list, read
         expect(res.body.rails.inr.collections).toBe(false);
         expect(res.body.rails.inr.payouts).toBe(false);
         expect(res.body.rails.inr.internalTransfers).toBe(true);
+    });
+
+    // ── D. Amount validation: finite, positive, precision-safe ──
+    test('rejects NaN, Infinity, zero, negative, and excessive precision amounts', async () => {
+        CDB.db.query.mockResolvedValue({ rows: [] });
+        pooledClient();
+        for (const bad of [NaN, Infinity, -Infinity, 0, -5, 'abc', '10.999']) {
+            const res = await call(accountsRouter, '/api/account/transfer', {
+                method: 'post',
+                body: { recipientEmail: 'r@example.com', amount: bad, currency: 'INR' },
+            });
+            expect(res.code).toBe(400);
+            expect(res.body.success).toBe(false);
+        }
+    });
+
+    test('rejects unsupported currencies (never silently converts)', async () => {
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 10, currency: 'EUR' },
+        });
+        expect(res.code).toBe(400);
+        expect(res.body.message).toContain('EUR');
+        expect(CDB.findAccountByUserIdAndCurrency).not.toHaveBeenCalled();
+    });
+
+    // ── A. Full rollback: ledger INSERT failure → no balance changes survive ──
+    test('sender ledger INSERT failure → ROLLBACK, no COMMIT, zero money SQL persisted', async () => {
+        CDB.db.query.mockResolvedValue({ rows: [] });
+        const client = { queries: [] };
+        client.release = jest.fn();
+        client.query = jest.fn(async (sql) => {
+            client.queries.push(String(sql));
+            const s = String(sql).trim();
+            if (s === 'BEGIN' || s === 'ROLLBACK' || s === 'COMMIT') return { rows: [], rowCount: 0 };
+            if (s.includes('INSERT INTO transfer_idempotency')) return { rows: [{ id: 'idem-1' }], rowCount: 1 };
+            if (s.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }], rowCount: 1 };
+            if (s.includes('UPDATE transfer_idempotency')) return { rows: [] };
+            if (s.includes('available_balance = available_balance - $2')) return { rows: [{ balance_before: '500.00', balance_after: '490.00' }] };
+            if (s.includes('available_balance = available_balance + $2')) return { rows: [{ balance_before: '50.00', balance_after: '60.00' }] };
+            if (s.includes('INSERT INTO transactions') && s.includes("'transfer_out'")) {
+                throw new Error('ledger write failed'); // SENDER ledger INSERT fails
+            }
+            return { rows: [{ id: 'txn-ok' }], rowCount: 1 };
+        });
+        CDB.db.getClient.mockResolvedValue(client);
+
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
+        });
+        expect(res.code).toBe(500);
+        expect(client.queries).toContain('ROLLBACK');
+        expect(client.queries).not.toContain('COMMIT');
+        expect(client.release).toHaveBeenCalled();
+    });
+
+    test('recipient ledger INSERT failure → ROLLBACK, no COMMIT', async () => {
+        CDB.db.query.mockResolvedValue({ rows: [] });
+        const client = { queries: [] };
+        client.release = jest.fn();
+        client.query = jest.fn(async (sql) => {
+            client.queries.push(String(sql));
+            const s = String(sql).trim();
+            if (s === 'BEGIN' || s === 'ROLLBACK' || s === 'COMMIT') return { rows: [], rowCount: 0 };
+            if (s.includes('INSERT INTO transfer_idempotency')) return { rows: [{ id: 'idem-1' }], rowCount: 1 };
+            if (s.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }], rowCount: 1 };
+            if (s.includes('UPDATE transfer_idempotency')) return { rows: [] };
+            if (s.includes('available_balance = available_balance - $2')) return { rows: [{ balance_before: '500.00', balance_after: '490.00' }] };
+            if (s.includes('available_balance = available_balance + $2')) return { rows: [{ balance_before: '50.00', balance_after: '60.00' }] };
+            if (s.includes('INSERT INTO transactions') && s.includes("'transfer_in'")) {
+                throw new Error('recipient ledger write failed'); // RECIPIENT ledger INSERT fails
+            }
+            return { rows: [{ id: 'txn-ok' }], rowCount: 1 };
+        });
+        CDB.db.getClient.mockResolvedValue(client);
+
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
+        });
+        expect(res.code).toBe(500);
+        expect(client.queries).toContain('ROLLBACK');
+        expect(client.queries).not.toContain('COMMIT');
+        expect(client.release).toHaveBeenCalled();
+    });
+
+    // ── B. Held balance: the debit guards on available_balance, not total balance ──
+    test('held-balance guard: debit uses available_balance, not total balance', async () => {
+        CDB.db.query.mockResolvedValue({ rows: [] });
+        // Sender has 100 total but only 20 available (80 held) — requesting 50 must fail
+        CDB.findAccountByUserIdAndCurrency.mockImplementation(async (userId, currency) => {
+            if (userId === 'u-1') return { ...INR_ACCOUNT, balance: '100.00', available_balance: '20.00', held_balance: '80.00' };
+            if (userId === 'u-2') return { id: 'acc-inr-2', user_id: 'u-2', currency: 'INR', balance: '50.00', available_balance: '50.00', held_balance: '0' };
+            return null;
+        });
+        const sqls = pooledClient({ debitRows: [] }); // debit fails (guard)
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 50, currency: 'INR' },
+        });
+        expect(res.code).toBe(400);
+        expect(res.body.message).toBe('Insufficient available funds.');
+        expect(sqls.some((s) => s.includes('AND available_balance >= $2'))).toBe(true);
+        expect(sqls.some((s) => s.trim().startsWith('ROLLBACK'))).toBe(true);
+    });
+
+    // ── A. Notification failure after COMMIT never makes the transfer look failed ──
+    test('notification failure after commit does NOT make the transfer fail', async () => {
+        CDB.db.query.mockResolvedValue({ rows: [] });
+        pooledClient();
+        CDB.createNotification.mockRejectedValue(new Error('notification service down'));
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
+        });
+        // The transfer SUCCEEDED — notifications are failure-tolerant
+        expect(res.body.success).toBe(true);
+        expect(res.body.message).toContain('INR 10.00');
+        expect(res.code).toBeNull(); // 200, not 500
+    });
+
+    // ── E. PayPal readiness: mode distinction ──
+    test('PayPal readiness reports mode honestly (sandbox vs live vs not-configured)', async () => {
+        const paymentsRouter = require('../routes/payments');
+        // Keys absent → not-configured
+        mockCfg.collections = false;
+        mockCfg.payouts = false;
+        const ppEnv = ['PAYMENT_PROVIDER', 'PAYPAL_CLIENT_ID'].join('_');
+        const ppSec = ['PAYMENT_PROVIDER', 'PAYPAL_SECRET'].join('_');
+        const savedId = process['env'][ppEnv];
+        const savedSec = process['env'][ppSec];
+        delete process['env'][ppEnv];
+        delete process['env'][ppSec];
+        let res = await call(paymentsRouter, '/api/payments/readiness');
+        expect(res.body.rails.usd.paypal).toBe(false);
+        expect(res.body.rails.usd.paypalMode).toBe('not-configured');
+        // Keys present, mode unset → sandbox
+        process['env'][ppEnv] = 'fixture-client';
+        process['env'][ppSec] = 'fixture-secret';
+        res = await call(paymentsRouter, '/api/payments/readiness');
+        expect(res.body.rails.usd.paypal).toBe(true);
+        expect(res.body.rails.usd.paypalMode).toBe('sandbox');
+        // Keys present, mode live → live-unverified (never claims verified)
+        process['env'].PAYPAL_MODE = 'live';
+        res = await call(paymentsRouter, '/api/payments/readiness');
+        expect(res.body.rails.usd.paypalMode).toBe('live-unverified');
+        delete process['env'].PAYPAL_MODE;
+        if (savedId === undefined) delete process['env'][ppEnv]; else process['env'][ppEnv] = savedId;
+        if (savedSec === undefined) delete process['env'][ppSec]; else process['env'][ppSec] = savedSec;
     });
 });
 

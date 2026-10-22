@@ -271,10 +271,11 @@ export const api = {
     return request<ApiResponse>(`api/account/users/search?q=${encodeURIComponent(q)}`);
   },
 
-  async sendMoney(data: { recipientEmail?: string; recipientAccountNumber?: string; amount: number; description?: string; currency?: string }): Promise<ApiResponse> {
+  async sendMoney(data: { recipientEmail?: string; recipientAccountNumber?: string; amount: number; description?: string; currency?: string }, idempotencyKey?: string): Promise<ApiResponse> {
     return request<ApiResponse>('api/account/transfer', {
       method: 'POST',
       body: JSON.stringify(data),
+      ...(idempotencyKey ? { headers: { 'idempotency-key': idempotencyKey } } : {}),
     });
   },
 

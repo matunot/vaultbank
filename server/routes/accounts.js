@@ -493,6 +493,12 @@ router.post('/api/account/open-inr', authenticateToken, async (req, res) => {
 
 // ============================================================
 // POST /api/account/transfer — Transfer money to another user
+// ATOMIC: idempotency claim + debit + credit + both ledger rows
+// + the transfer record run in ONE database transaction on ONE
+// pooled client. Nothing outside it can touch these tables
+// between BEGIN and COMMIT. Notifications run after commit and
+// are failure-tolerant — they never make a completed transfer
+// look failed.
 // ============================================================
 router.post('/api/account/transfer', authenticateToken, async (req, res) => {
     try {
@@ -500,8 +506,22 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
         const wantedCurrency = String(currency).trim().toUpperCase();
         const idempotencyKey = req.headers['idempotency-key'] ? String(req.headers['idempotency-key']).slice(0, 100) : null;
 
-        if (!amount || amount <= 0) {
+        // ── D. Explicit supported-currency whitelist ──
+        const SUPPORTED_CURRENCIES = ['USD', 'INR'];
+        if (!SUPPORTED_CURRENCIES.includes(wantedCurrency)) {
+            return res.status(400).json({ success: false, message: `Currency ${wantedCurrency} is not supported. Use ${SUPPORTED_CURRENCIES.join(' or ')}.` });
+        }
+
+        // ── D. Amount validation: finite, positive, precision-safe ──
+        const transferAmount = parseFloat(amount);
+        if (!Number.isFinite(transferAmount) || transferAmount <= 0) {
             return res.status(400).json({ success: false, message: 'Invalid transfer amount.' });
+        }
+        if (transferAmount > 100000) {
+            return res.status(400).json({ success: false, message: 'Maximum single transfer is 100,000.' });
+        }
+        if (Math.round(transferAmount * 100) / 100 !== transferAmount) {
+            return res.status(400).json({ success: false, message: 'Amount cannot have more than 2 decimal places.' });
         }
 
         // Currency-aware sender account: resolves the user's account in the
@@ -511,19 +531,8 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
             return res.status(404).json({ success: false, message: `You don't have a ${wantedCurrency} account yet. Open one first.` });
         }
 
-        // Idempotency: a retried request with the same key replays instead of
-        // double-transferring (durable via the ledger external_reference).
-        let dedupRef = null;
-        if (idempotencyKey) {
-            dedupRef = `XFER-${wantedCurrency}-${idempotencyKey}`;
-            const { rows: seen } = await db.query('SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1', [dedupRef]);
-            if (seen.length > 0) {
-                res.setHeader('Idempotent-Replay', 'true');
-                return res.json({ success: true, replay: true, message: 'Transfer already processed — replayed result.' });
-            }
-        }
-
-        // Find recipient — resolved in the SAME currency.
+        // Find recipient — resolved in the SAME currency, server-side only.
+        // No client-supplied account ID can bypass ownership.
         let recipientAccount = null;
         if (recipientAccountNumber) {
             recipientAccount = await findAccountByNumber(recipientAccountNumber);
@@ -550,8 +559,6 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
         }
 
         // Multi-currency safety: internal transfers are same-currency only.
-        // Existing USD -> USD transfers are unaffected; USD <-> INR is refused
-        // rather than silently reinterpreted.
         if (String(senderAccount.currency).toUpperCase() !== String(recipientAccount.currency).toUpperCase()) {
             return res.status(400).json({
                 success: false,
@@ -560,140 +567,247 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
             });
         }
 
-        const transferAmount = parseFloat(amount);
-        let senderBalance = parseFloat(senderAccount.balance);
-
-        if (transferAmount > senderBalance) {
-            return res.status(400).json({ success: false, message: 'Insufficient funds.', availableBalance: senderBalance });
-        }
-
-        // Calculate fee (free for internal, small fee for external)
         const fee = 0; // Internal transfers are free for now
-
-        // Atomic transfer: guarded debit + credit inside ONE pooled
-        // transaction, so either both halves commit or neither does. No more
-        // "in a real bank, this would be in a transaction" — it now is.
+        let senderBalance;
         let newSenderBalance;
         let recipientBalance;
+
         if (isDemo) {
-            // In-memory demo store is single-process; legacy path is safe there.
+            // ── Demo path: in-memory store, single-process (no races) ──
+            senderBalance = parseFloat(senderAccount.balance) || 0;
+            const senderAvailable = parseFloat(senderAccount.available_balance) || 0;
+            if (transferAmount + fee > senderAvailable) {
+                return res.status(400).json({ success: false, message: 'Insufficient available funds.', availableBalance: senderAvailable });
+            }
             newSenderBalance = senderBalance - transferAmount - fee;
             recipientBalance = parseFloat(recipientAccount.balance) + transferAmount;
-            await updateAccountBalance(senderAccount.id, newSenderBalance);
-            await updateAccountBalance(recipientAccount.id, recipientBalance);
-        } else {
-            const client = await db.getClient();
+            senderAccount.balance = newSenderBalance;
+            senderAccount.available_balance = (parseFloat(senderAccount.available_balance) || 0) - transferAmount - fee;
+            recipientAccount.balance = recipientBalance;
+            recipientAccount.available_balance = (parseFloat(recipientAccount.available_balance) || 0) + transferAmount;
+
+            // Demo ledger rows + transfer record (in-memory store)
+            await createTransaction({
+                account_id: senderAccount.id, user_id: req.user.id,
+                type: 'transfer_out', status: 'completed',
+                amount: -(transferAmount + fee), currency: wantedCurrency,
+                balance_before: senderBalance, balance_after: newSenderBalance,
+                description: description || `Transfer to ${recipientAccount.account_number}`,
+                category: 'transfer', counterparty_name: recipientAccount.account_name,
+                counterparty_account: recipientAccount.account_number,
+            });
+            await createTransaction({
+                account_id: recipientAccount.id, user_id: recipientAccount.user_id,
+                type: 'transfer_in', status: 'completed',
+                amount: transferAmount, currency: wantedCurrency,
+                balance_before: parseFloat(recipientAccount.balance) - transferAmount,
+                balance_after: recipientBalance,
+                description: description || `Transfer from ${senderAccount.account_number}`,
+                category: 'income', counterparty_name: req.user.full_name,
+                counterparty_account: senderAccount.account_number,
+            });
+            const transfer = await createTransfer({
+                from_account_id: senderAccount.id, to_account_id: recipientAccount.id,
+                from_user_id: req.user.id, to_user_id: recipientAccount.user_id,
+                amount: transferAmount, currency: wantedCurrency, fee,
+                transfer_type: 'internal', status: 'completed',
+                description: description || reason || 'Internal transfer',
+            });
+
             try {
-                await client.query('BEGIN');
-                const debit = await client.query(
-                    'UPDATE accounts SET balance = balance - $2 WHERE id = $1 AND balance >= $2 RETURNING (balance + $2) AS balance_before, balance AS balance_after',
-                    [senderAccount.id, transferAmount + fee]
-                );
-                if (!debit.rows.length) {
-                    await client.query('ROLLBACK');
-                    return res.status(400).json({ success: false, message: 'Insufficient funds.', availableBalance: senderBalance });
-                }
-                const credit = await client.query(
-                    'UPDATE accounts SET balance = balance + $2 WHERE id = $1 RETURNING (balance - $2) AS balance_before, balance AS balance_after',
-                    [recipientAccount.id, transferAmount]
-                );
-                if (!credit.rows.length) {
-                    await client.query('ROLLBACK');
-                    return res.status(404).json({ success: false, message: 'Recipient account not found.' });
-                }
-                await client.query('COMMIT');
-                senderBalance = parseFloat(debit.rows[0].balance_before);
-                newSenderBalance = parseFloat(debit.rows[0].balance_after);
-                recipientBalance = parseFloat(credit.rows[0].balance_after);
-            } catch (e) {
-                try { await client.query('ROLLBACK'); } catch (_) { /* releasing anyway */ }
-                throw e;
-            } finally {
-                client.release();
+                await createNotification(req.user.id, {
+                    type: 'transaction', title: 'Transfer Sent',
+                    message: `${wantedCurrency} ${transferAmount.toFixed(2)} sent to ${recipientAccount.account_number}. Remaining balance: ${wantedCurrency} ${newSenderBalance.toFixed(2)}`,
+                });
+                await createNotification(recipientAccount.user_id, {
+                    type: 'transaction', title: 'Transfer Received',
+                    message: `${wantedCurrency} ${transferAmount.toFixed(2)} received from ${senderAccount.account_number}. New balance: ${wantedCurrency} ${recipientBalance.toFixed(2)}`,
+                });
+            } catch (notifErr) {
+                console.warn('Transfer notification failure (transfer completed):', notifErr.message);
             }
+
+            return res.json({
+                success: true,
+                message: `Successfully transferred ${wantedCurrency} ${transferAmount.toFixed(2)}`,
+                transfer: { id: transfer.id, amount: transferAmount, fee,
+                    recipient: { accountNumber: recipientAccount.account_number, name: recipientAccount.account_name },
+                    newBalance: newSenderBalance },
+            });
         }
 
-        // Record sender transaction
-        await createTransaction({
-            account_id: senderAccount.id,
-            user_id: req.user.id,
-            type: 'transfer_out',
-            status: 'completed',
-            amount: -(transferAmount + fee),
-            currency: senderAccount.currency,
-            balance_before: senderBalance,
-            balance_after: newSenderBalance,
-            description: description || `Transfer to ${recipientAccount.account_number}`,
-            category: 'transfer',
-            counterparty_name: recipientAccount.account_name,
-            counterparty_account: recipientAccount.account_number,
-            external_reference: dedupRef || undefined,
-        });
+        // ── A+B+C: ONE atomic database transaction on ONE pooled client ──
+        // Every operation below uses the SAME client. No helper that
+        // silently acquires a second connection is called inside the
+        // transaction. If ANY write fails, ROLLBACK undoes everything.
 
-        // Record recipient transaction
-        await createTransaction({
-            account_id: recipientAccount.id,
-            user_id: recipientAccount.user_id,
-            type: 'transfer_in',
-            status: 'completed',
-            amount: transferAmount,
-            currency: recipientAccount.currency,
-            balance_before: parseFloat(recipientAccount.balance),
-            balance_after: recipientBalance,
-            description: description || `Transfer from ${senderAccount.account_number}`,
-            category: 'income',
-            counterparty_name: req.user.full_name,
-            counterparty_account: senderAccount.account_number,
-            external_reference: dedupRef || undefined,
-        });
+        // Ensure the idempotency table exists (idempotent, schema-safe).
+        try {
+            await db.query(`
+                CREATE TABLE IF NOT EXISTS transfer_idempotency (
+                    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                    user_id UUID NOT NULL,
+                    currency TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    transfer_id UUID,
+                    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    UNIQUE (user_id, currency, idempotency_key)
+                )
+            `);
+        } catch (tblErr) {
+            console.warn('transfer_idempotency table ensure skipped:', tblErr.message);
+        }
 
-        // Record transfer
-        const transfer = await createTransfer({
-            from_account_id: senderAccount.id,
-            to_account_id: recipientAccount.id,
-            from_user_id: req.user.id,
-            to_user_id: recipientAccount.user_id,
-            amount: transferAmount,
-            currency: senderAccount.currency,
-            fee,
-            transfer_type: 'internal',
-            status: 'completed',
-            description: description || reason || 'Internal transfer',
-        });
+        const client = await db.getClient();
+        let transferId = null;
+        try {
+            await client.query('BEGIN');
 
-        // Notify both parties
-        await createNotification(req.user.id, {
-            type: 'transaction',
-            title: 'Transfer Sent',
-            message: `${senderAccount.currency} ${transferAmount.toFixed(2)} sent to ${recipientAccount.account_number}. Remaining balance: ${senderAccount.currency} ${newSenderBalance.toFixed(2)}`
-        });
+            // ── C. Durable idempotency claim — database-enforced UNIQUE ──
+            if (idempotencyKey) {
+                const claim = await client.query(
+                    `INSERT INTO transfer_idempotency (user_id, currency, idempotency_key)
+                     VALUES ($1, $2, $3)
+                     ON CONFLICT (user_id, currency, idempotency_key) DO NOTHING
+                     RETURNING id`,
+                    [req.user.id, wantedCurrency, idempotencyKey]
+                );
+                if (claim.rowCount === 0) {
+                    await client.query('ROLLBACK');
+                    // Concurrent duplicate or retry — return the original result.
+                    const { rows: existing } = await client.query(
+                        `SELECT ti.transfer_id FROM transfer_idempotency ti
+                         WHERE ti.user_id = $1 AND ti.currency = $2 AND ti.idempotency_key = $3
+                         AND ti.transfer_id IS NOT NULL LIMIT 1`,
+                        [req.user.id, wantedCurrency, idempotencyKey]
+                    );
+                    if (existing.length > 0) {
+                        res.setHeader('Idempotent-Replay', 'true');
+                        return res.json({ success: true, replay: true, transferId: existing[0].transfer_id, message: 'Transfer already processed — replayed result.' });
+                    }
+                    // The original is still in flight — tell the client to retry.
+                    return res.status(409).json({ success: false, code: 'TRANSFER_IN_PROGRESS', message: 'A transfer with this idempotency key is still in progress. Retry shortly.' });
+                }
+            }
 
-        await createNotification(recipientAccount.user_id, {
-            type: 'transaction',
-            title: 'Transfer Received',
-            message: `${recipientAccount.currency} ${transferAmount.toFixed(2)} received from ${senderAccount.account_number}. New balance: ${recipientAccount.currency} ${recipientBalance.toFixed(2)}`
-        });
+            // ── A. Insert the transfer record INSIDE the transaction — gets
+            // the UUID that both ledger rows will reference via reference_id.
+            const transferResult = await client.query(
+                `INSERT INTO transfers (from_account_id, to_account_id, from_user_id, to_user_id,
+                    amount, currency, fee, transfer_type, status, description)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'internal', 'completed', $8)
+                 RETURNING id`,
+                [senderAccount.id, recipientAccount.id, req.user.id, recipientAccount.user_id,
+                 transferAmount, wantedCurrency, fee, description || reason || 'Internal transfer']
+            );
+            transferId = transferResult.rows[0].id;
 
-        // Create an in-memory alert for the receiver so their notification
-        // bell badge lights up immediately (complements the DB notification).
+            // Link the idempotency claim to the completed transfer.
+            if (idempotencyKey) {
+                await client.query(
+                    `UPDATE transfer_idempotency SET transfer_id = $1
+                     WHERE user_id = $2 AND currency = $3 AND idempotency_key = $4`,
+                    [transferId, req.user.id, wantedCurrency, idempotencyKey]
+                );
+            }
+
+            // ── B. Guarded debit: both balance + available_balance, guarded
+            // on the AUTHORITATIVE available_balance (not a stale read).
+            // held_balance is never touched.
+            const debit = await client.query(
+                `UPDATE accounts
+                 SET balance = balance - $2, available_balance = available_balance - $2
+                 WHERE id = $1 AND available_balance >= $2
+                 RETURNING (balance + $2) AS balance_before, balance AS balance_after`,
+                [senderAccount.id, transferAmount + fee]
+            );
+            if (!debit.rows.length) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, message: 'Insufficient available funds.', availableBalance: senderAccount.available_balance });
+            }
+
+            // ── B. Credit: both balance + available_balance consistently.
+            const credit = await client.query(
+                `UPDATE accounts
+                 SET balance = balance + $2, available_balance = available_balance + $2
+                 WHERE id = $1
+                 RETURNING (balance - $2) AS balance_before, balance AS balance_after`,
+                [recipientAccount.id, transferAmount]
+            );
+            if (!credit.rows.length) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ success: false, message: 'Recipient account not found.' });
+            }
+
+            // ── A. Sender ledger row — same client, INSIDE the transaction.
+            // Uses reference_id (the FK to transfers.id) for durable linkage.
+            await client.query(
+                `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
+                    balance_before, balance_after, description, category, reference_id,
+                    counterparty_name, counterparty_account)
+                 VALUES ($1, $2, 'transfer_out', 'completed', $3, $4, $5, $6, $7, 'transfer', $8, $9, $10)`,
+                [senderAccount.id, req.user.id, -(transferAmount + fee), wantedCurrency,
+                 parseFloat(debit.rows[0].balance_before), parseFloat(debit.rows[0].balance_after),
+                 description || `Transfer to ${recipientAccount.account_number}`,
+                 recipientAccount.account_name, recipientAccount.account_number, transferId]
+            );
+
+            // ── A. Recipient ledger row — same client, same transaction.
+            await client.query(
+                `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
+                    balance_before, balance_after, description, category, reference_id,
+                    counterparty_name, counterparty_account)
+                 VALUES ($1, $2, 'transfer_in', 'completed', $3, $4, $5, $6, $7, 'income', $8, $9, $10)`,
+                [recipientAccount.id, recipientAccount.user_id, transferAmount, wantedCurrency,
+                 parseFloat(credit.rows[0].balance_before), parseFloat(credit.rows[0].balance_after),
+                 description || `Transfer from ${senderAccount.account_number}`,
+                 req.user.full_name, senderAccount.account_number, transferId]
+            );
+
+            // ── A. COMMIT: everything above is one atomic operation ──
+            await client.query('COMMIT');
+            senderBalance = parseFloat(debit.rows[0].balance_before);
+            newSenderBalance = parseFloat(debit.rows[0].balance_after);
+            recipientBalance = parseFloat(credit.rows[0].balance_after);
+        } catch (e) {
+            try { await client.query('ROLLBACK'); } catch (_) { /* releasing anyway */ }
+            throw e;
+        } finally {
+            client.release();
+        }
+
+        // ── Notifications AFTER the transaction — a failure here must never
+        // make a completed transfer appear failed or encourage a retry.
+        try {
+            await createNotification(req.user.id, {
+                type: 'transaction', title: 'Transfer Sent',
+                message: `${wantedCurrency} ${transferAmount.toFixed(2)} sent to ${recipientAccount.account_number}. Remaining balance: ${wantedCurrency} ${newSenderBalance.toFixed(2)}`,
+            });
+            await createNotification(recipientAccount.user_id, {
+                type: 'transaction', title: 'Transfer Received',
+                message: `${wantedCurrency} ${transferAmount.toFixed(2)} received from ${senderAccount.account_number}. New balance: ${wantedCurrency} ${recipientBalance.toFixed(2)}`,
+            });
+        } catch (notifErr) {
+            console.warn('Transfer notification failure (transfer completed):', notifErr.message);
+        }
+
+        // In-memory alert for the receiver (best-effort, never fatal).
         try {
             const { demoStore } = require('../config/database');
             demoStore.alerts.push({
                 id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                 userId: recipientAccount.user_id,
                 type: 'success',
-                message: `You received ${recipientAccount.currency} ${transferAmount.toFixed(2)} from ${req.user.full_name || req.user.email}.`,
-                severity: 'info',
-                read: false,
-                createdAt: new Date().toISOString(),
+                message: `You received ${wantedCurrency} ${transferAmount.toFixed(2)} from ${req.user.full_name || req.user.email}.`,
+                severity: 'info', read: false, createdAt: new Date().toISOString(),
             });
         } catch (e) { /* alert is best-effort */ }
 
         res.json({
             success: true,
-            message: `Successfully transferred ${senderAccount.currency} ${transferAmount.toFixed(2)}`,
+            message: `Successfully transferred ${wantedCurrency} ${transferAmount.toFixed(2)}`,
             transfer: {
-                id: transfer.id,
+                id: transferId,
                 amount: transferAmount,
                 fee,
                 recipient: {

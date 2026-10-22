@@ -186,6 +186,11 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
   const [sendAmount, setSendAmount] = useState('');
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
   const [sendMsg, setSendMsg] = useState('');
+  // Idempotency key: one per transfer ATTEMPT — reused across retries of the
+  // same attempt, never regenerated on timeout, cleared only on a definitive
+  // result or when the user starts a new transfer.
+  const sendKeyRef = useRef<string | null>(null);
+  const sendInFlightRef = useRef(false);
 
   useEffect(() => {
     if (!showSend || selected) return;
@@ -210,11 +215,22 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
     setSendAmount('');
     setSendStatus('idle');
     setSendMsg('');
+    sendKeyRef.current = null;
+    sendInFlightRef.current = false;
   };
 
   const executeSend = async () => {
     const recipient = selected ? (selected.accountNumber || selected.email || selected.name) : query.trim();
     if (!recipient || !sendAmount || parseFloat(sendAmount) <= 0) return;
+    // Double-submission guard: if a request is already in flight for this
+    // attempt, ignore the click — the same key is already protecting it.
+    if (sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
+    // Generate the key ONCE per attempt — a retry reuses it so the server
+    // can safely deduplicate.
+    if (!sendKeyRef.current) {
+      sendKeyRef.current = `xfer-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+    }
     setSendStatus('sending');
     setSendMsg('');
     try {
@@ -222,16 +238,26 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       const res = await api.sendMoney(
         isEmail
           ? { recipientEmail: recipient, amount: parseFloat(sendAmount), currency }
-          : { recipientAccountNumber: recipient, amount: parseFloat(sendAmount), currency }
+          : { recipientAccountNumber: recipient, amount: parseFloat(sendAmount), currency },
+        sendKeyRef.current
       );
       if (!res.success) throw new Error(res.message || 'Transfer failed.');
       setSendStatus('success');
       setSendMsg(`${currency} ${parseFloat(sendAmount).toFixed(2)} transfer completed.`);
+      sendKeyRef.current = null; // definitive result — key consumed
       if (currency === 'INR') loadInr();
       setTimeout(resetSend, 2200);
     } catch (err: any) {
       setSendStatus('error');
       setSendMsg(err?.message || 'Transfer failed.');
+      // Keep the key for retries — the server will deduplicate if the
+      // original request actually reached it (e.g., timeout after commit).
+      // Only clear on definitive non-retryable errors.
+      if (err?.status === 400 || err?.status === 404) {
+        sendKeyRef.current = null; // definitive client error — start fresh next time
+      }
+    } finally {
+      sendInFlightRef.current = false;
     }
   };
 

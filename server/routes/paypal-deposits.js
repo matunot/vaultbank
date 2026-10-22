@@ -258,3 +258,4 @@ module.exports = router;
 module.exports.creditPayPalDeposit = creditPayPalDeposit;
 module.exports.missingPayPalKeys = missingPayPalKeys;
 module.exports.captureAndCredit = captureAndCredit;
+module.exports.paypalConfigInfo = paypalConfigInfo;

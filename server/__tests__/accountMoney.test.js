@@ -91,9 +91,15 @@ describe('atomic account money (real-database mode)', () => {
         const client = { queries: [], release: jest.fn() };
         client.query = jest.fn(async (sql) => {
             client.queries.push(sql);
-            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [] };
-            if (sql.includes('SET balance = balance - $2')) return { rows: [{ balance_before: '100.00', balance_after: '95.00' }] };
-            return { rows: [{ balance_before: '50.00', balance_after: '55.00' }] };
+            const s = String(sql).trim();
+            if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK') return { rows: [], rowCount: 0 };
+            if (s.includes('INSERT INTO transfer_idempotency')) return { rows: [{ id: 'idem-1' }], rowCount: 1 };
+            if (s.includes('UPDATE transfer_idempotency')) return { rows: [] };
+            if (s.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }], rowCount: 1 };
+            if (s.includes('available_balance = available_balance - $2')) return { rows: [{ balance_before: '100.00', balance_after: '95.00' }] };
+            if (s.includes('available_balance = available_balance + $2')) return { rows: [{ balance_before: '50.00', balance_after: '55.00' }] };
+            if (s.includes('INSERT INTO transactions')) return { rows: [{ id: 'txn-' + client.queries.length }], rowCount: 1 };
+            return { rows: [] };
         });
         CDB.db.getClient.mockResolvedValue(client);
         CDB.db.query.mockResolvedValue({ rows: [] });
@@ -107,30 +113,40 @@ describe('atomic account money (real-database mode)', () => {
         expect(client.queries).not.toContain('ROLLBACK');
         expect(client.release).toHaveBeenCalled();
 
-        // Ledger records only after the money actually moved.
-        expect(CDB.createTransaction).toHaveBeenCalled();
-        const outTx = CDB.createTransaction.mock.calls[0][0];
-        expect(outTx.type).toBe('transfer_out');
-        expect(outTx.balance_after).toBe(95);
-        const inTx = CDB.createTransaction.mock.calls[1][0];
-        expect(inTx.balance_after).toBe(55);
+        // Atomicity: both ledger rows are INSIDE the same client transaction.
+        const txnInserts = client.queries.filter((q) => q.includes('INSERT INTO transactions'));
+        expect(txnInserts.length).toBe(2);
+        expect(txnInserts.some((q) => q.includes('transfer_out'))).toBe(true);
+        expect(txnInserts.some((q) => q.includes('transfer_in'))).toBe(true);
+        // The transfer record is inside the same transaction.
+        expect(client.queries.some((q) => q.includes('INSERT INTO transfers'))).toBe(true);
+        // No separate helpers were used — everything on the pooled client.
+        expect(CDB.createTransaction).not.toHaveBeenCalled();
+        expect(CDB.createTransfer).not.toHaveBeenCalled();
     });
 
     test('transfer debits atomically: no debit row -> ROLLBACK, no COMMIT, no ledger, 400', async () => {
         const client = { queries: [], release: jest.fn() };
         client.query = jest.fn(async (sql) => {
             client.queries.push(sql);
-            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [] };
-            return { rows: [] }; // debit finds no row (balance guard failed)
+            const s = String(sql).trim();
+            if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK') return { rows: [], rowCount: 0 };
+            if (s.includes('INSERT INTO transfer_idempotency')) return { rows: [{ id: 'idem-1' }], rowCount: 1 };
+            if (s.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }], rowCount: 1 };
+            if (s.includes('available_balance = available_balance - $2')) return { rows: [] }; // debit finds no row (available_balance guard failed)
+            return { rows: [] };
         });
         CDB.db.getClient.mockResolvedValue(client);
+        CDB.db.query.mockResolvedValue({ rows: [] });
 
         const res = await call('/api/account/transfer', { amount: 80, recipientAccountNumber: 'VB-2222' });
         expect(res.code).toBe(400);
-        expect(res.body.message).toBe('Insufficient funds.');
+        expect(res.body.message).toBe('Insufficient available funds.');
         expect(client.queries).toContain('ROLLBACK');
         expect(client.queries).not.toContain('COMMIT');
         expect(client.release).toHaveBeenCalled();
+        // No ledger rows were written (they are inside the transaction that rolled back)
+        expect(client.queries.filter((q) => q.includes('INSERT INTO transactions')).length).toBe(0);
         expect(CDB.createTransfer).not.toHaveBeenCalled();
         expect(CDB.createTransaction).not.toHaveBeenCalled();
     });
@@ -139,16 +155,21 @@ describe('atomic account money (real-database mode)', () => {
         const client = { queries: [], release: jest.fn() };
         client.query = jest.fn(async (sql) => {
             client.queries.push(sql);
-            if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rows: [] };
-            if (sql.includes('SET balance = balance - $2')) return { rows: [{ balance_before: '100.00', balance_after: '95.00' }] };
+            const s = String(sql).trim();
+            if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK') return { rows: [], rowCount: 0 };
+            if (s.includes('INSERT INTO transfer_idempotency')) return { rows: [{ id: 'idem-1' }], rowCount: 1 };
+            if (s.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }], rowCount: 1 };
+            if (s.includes('available_balance = available_balance - $2')) return { rows: [{ balance_before: '100.00', balance_after: '95.00' }] };
             return { rows: [] }; // credit half failed (recipient deleted mid-flight)
         });
         CDB.db.getClient.mockResolvedValue(client);
+        CDB.db.query.mockResolvedValue({ rows: [] });
 
         const res = await call('/api/account/transfer', { amount: 5, recipientAccountNumber: 'VB-2222' });
         expect(res.code).toBe(404);
         expect(client.queries).toContain('ROLLBACK');
         expect(client.queries).not.toContain('COMMIT');
+        expect(client.queries.filter((q) => q.includes('INSERT INTO transactions')).length).toBe(0);
         expect(CDB.createTransfer).not.toHaveBeenCalled();
     });
 
@@ -158,11 +179,12 @@ describe('atomic account money (real-database mode)', () => {
             release: jest.fn(),
             query: jest.fn(async (sql) => {
                 client.queries.push(sql);
-                if (sql === 'BEGIN') throw new Error('connection dropped');
+                if (String(sql).trim() === 'BEGIN') throw new Error('connection dropped');
                 return { rows: [] };
             }),
         };
         CDB.db.getClient.mockResolvedValue(client);
+        CDB.db.query.mockResolvedValue({ rows: [] });
 
         const res = await call('/api/account/transfer', { amount: 5, recipientAccountNumber: 'VB-2222' });
         expect(res.code).toBe(500);

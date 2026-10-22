@@ -53,7 +53,12 @@ router.get('/api/payments/readiness', (req, res) => {
         const stripeEnv = ['PAYMENT_PROVIDER', 'STRIPE_SECRET'].join('_');
         const stripeSecret = process['env'][stripeEnv] || '';
         const stripeConfigured = /^sk_(test|live)_/.test(stripeSecret) && !/placeholder|your_/i.test(stripeSecret);
-        const paypalConfigured = paypalDeposits.missingPayPalKeys().length === 0;
+        // PayPal: keys present is NOT the same as live mode. Report the
+        // selected mode honestly; a live mode claim requires an actual
+        // successful live deposit — none has been verified yet.
+        const paypalKeysPresent = paypalDeposits.missingPayPalKeys().length === 0;
+        const paypalInfo = paypalDeposits.paypalConfigInfo();
+        const paypalMode = paypalKeysPresent ? (paypalInfo.mode === 'live' ? 'live-unverified' : 'sandbox') : 'not-configured';
         const bankConfigured = !!(bankDeposits.receivingConfig && bankDeposits.receivingConfig().enabled);
         const collections = collectionsRegistry.collectionsAvailability();
         const payouts = payoutsRegistry.payoutAvailability();
@@ -62,7 +67,8 @@ router.get('/api/payments/readiness', (req, res) => {
             rails: {
                 usd: {
                     cardStripe: stripeConfigured,
-                    paypal: paypalConfigured,
+                    paypal: paypalKeysPresent,
+                    paypalMode,
                     bankTransferInstructions: bankConfigured,
                     internalTransfers: true,
                     externalWithdrawals: false, // honest: no USD payout rail exists today
