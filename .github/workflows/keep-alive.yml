@@ -73,10 +73,13 @@ jobs:
         run: |
           HEALTH_STATUS="${{ steps.health.outputs.status }}"
           LOGIN_STATUS="${{ steps.login_test.outputs.status }}"
+          # Title marker — the ONLY matching mechanism (no label dependency:
+          # the '🚨 outage' label does not exist in this repo).
+          MARKER="VaultBank Backend Outage"
 
-          # Check if an outage issue is already open
-          EXISTING=$(gh issue list --repo "${{ github.repository }}" --state open --json title 2>/dev/null || echo "[]")
-          ALREADY_OPEN=$(echo "$EXISTING" | grep -c "VaultBank Backend Outage" || true)
+          # Dedup: find an already-open outage issue by TITLE.
+          EXISTING_TITLES=$(gh issue list --repo "${{ github.repository }}" --state open --json title --jq '.[].title' 2>/dev/null || true)
+          ALREADY_OPEN=$(printf '%s\n' "$EXISTING_TITLES" | grep -cF "$MARKER" || true)
 
           if [ "$ALREADY_OPEN" -gt 0 ]; then
             echo "⚠️ Outage issue already open — skipping duplicate."
@@ -114,27 +117,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Find any open outage issues
-          ISSUES=$(gh issue list --repo "${{ github.repository }}" --state open --json number,title 2>/dev/null || echo "[]")
+          # Find open outage issues by TITLE (no label dependency) and close them.
+          NUMBERS=$(gh issue list --repo "${{ github.repository }}" --state open --json number,title \
+            --jq '.[] | select(.title | contains("VaultBank Backend Outage")) | .number' 2>/dev/null || true)
 
-          if [ -n "$ISSUES" ] && [ "$ISSUES" != "[]" ]; then
-            echo "$ISSUES" | gh run --help > /dev/null 2>&1 || true
-            # Extract and close issues matching outage title
-            echo "$ISSUES" | python3 -c "
-            import json, sys
-            try:
-              issues = json.load(sys.stdin)
-            except:
-              issues = []
-            for issue in issues:
-              if 'VaultBank Backend Outage' in issue.get('title', ''):
-                print(issue['number'])
-            " | while read num; do
-              if [ -n "$num" ]; then
-                gh issue close --repo "${{ github.repository }}" "$num" --comment "✅ Health-bot: Backend is healthy again. Closing this outage issue."
+          if [ -z "$NUMBERS" ]; then
+            echo "No open outage issues to close."
+          else
+            for num in $NUMBERS; do
+              if gh issue close --repo "${{ github.repository }}" "$num" --comment "✅ Health-bot: Backend is healthy again. Closing this outage issue."; then
                 echo "✅ Closed outage issue #$num"
+              else
+                echo "::warning::Could not close outage issue #$num — check repository permissions."
               fi
             done
-          else
-            echo "No open outage issues to close."
           fi
