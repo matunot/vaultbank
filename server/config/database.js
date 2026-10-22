@@ -388,6 +388,30 @@ const findAccountByUserId = async (userId) => {
     }
 };
 
+/**
+ * Currency-aware account resolution: the user's account in the REQUESTED
+ * currency only (never a silent default). First-created wins if a user ever
+ * holds more than one account in the same currency.
+ */
+const findAccountByUserIdAndCurrency = async (userId, currency) => {
+    const wanted = String(currency || '').trim().toUpperCase();
+    if (!wanted) return null;
+    if (isDemo) {
+        return demoStore.accounts.find(a => a.user_id === userId && String(a.currency).toUpperCase() === wanted && a.status === 'active') || null;
+    }
+    try {
+        await db.ensureConnection();
+        const { rows } = await db.query(
+            "SELECT * FROM accounts WHERE user_id = $1 AND currency = $2 AND status = 'active' ORDER BY created_at ASC LIMIT 1",
+            [userId, wanted]
+        );
+        return rows[0] || null;
+    } catch (err) {
+        console.error('findAccountByUserIdAndCurrency error:', err.message);
+        return null;
+    }
+};
+
 const findAccountByNumber = async (accountNumber) => {
     if (isDemo) {
         return demoStore.accounts.find(a => a.account_number === accountNumber) || null;
@@ -1007,6 +1031,7 @@ module.exports = {
 
     // Account functions
     findAccountByUserId,
+    findAccountByUserIdAndCurrency,
     findAccountByNumber,
     createAccount,
     updateAccountBalance,

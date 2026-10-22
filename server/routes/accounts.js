@@ -10,6 +10,7 @@ const { authenticateToken } = require('../middleware/auth');
 const {
     findUserById,
     findAccountByUserId,
+    findAccountByUserIdAndCurrency,
     findAccountByNumber,
     searchUsers,
     createAccount,
@@ -364,6 +365,52 @@ router.post('/api/account/withdraw', authenticateToken, async (req, res) => {
 });
 
 // ============================================================
+// GET /api/account/inr — INR wallet: balance + INR-only history
+// ============================================================
+router.get('/api/account/inr', authenticateToken, async (req, res) => {
+    try {
+        const account = await findAccountByUserIdAndCurrency(req.user.id, 'INR');
+        if (!account) {
+            return res.status(404).json({ success: false, message: 'No INR account yet — open one with POST /api/account/open-inr.' });
+        }
+        let transactions = [];
+        if (!isDemo) {
+            const { rows } = await db.query(
+                'SELECT * FROM transactions WHERE account_id = $1 ORDER BY created_at DESC LIMIT 25',
+                [account.id]
+            );
+            transactions = rows;
+        }
+        res.json({
+            success: true,
+            account: {
+                id: account.id,
+                accountNumber: account.account_number,
+                currency: 'INR',
+                balance: parseFloat(account.balance),
+                availableBalance: parseFloat(account.available_balance),
+                heldBalance: parseFloat(account.held_balance),
+            },
+            transactions: transactions.map((t) => ({
+                id: t.id,
+                type: t.type,
+                status: t.status,
+                amount: parseFloat(t.amount),
+                currency: t.currency,
+                description: t.description,
+                category: t.category,
+                balanceAfter: t.balance_after ? parseFloat(t.balance_after) : null,
+                date: t.created_at,
+                externalReference: t.external_reference || null,
+            })),
+        });
+    } catch (error) {
+        console.error('INR account error:', error);
+        res.status(500).json({ success: false, message: 'Could not load your INR account.' });
+    }
+});
+
+// ============================================================
 // POST /api/account/open-inr — EXPLICIT opt-in INR sub-account.
 // Never reinterprets existing USD accounts or balances: it creates a NEW,
 // separate, zero-balance account the collections rail can credit.
@@ -387,6 +434,15 @@ router.post('/api/account/open-inr', authenticateToken, async (req, res) => {
         if (!account) {
             return res.status(404).json({ success: false, message: 'No account found.' });
         }
+        // Race guard: a partial unique index guarantees one INR account per
+        // user even under concurrent open requests.
+        try {
+            await db.query(
+                "CREATE UNIQUE INDEX IF NOT EXISTS accounts_one_inr_per_user ON accounts (user_id) WHERE currency = 'INR'"
+            );
+        } catch (idxErr) {
+            console.warn('INR unique index ensure skipped:', idxErr.message);
+        }
         const { rows: existing } = await db.query(
             "SELECT id, account_number, currency, balance FROM accounts WHERE user_id = $1 AND currency = 'INR' LIMIT 1",
             [req.user.id]
@@ -394,7 +450,22 @@ router.post('/api/account/open-inr', authenticateToken, async (req, res) => {
         if (existing.length > 0) {
             return res.status(409).json({ success: true, already: true, account: existing[0], message: 'You already have an INR account.' });
         }
-        const created = await createAccount(req.user.id, 'savings', 'INR');
+        let created;
+        try {
+            created = await createAccount(req.user.id, 'savings', 'INR');
+        } catch (e) {
+            // Unique-index race lost to a concurrent request — treat as already open.
+            if (String(e.message || '').includes('accounts_one_inr_per_user') || String(e.message || '').includes('duplicate key')) {
+                const { rows: raced } = await db.query(
+                    "SELECT id, account_number, currency, balance FROM accounts WHERE user_id = $1 AND currency = 'INR' LIMIT 1",
+                    [req.user.id]
+                );
+                if (raced.length > 0) {
+                    return res.status(409).json({ success: true, already: true, account: raced[0], message: 'You already have an INR account.' });
+                }
+            }
+            throw e;
+        }
         await createAuditLog({
             userId: req.user.id,
             action: 'inr_account_opened',
@@ -425,31 +496,52 @@ router.post('/api/account/open-inr', authenticateToken, async (req, res) => {
 // ============================================================
 router.post('/api/account/transfer', authenticateToken, async (req, res) => {
     try {
-        const { recipientEmail, recipientAccountNumber, amount, description, reason } = req.body;
+        const { recipientEmail, recipientAccountNumber, amount, description, reason, currency = 'USD' } = req.body;
+        const wantedCurrency = String(currency).trim().toUpperCase();
+        const idempotencyKey = req.headers['idempotency-key'] ? String(req.headers['idempotency-key']).slice(0, 100) : null;
 
         if (!amount || amount <= 0) {
             return res.status(400).json({ success: false, message: 'Invalid transfer amount.' });
         }
 
-        // Find sender account
-        const senderAccount = await findAccountByUserId(req.user.id);
+        // Currency-aware sender account: resolves the user's account in the
+        // REQUESTED currency only — never a silent default across currencies.
+        const senderAccount = await findAccountByUserIdAndCurrency(req.user.id, wantedCurrency);
         if (!senderAccount) {
-            return res.status(404).json({ success: false, message: 'No account found.' });
+            return res.status(404).json({ success: false, message: `You don't have a ${wantedCurrency} account yet. Open one first.` });
         }
 
-        // Find recipient
+        // Idempotency: a retried request with the same key replays instead of
+        // double-transferring (durable via the ledger external_reference).
+        let dedupRef = null;
+        if (idempotencyKey) {
+            dedupRef = `XFER-${wantedCurrency}-${idempotencyKey}`;
+            const { rows: seen } = await db.query('SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1', [dedupRef]);
+            if (seen.length > 0) {
+                res.setHeader('Idempotent-Replay', 'true');
+                return res.json({ success: true, replay: true, message: 'Transfer already processed — replayed result.' });
+            }
+        }
+
+        // Find recipient — resolved in the SAME currency.
         let recipientAccount = null;
         if (recipientAccountNumber) {
             recipientAccount = await findAccountByNumber(recipientAccountNumber);
+            if (recipientAccount && String(recipientAccount.currency).toUpperCase() !== wantedCurrency) {
+                return res.status(400).json({ success: false, message: `That recipient account is ${recipientAccount.currency} — ${wantedCurrency} transfers need a ${wantedCurrency} recipient.` });
+            }
         } else if (recipientEmail) {
             const { findUserByEmail } = require('../config/database');
             const recipientUser = await findUserByEmail(recipientEmail);
             if (recipientUser) {
-                recipientAccount = await findAccountByUserId(recipientUser.id);
+                recipientAccount = await findAccountByUserIdAndCurrency(recipientUser.id, wantedCurrency);
             }
         }
 
         if (!recipientAccount) {
+            if (recipientEmail) {
+                return res.status(404).json({ success: false, message: `Recipient has no ${wantedCurrency} account yet.` });
+            }
             return res.status(404).json({ success: false, message: 'Recipient account not found.' });
         }
 
@@ -535,6 +627,7 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
             category: 'transfer',
             counterparty_name: recipientAccount.account_name,
             counterparty_account: recipientAccount.account_number,
+            external_reference: dedupRef || undefined,
         });
 
         // Record recipient transaction
@@ -551,6 +644,7 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
             category: 'income',
             counterparty_name: req.user.full_name,
             counterparty_account: senderAccount.account_number,
+            external_reference: dedupRef || undefined,
         });
 
         // Record transfer
@@ -571,13 +665,13 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
         await createNotification(req.user.id, {
             type: 'transaction',
             title: 'Transfer Sent',
-            message: `$${transferAmount.toFixed(2)} sent to ${recipientAccount.account_number}. Remaining balance: $${newSenderBalance.toFixed(2)}`
+            message: `${senderAccount.currency} ${transferAmount.toFixed(2)} sent to ${recipientAccount.account_number}. Remaining balance: ${senderAccount.currency} ${newSenderBalance.toFixed(2)}`
         });
 
         await createNotification(recipientAccount.user_id, {
             type: 'transaction',
             title: 'Transfer Received',
-            message: `$${transferAmount.toFixed(2)} received from ${senderAccount.account_number}. New balance: $${recipientBalance.toFixed(2)}`
+            message: `${recipientAccount.currency} ${transferAmount.toFixed(2)} received from ${senderAccount.account_number}. New balance: ${recipientAccount.currency} ${recipientBalance.toFixed(2)}`
         });
 
         // Create an in-memory alert for the receiver so their notification
@@ -588,7 +682,7 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
                 id: `alert-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
                 userId: recipientAccount.user_id,
                 type: 'success',
-                message: `You received $${transferAmount.toFixed(2)} from ${req.user.full_name || req.user.email}.`,
+                message: `You received ${recipientAccount.currency} ${transferAmount.toFixed(2)} from ${req.user.full_name || req.user.email}.`,
                 severity: 'info',
                 read: false,
                 createdAt: new Date().toISOString(),
@@ -597,7 +691,7 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
 
         res.json({
             success: true,
-            message: `Successfully transferred $${transferAmount.toFixed(2)}`,
+            message: `Successfully transferred ${senderAccount.currency} ${transferAmount.toFixed(2)}`,
             transfer: {
                 id: transfer.id,
                 amount: transferAmount,

@@ -1,12 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Wallet, Plus, Send, Download, Copy, Check, Eye, EyeOff, QrCode,
-  ArrowUpRight, ArrowDownRight, Search,
-  Bitcoin, Globe, Zap, X,
-  Smartphone, Link2, ScanLine, Loader2, UserSearch, Banknote,
+  Wallet, Plus, Send, Download, Check, Eye, EyeOff, QrCode,
+  ArrowUpRight, ArrowDownRight, Zap, X, Loader2, UserSearch, Banknote,
+  Building2, CreditCard, Globe, ShieldCheck, IndianRupee, RefreshCw,
 } from 'lucide-react';
-import { digitalWallets, regionalPayments, cryptoWallets, availablePaymentMethods } from '../data';
 import { useAccountData } from '../hooks/useAccountData';
 import { api } from '../api';
 import Avatar from './Avatar';
@@ -20,34 +18,56 @@ interface Recipient {
   accountNumber?: string | null;
 }
 
-type PaymentTab = 'digital' | 'regional' | 'crypto';
+type Currency = 'USD' | 'INR';
 
-export default function PaymentsSection() {
-  const [tab, setTab] = useState<PaymentTab>('digital');
-  const [selectedMethod, setSelectedMethod] = useState<string | null>(null);
-  const [showQR, setShowQR] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
-  const [showSend, setShowSend] = useState(false);
-  const [showAddresses, setShowAddresses] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
-  const [search, setSearch] = useState('');
+interface RailsReadiness {
+  usd: { cardStripe: boolean; paypal: boolean; bankTransferInstructions: boolean; internalTransfers: boolean; externalWithdrawals: boolean };
+  inr: { collections: boolean; collectionsProvider: string | null; internalTransfers: boolean; payouts: boolean; payoutsProvider: string | null };
+}
+
+interface InrTransaction {
+  id: string;
+  type: string;
+  status: string;
+  amount: number;
+  currency: string;
+  description?: string;
+  category?: string;
+  date?: string;
+  externalReference?: string | null;
+}
+
+interface PayoutRecord {
+  id: string;
+  transfer_id: string;
+  amount: string;
+  currency: string;
+  destination_account_masked: string;
+  destination_ifsc: string;
+  status: string;
+  utr: string | null;
+  failure_reason: string | null;
+  created_at: string;
+}
+
+export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal: string) => void }) {
+  const [currency, setCurrency] = useState<Currency>('USD');
   const [hideBalances, setHideBalances] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
 
-  // REAL account data from the backend
+  // REAL account data (USD primary account) from the backend
   const { account, transactions, balance, loading: accountLoading } = useAccountData();
-  const recentPayments = transactions.slice(0, 6);
+  const usdRecent = transactions.slice(0, 6);
 
-  // REAL send-money state (live user search + real transfer)
-  const [query, setQuery] = useState('');
-  const [selected, setSelected] = useState<Recipient | null>(null);
-  const [results, setResults] = useState<Recipient[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [sendAmount, setSendAmount] = useState('');
-  const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
-  const [sendMsg, setSendMsg] = useState('');
-  const [showWithdraw, setShowWithdraw] = useState(false);
+  // ── Readiness: every rail's REAL configuration state ──
+  const [readiness, setReadiness] = useState<RailsReadiness | null>(null);
+  useEffect(() => {
+    api.paymentsReadiness()
+      .then((r) => setReadiness((r && r.rails) || null))
+      .catch(() => setReadiness(null));
+  }, []);
 
-  // Detect whether real Stripe keys are configured (LIVE vs SANDBOX)
+  // Detect whether real Stripe keys are configured (LIVE vs not) — card rail badge
   const [railMode, setRailMode] = useState<'live' | 'demo' | null>(null);
   useEffect(() => {
     api.stripeBalance()
@@ -55,13 +75,118 @@ export default function PaymentsSection() {
       .catch(() => setRailMode('demo'));
   }, []);
 
-  const copy = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(id);
-    setTimeout(() => setCopied(null), 2000);
+  // ── INR wallet state ──
+  const [inrState, setInrState] = useState<'idle' | 'loading' | 'none' | 'ready' | 'error'>('idle');
+  const [inrWallet, setInrWallet] = useState<{ account: { accountNumber: string; balance: number }; transactions: InrTransaction[] } | null>(null);
+  const [payoutRecords, setPayoutRecords] = useState<PayoutRecord[]>([]);
+
+  const loadInr = async () => {
+    setInrState('loading');
+    try {
+      const [walletRes, payoutsRes] = await Promise.all([
+        api.getInrAccount(),
+        api.myPayouts().catch(() => ({ success: false, requests: [] })),
+      ]);
+      if (walletRes.success && walletRes.account) {
+        setInrWallet({ account: walletRes.account, transactions: walletRes.transactions || [] });
+        setInrState('ready');
+      } else {
+        setInrWallet(null);
+        setInrState('none');
+      }
+      setPayoutRecords((payoutsRes.requests as PayoutRecord[]) || []);
+    } catch (err: any) {
+      if (err?.status === 404) {
+        setInrWallet(null);
+        setInrState('none');
+      } else {
+        setInrState('error');
+      }
+    }
   };
 
-  // LIVE search over REAL registered VaultBank users (debounced)
+  useEffect(() => {
+    if (currency === 'INR' && inrState === 'idle') loadInr();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currency]);
+
+  // ── Open INR wallet ──
+  const [openInrStatus, setOpenInrStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [openInrMsg, setOpenInrMsg] = useState('');
+  const openInrWallet = async () => {
+    setOpenInrStatus('loading');
+    setOpenInrMsg('');
+    try {
+      const res = await api.openInrAccount();
+      if (!res.success && !res.already) throw new Error(res.message || 'Could not open your INR wallet.');
+      setInrState('idle'); // triggers reload below
+      await loadInr();
+      setOpenInrStatus('idle');
+    } catch (err: any) {
+      setOpenInrStatus('error');
+      setOpenInrMsg(err?.message || 'Could not open your INR wallet.');
+    }
+  };
+
+  // ── INR receiving details (provider-issued only) ──
+  const [inrDetails, setInrDetails] = useState<{ accountNumber: string; ifsc: string; bankCode?: string | null } | null>(null);
+  const [detailsStatus, setDetailsStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [detailsMsg, setDetailsMsg] = useState('');
+  const fetchMyDetails = async () => {
+    setDetailsStatus('loading');
+    setDetailsMsg('');
+    try {
+      const res = await api.collectionsMyDetails();
+      if (!res.success || !res.details) throw new Error(res.message || 'Receiving details are not available right now.');
+      setInrDetails(res.details);
+      setDetailsStatus('idle');
+    } catch (err: any) {
+      setDetailsStatus('error');
+      setDetailsMsg(err?.message || 'Could not load your receiving details.');
+    }
+  };
+
+  // ── INR withdraw form ──
+  const [showWithdraw, setShowWithdraw] = useState(false); // USD WithdrawModal
+  const [wdAmount, setWdAmount] = useState('');
+  const [wdBankAccount, setWdBankAccount] = useState('');
+  const [wdIfsc, setWdIfsc] = useState('');
+  const [wdStatus, setWdStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [wdMsg, setWdMsg] = useState('');
+  const wdKeyRef = useRef<string | null>(null);
+
+  const submitPayout = async () => {
+    const amt = parseFloat(wdAmount);
+    if (!(amt > 0) || !wdBankAccount.trim() || !wdIfsc.trim()) return;
+    if (!wdKeyRef.current) wdKeyRef.current = `po-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    setWdStatus('sending');
+    setWdMsg('');
+    try {
+      const res = await api.createPayoutRequest({ amount: amt, bankAccount: wdBankAccount.trim(), ifsc: wdIfsc.trim().toUpperCase() }, wdKeyRef.current);
+      if (!res.success) throw new Error(res.message || 'Payout request failed.');
+      setWdStatus('success');
+      setWdMsg(res.message || 'Payout submitted — status updates after provider reconciliation.');
+      wdKeyRef.current = null;
+      setWdAmount('');
+      setWdBankAccount('');
+      setWdIfsc('');
+      loadInr();
+    } catch (err: any) {
+      setWdStatus('error');
+      setWdMsg(err?.message || 'Payout request failed.');
+    }
+  };
+
+  // ── REAL send-money flow (live user search + real transfer) ──
+  const [showSend, setShowSend] = useState(false);
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<Recipient | null>(null);
+  const [results, setResults] = useState<Recipient[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [sendAmount, setSendAmount] = useState('');
+  const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
+  const [sendMsg, setSendMsg] = useState('');
+
   useEffect(() => {
     if (!showSend || selected) return;
     const q = query.trim();
@@ -94,12 +219,15 @@ export default function PaymentsSection() {
     setSendMsg('');
     try {
       const isEmail = recipient.includes('@');
-      const res = isEmail
-        ? await api.sendMoney({ recipientEmail: recipient, amount: parseFloat(sendAmount) })
-        : await api.sendMoney({ recipientAccountNumber: recipient, amount: parseFloat(sendAmount) });
+      const res = await api.sendMoney(
+        isEmail
+          ? { recipientEmail: recipient, amount: parseFloat(sendAmount), currency }
+          : { recipientAccountNumber: recipient, amount: parseFloat(sendAmount), currency }
+      );
       if (!res.success) throw new Error(res.message || 'Transfer failed.');
       setSendStatus('success');
-      setSendMsg(`Real transfer of $${parseFloat(sendAmount).toFixed(2)} completed.`);
+      setSendMsg(`${currency} ${parseFloat(sendAmount).toFixed(2)} transfer completed.`);
+      if (currency === 'INR') loadInr();
       setTimeout(resetSend, 2200);
     } catch (err: any) {
       setSendStatus('error');
@@ -107,10 +235,58 @@ export default function PaymentsSection() {
     }
   };
 
-  const filteredMethods = availablePaymentMethods.filter(m =>
-    m.name.toLowerCase().includes(search.toLowerCase()) ||
-    m.category.toLowerCase().includes(search.toLowerCase())
-  );
+  const copy = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(id);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const curSymbol = currency === 'INR' ? '₹' : '$';
+  const inrRail = readiness?.inr;
+  const usdRail = readiness?.usd;
+
+  const rails: Array<{
+    key: string; name: string; desc: string; ready: boolean | null;
+    icon: typeof Wallet; color: string; hint?: string;
+    action?: () => void; actionLabel?: string;
+  }> = [
+    {
+      key: 'internal', name: 'Internal Transfers', desc: 'Instant, free VaultBank-to-VaultBank in the same currency',
+      ready: true, icon: Send, color: '#3b82f6', action: () => { setCurrency(currency); setShowSend(true); }, actionLabel: 'Send',
+    },
+    {
+      key: 'card', name: 'Card via Stripe', desc: 'Real card deposits through Stripe Checkout',
+      ready: usdRail ? usdRail.cardStripe : null, icon: CreditCard, color: '#6366f1',
+      hint: railMode === 'live' ? 'LIVE keys detected' : 'Not configured — set the Stripe secret key',
+    },
+    {
+      key: 'paypal', name: 'PayPal', desc: 'PayPal Checkout deposits with verified capture',
+      ready: usdRail ? usdRail.paypal : null, icon: Globe, color: '#0ea5e9',
+      hint: usdRail?.paypal ? 'Configured' : 'Not configured — PayPal credentials required',
+    },
+    {
+      key: 'bankusd', name: 'Bank Transfer (USD)', desc: 'Unique reference + manual statement verification',
+      ready: usdRail ? usdRail.bankTransferInstructions : null, icon: Building2, color: '#f59e0b',
+      hint: usdRail?.bankTransferInstructions ? 'Instructions available in Deposits' : 'Not configured — receiving account env required',
+    },
+    {
+      key: 'collections', name: 'INR Receiving Details', desc: 'Provider-issued per-user account + IFSC, auto-credited',
+      ready: inrRail ? inrRail.collections : null, icon: IndianRupee, color: '#10b981',
+      hint: inrRail?.collections ? `Provider: ${inrRail.collectionsProvider}` : 'Not configured — collection provider required',
+      action: inrRail?.collections ? () => { setCurrency('INR'); fetchMyDetails(); } : undefined, actionLabel: 'Get details',
+    },
+    {
+      key: 'payouts', name: 'INR Bank Withdrawals', desc: 'Reserved funds, provider status, exactly-once refunds',
+      ready: inrRail ? inrRail.payouts : null, icon: Banknote, color: '#d97706',
+      hint: inrRail?.payouts ? `Provider: ${inrRail.payoutsProvider}` : 'Not configured — payout provider required',
+      action: inrRail?.payouts ? () => setCurrency('INR') : undefined, actionLabel: 'Withdraw',
+    },
+    {
+      key: 'usdext', name: 'USD External Withdrawals', desc: 'Outbound USD to a bank account',
+      ready: usdRail ? usdRail.externalWithdrawals : null, icon: Banknote, color: '#64748b',
+      hint: 'No authorized USD payout rail exists yet — kept honestly disabled',
+    },
+  ];
 
   return (
     <div className="space-y-5">
@@ -130,7 +306,7 @@ export default function PaymentsSection() {
               <div>
                 <div className="flex items-center gap-2 mb-2">
                   <Wallet className="w-5 h-5 text-cyan-300" />
-                  <p className="text-xs tracking-[0.3em] text-white/40 font-bold">DIGITAL PAYMENTS</p>
+                  <p className="text-xs tracking-[0.3em] text-white/40 font-bold">VAULTBANK PAYMENTS</p>
                   {railMode && (
                     <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
                       railMode === 'live'
@@ -141,11 +317,39 @@ export default function PaymentsSection() {
                     </span>
                   )}
                 </div>
-                <p className="font-display text-5xl lg:text-6xl text-white">
-                  {hideBalances || accountLoading ? '••••••' : `$${(balance?.total ?? account?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
-                </p>
+                {/* Currency selector — USD / INR */}
+                <div className="flex items-center gap-2 mb-3">
+                  {(['USD', 'INR'] as Currency[]).map(c => (
+                    <button
+                      key={c}
+                      onClick={() => setCurrency(c)}
+                      className={`px-4 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                        currency === c
+                          ? 'bg-linear-to-r from-cyan-400 to-blue-500 text-white border-transparent glow-blue'
+                          : 'glass-btn text-white/50 border-white/10 hover:text-white'
+                      }`}
+                    >
+                      {c === 'INR' ? <span className="flex items-center gap-1"><IndianRupee className="w-3 h-3" /> INR</span> : '$ USD'}
+                    </button>
+                  ))}
+                </div>
+                {currency === 'USD' ? (
+                  <p className="font-display text-5xl lg:text-6xl text-white">
+                    {hideBalances || accountLoading ? '••••••' : `$${(balance?.total ?? account?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}`}
+                  </p>
+                ) : (
+                  <p className="font-display text-5xl lg:text-6xl text-white">
+                    {hideBalances ? '••••••' : inrState === 'ready' && inrWallet
+                      ? `₹${inrWallet.account.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+                      : inrState === 'loading' ? '…' : '—'}
+                  </p>
+                )}
                 <p className="text-sm text-white/40 mt-1.5">
-                  REAL balance · {account?.accountNumber ? `VaultBank •• ${account.accountNumber.slice(-4)}` : 'VaultBank account'}
+                  {currency === 'USD'
+                    ? `REAL balance · ${account?.accountNumber ? `VaultBank •• ${account.accountNumber.slice(-4)}` : 'VaultBank account'}`
+                    : inrState === 'ready' && inrWallet
+                      ? `REAL INR balance · VaultBank •• ${inrWallet.account.accountNumber.slice(-4)}`
+                      : 'INR wallet' + (inrState === 'none' ? ' — not opened yet' : '')}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -158,17 +362,22 @@ export default function PaymentsSection() {
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  onClick={() => setShowQR(true)}
-                  className="px-4 py-3 rounded-xl glass-btn text-sm font-bold text-white/80 flex items-center gap-2"
+                  onClick={() => {
+                    if (currency === 'USD' && onOpenModal) onOpenModal('deposit');
+                    if (currency === 'INR') { if (inrState === 'none') openInrWallet(); else fetchMyDetails(); }
+                  }}
+                  className="px-5 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 glow-blue"
                 >
-                  <QrCode className="w-4 h-4" /> My QR
+                  <Plus className="w-4 h-4" /> Add Money
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  onClick={() => setShowAdd(true)}
-                  className="px-5 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 glow-blue"
+                  onClick={() => { if (currency === 'USD') setShowWithdraw(true); }}
+                  disabled={currency === 'INR'}
+                  className="px-4 py-3 rounded-xl glass-btn text-sm font-bold text-white/80 flex items-center gap-2 disabled:opacity-40"
+                  title={currency === 'INR' ? 'INR withdrawals live in the INR wallet panel below' : 'Withdraw to bank'}
                 >
-                  <Plus className="w-4 h-4" /> Add Method
+                  <Download className="w-4 h-4" /> Withdraw
                 </motion.button>
               </div>
             </div>
@@ -180,24 +389,34 @@ export default function PaymentsSection() {
                   <Wallet className="w-3.5 h-3.5 text-cyan-300" />
                   <p className="text-[10px] text-white/40 tracking-wider">AVAILABLE</p>
                 </div>
-                <p className="text-xl font-bold text-white">{hideBalances ? '••••' : `$${(balance?.available ?? 0).toLocaleString()}`}</p>
+                <p className="text-xl font-bold text-white">
+                  {hideBalances ? '••••' : currency === 'USD'
+                    ? `$${(balance?.available ?? 0).toLocaleString()}`
+                    : inrState === 'ready' && inrWallet ? `₹${inrWallet.account.balance.toLocaleString('en-IN')}` : '—'}
+                </p>
                 <p className="text-[10px] text-white/40 mt-0.5">real funds</p>
               </div>
               <div className="glass-btn rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <ArrowUpRight className="w-3.5 h-3.5 text-emerald-300" />
-                  <p className="text-[10px] text-white/40 tracking-wider">PAYMENTS</p>
+                  <p className="text-[10px] text-white/40 tracking-wider">RECORDS</p>
                 </div>
-                <p className="text-xl font-bold text-white">{transactions.length}</p>
+                <p className="text-xl font-bold text-white">
+                  {currency === 'USD' ? transactions.length : (inrWallet?.transactions.length ?? 0)}
+                </p>
                 <p className="text-[10px] text-white/40 mt-0.5">real transactions</p>
               </div>
               <div className="glass-btn rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-1">
-                  <Bitcoin className="w-3.5 h-3.5 text-amber-300" />
-                  <p className="text-[10px] text-white/40 tracking-wider">PROVIDERS</p>
+                  <ShieldCheck className="w-3.5 h-3.5 text-amber-300" />
+                  <p className="text-[10px] text-white/40 tracking-wider">RAILS READY</p>
                 </div>
-                <p className="text-xl font-bold text-white">{availablePaymentMethods.length}</p>
-                <p className="text-[10px] text-white/40 mt-0.5">available to link</p>
+                <p className="text-xl font-bold text-white">
+                  {readiness
+                    ? [...Object.values(readiness.usd), ...Object.values(readiness.inr)].filter(Boolean).length
+                    : '…'}
+                </p>
+                <p className="text-[10px] text-white/40 mt-0.5">of 9 verified live</p>
               </div>
             </div>
           </div>
@@ -207,10 +426,10 @@ export default function PaymentsSection() {
       {/* Quick action buttons */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { icon: Send, label: 'Send Money', desc: 'To anyone', color: '#3b82f6', action: () => setShowSend(true) },
-          { icon: Download, label: 'Request', desc: 'Get paid', color: '#10b981', action: () => setShowQR(true) },
-          { icon: ScanLine, label: 'Scan & Pay', desc: 'QR payment', color: '#a855f7', action: () => setShowQR(true) },
-          { icon: Banknote, label: 'Withdraw', desc: 'To your bank', color: '#f59e0b', action: () => setShowWithdraw(true) },
+          { icon: Send, label: 'Send Money', desc: `VaultBank user (${currency})`, color: '#3b82f6', action: () => setShowSend(true) },
+          { icon: QrCode, label: 'Receive', desc: 'Your account details', color: '#10b981', action: () => {} },
+          { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : 'INR receiving details', color: '#06b6d4', action: () => { if (currency === 'USD' && onOpenModal) onOpenModal('deposit'); else fetchMyDetails(); } },
+          { icon: Banknote, label: 'Withdraw', desc: currency === 'USD' ? 'To your bank (USD)' : 'To your bank (INR)', color: '#f59e0b', action: () => { if (currency === 'USD') setShowWithdraw(true); } },
         ].map((a, i) => (
           <motion.button
             key={a.label}
@@ -231,19 +450,190 @@ export default function PaymentsSection() {
         ))}
       </div>
 
-      {/* REAL recent payments — actual transactions from the backend */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="glass-panel rounded-3xl p-6">
-        <h3 className="font-display text-xl text-white">Recent Payments</h3>
-        <p className="text-xs text-white/40 mt-0.5 mb-5">Real transactions from your VaultBank account</p>
-        {accountLoading ? (
-          <div className="flex items-center gap-2 text-white/40 text-sm py-4">
-            <Loader2 className="w-4 h-4 animate-spin" /> Loading real payments…
+      {/* ── INR wallet zone ── */}
+      {currency === 'INR' && (
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Wallet status / open */}
+          <div className="glass-panel rounded-3xl p-6">
+            <h3 className="font-display text-xl text-white mb-1 flex items-center gap-2">
+              <IndianRupee className="w-5 h-5 text-emerald-400" /> INR Wallet
+            </h3>
+            {inrState === 'loading' && <p className="text-sm text-white/40 py-4 flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Loading your INR account…</p>}
+            {inrState === 'none' && (
+              <div className="py-3">
+                <p className="text-sm text-white/50 mb-4">You don't have an INR wallet yet. Open one — it's a separate, zero-balance account; your USD account is untouched.</p>
+                <button onClick={openInrWallet} disabled={openInrStatus === 'loading'}
+                  className="px-5 py-3 rounded-xl bg-linear-to-r from-emerald-400 to-teal-500 text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50">
+                  {openInrStatus === 'loading' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Open INR Wallet
+                </button>
+                {openInrStatus === 'error' && <p className="text-xs text-rose-400 font-bold mt-3">{openInrMsg}</p>}
+              </div>
+            )}
+            {inrState === 'error' && <p className="text-sm text-rose-400 py-4">Could not load your INR account. Try again.</p>}
+            {inrState === 'ready' && inrWallet && (
+              <div className="py-2 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] text-white/40 tracking-wider font-bold">BALANCE</p>
+                    <p className="font-display text-3xl text-white">₹{inrWallet.account.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                  <button onClick={loadInr} className="p-2 rounded-xl glass-btn" title="Refresh"><RefreshCw className="w-4 h-4 text-white/50" /></button>
+                </div>
+                <button onClick={() => copy(inrWallet.account.accountNumber, 'inr-acct')} className="w-full font-mono text-xs text-emerald-200 bg-white/5 border border-white/10 rounded-xl p-3 break-all hover:border-emerald-500/40 transition-colors">
+                  {copied === 'inr-acct' ? 'Copied!' : inrWallet.account.accountNumber}
+                </button>
+              </div>
+            )}
           </div>
-        ) : recentPayments.length === 0 ? (
+
+          {/* Receiving details — provider-issued only */}
+          <div className="glass-panel rounded-3xl p-6">
+            <h3 className="font-display text-xl text-white mb-1 flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-cyan-300" /> Receive INR
+            </h3>
+            {!inrRail?.collections ? (
+              <p className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 my-3">
+                Automatic INR receiving details are not available yet — the collection provider isn't configured. You'll get your own real account number + IFSC the moment it is.
+              </p>
+            ) : inrState !== 'ready' ? (
+              <p className="text-sm text-white/40 py-4">Open your INR wallet first to get receiving details.</p>
+            ) : !inrDetails ? (
+              <div className="py-3">
+                <p className="text-sm text-white/50 mb-4">Get your personal provider-issued bank details. Send INR from any Indian bank app — it's credited automatically after the provider confirms.</p>
+                <button onClick={fetchMyDetails} disabled={detailsStatus === 'loading'}
+                  className="px-5 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50">
+                  {detailsStatus === 'loading' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4" />} Get My Receiving Details
+                </button>
+                {detailsStatus === 'error' && <p className="text-xs text-rose-400 font-bold mt-3">{detailsMsg}</p>}
+              </div>
+            ) : (
+              <div className="py-2 space-y-2.5">
+                <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 space-y-2">
+                  <p className="text-[9px] text-emerald-300/70 tracking-wider font-bold">YOUR INR ACCOUNT — PROVIDER-ISSUED</p>
+                  <button onClick={() => copy(inrDetails.accountNumber, 'va-acct')} className="w-full font-mono text-sm text-emerald-200 bg-black/20 rounded-lg p-2.5 break-all hover:text-white transition-colors">
+                    {copied === 'va-acct' ? 'Account number copied!' : inrDetails.accountNumber}
+                  </button>
+                  <button onClick={() => copy(inrDetails.ifsc, 'va-ifsc')} className="w-full font-mono text-sm text-emerald-200 bg-black/20 rounded-lg p-2.5 hover:text-white transition-colors">
+                    {copied === 'va-ifsc' ? 'IFSC copied!' : inrDetails.ifsc}
+                  </button>
+                </div>
+                <p className="text-[10px] text-white/40 leading-relaxed">Send INR to these details from any Indian banking app. Your balance is credited automatically once the provider verifies the payment — no manual step.</p>
+              </div>
+            )}
+          </div>
+
+          {/* Withdraw INR + payout records */}
+          <div className="glass-panel rounded-3xl p-6 lg:col-span-2">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-display text-xl text-white flex items-center gap-2">
+                <Banknote className="w-5 h-5 text-amber-400" /> Withdraw INR to Bank
+              </h3>
+            </div>
+            {!inrRail?.payouts ? (
+              <p className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
+                External INR withdrawals are not available yet — no authorized payout provider is configured. Your INR balance stays safe and fully available for internal transfers.
+              </p>
+            ) : inrState !== 'ready' ? (
+              <p className="text-sm text-white/40">Open your INR wallet first to withdraw.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <input value={wdAmount} onChange={(e) => setWdAmount(e.target.value)} type="number" placeholder="Amount (₹)"
+                  className="glass-input rounded-xl px-4 py-3 text-sm text-white" />
+                <input value={wdBankAccount} onChange={(e) => setWdBankAccount(e.target.value)} placeholder="Bank account number"
+                  className="glass-input rounded-xl px-4 py-3 text-sm text-white" />
+                <input value={wdIfsc} onChange={(e) => setWdIfsc(e.target.value)} placeholder="IFSC (e.g. HDFC0000001)"
+                  className="glass-input rounded-xl px-4 py-3 text-sm text-white uppercase" />
+                <div className="md:col-span-3">
+                  <button onClick={submitPayout} disabled={wdStatus === 'sending' || !(parseFloat(wdAmount) > 0) || !wdBankAccount.trim() || !wdIfsc.trim()}
+                    className="px-5 py-3 rounded-xl bg-linear-to-r from-amber-400 to-orange-500 text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50">
+                    {wdStatus === 'sending' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Request Withdrawal
+                  </button>
+                  {wdStatus === 'success' && <p className="text-xs text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 mt-3">{wdMsg}</p>}
+                  {wdStatus === 'error' && <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 mt-3">{wdMsg}</p>}
+                </div>
+              </div>
+            )}
+            {payoutRecords.length > 0 && (
+              <div className="mt-5 space-y-2">
+                <p className="text-[10px] text-white/40 tracking-wider font-bold">MY WITHDRAWAL REQUESTS</p>
+                {payoutRecords.map((p) => (
+                  <div key={p.id} className="flex items-center gap-3 p-3 rounded-2xl bg-white/3 border border-white/5">
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-amber-500/10 border border-amber-500/20">
+                      <Banknote className="w-4 h-4 text-amber-300" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-white truncate">₹{parseFloat(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })} to {p.destination_account_masked}</p>
+                      <p className="text-[11px] text-white/40">{new Date(p.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}{p.utr ? ` · UTR ${p.utr}` : ''}</p>
+                    </div>
+                    <span className={`text-[9px] font-bold px-2 py-1 rounded-full border whitespace-nowrap ${
+                      p.status === 'succeeded' ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                      : p.status === 'failed_refunded' || p.status === 'failed_unreserved' ? 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+                      : p.status === 'reconciliation_required' ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+                      : 'bg-blue-500/15 border-blue-500/30 text-blue-300'
+                    }`}>
+                      {p.status === 'succeeded' ? '✓ COMPLETED' : p.status === 'reconciliation_required' ? '⚑ RECONCILING' : p.status.startsWith('failed') ? '✕ FAILED — REFUNDED' : '○ PENDING'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
+
+      {/* ── REAL rails readiness — no fake providers ── */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-panel rounded-3xl p-6">
+        <h3 className="font-display text-xl text-white mb-1">Payment Rails</h3>
+        <p className="text-xs text-white/40 mb-5">Live configuration state — verified against the server, never simulated</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {rails.map((r, i) => (
+            <motion.div
+              key={r.key}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.04 }}
+              whileHover={r.ready && r.action ? { y: -3 } : undefined}
+              className={`rounded-2xl p-4 border flex flex-col gap-2 ${r.ready ? 'border-white/10 bg-white/3' : 'border-white/5 bg-white/2 opacity-80'}`}
+            >
+              <div className="flex items-center justify-between">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${r.color}15`, border: `1px solid ${r.color}35` }}>
+                  <r.icon className="w-5 h-5" style={{ color: r.color }} />
+                </div>
+                {r.ready === null ? (
+                  <span className="flex items-center gap-1 text-[9px] font-bold text-white/30"><Loader2 className="w-3 h-3 animate-spin" /> CHECKING</span>
+                ) : r.ready ? (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-bold text-emerald-300">● READY</span>
+                ) : (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-[9px] font-bold text-amber-300">○ NOT CONFIGURED</span>
+                )}
+              </div>
+              <p className="font-bold text-white text-sm">{r.name}</p>
+              <p className="text-xs text-white/40 flex-1">{r.desc}</p>
+              {r.hint && <p className="text-[10px] text-white/30">{r.hint}</p>}
+              {r.ready && r.action && (
+                <button onClick={r.action} className="mt-1 px-3 py-2 rounded-lg bg-white/10 text-xs font-bold text-white hover:bg-white/15 flex items-center gap-1.5 w-fit">
+                  {r.actionLabel === 'Send' && <Send className="w-3 h-3" />}
+                  {r.actionLabel === 'Withdraw' && <Banknote className="w-3 h-3" />}
+                  {r.actionLabel === 'Get details' && <Building2 className="w-3 h-3" />}
+                  {r.actionLabel}
+                </button>
+              )}
+            </motion.div>
+          ))}
+        </div>
+      </motion.div>
+
+      {/* ── Recent records — REAL, currency-scoped ── */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }} className="glass-panel rounded-3xl p-6">
+        <h3 className="font-display text-xl text-white">Recent Activity</h3>
+        <p className="text-xs text-white/40 mt-0.5 mb-5">Real {currency} records from your VaultBank account</p>
+        {currency === 'USD' && (accountLoading ? (
+          <div className="flex items-center gap-2 text-white/40 text-sm py-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading real payments…</div>
+        ) : usdRecent.length === 0 ? (
           <div className="py-4 text-sm text-white/40">No real payments yet — make a deposit or send money and it will show up here.</div>
         ) : (
           <div className="space-y-2">
-            {recentPayments.map((t) => {
+            {usdRecent.map((t) => {
               const positive = t.type === 'credit' || t.amount > 0;
               const amt = Math.abs(t.amount);
               return (
@@ -253,9 +643,7 @@ export default function PaymentsSection() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-white truncate">{t.description || t.category}</p>
-                    <p className="text-[11px] text-white/40">
-                      {t.date ? new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''} · {t.status}
-                    </p>
+                    <p className="text-[11px] text-white/40">{t.date ? new Date(t.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''} · {t.status}</p>
                   </div>
                   <p className={`font-bold text-sm ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
                     {positive ? '+' : '-'}${amt.toLocaleString('en-US', { minimumFractionDigits: 2 })}
@@ -264,327 +652,35 @@ export default function PaymentsSection() {
               );
             })}
           </div>
-        )}
-      </motion.div>
-
-      {/* Tabs */}
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        {[
-          { id: 'digital' as PaymentTab, label: 'Digital Wallets', icon: Smartphone, count: digitalWallets.length },
-          { id: 'regional' as PaymentTab, label: 'Regional Pay', icon: Globe, count: regionalPayments.length },
-          { id: 'crypto' as PaymentTab, label: 'Crypto', icon: Bitcoin, count: cryptoWallets.length },
-        ].map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold whitespace-nowrap transition-all ${
-              tab === t.id ? 'bg-linear-to-r from-cyan-400 to-blue-500 text-white glow-blue' : 'glass-btn text-white/60 hover:text-white'
-            }`}
-          >
-            <t.icon className="w-4 h-4" />{t.label}
-            <span className={`px-2 py-0.5 rounded-full text-[10px] ${tab === t.id ? 'bg-white/20' : 'bg-white/5'}`}>{t.count}</span>
-          </button>
         ))}
-      </div>
-
-      {/* Digital Wallets Tab */}
-      <AnimatePresence mode="wait">
-        {tab === 'digital' && (
-          <motion.div key="digital" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {digitalWallets.map((w, i) => (
-                <motion.div
-                  key={w.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.06 }}
-                  whileHover={{ y: -4, scale: 1.01 }}
-                  onClick={() => setSelectedMethod(selectedMethod === w.id ? null : w.id)}
-                  className="relative rounded-3xl p-5 cursor-pointer overflow-hidden border border-white/10"
-                  style={{ background: `linear-gradient(145deg, ${w.brandColor}30, ${w.brandColor}10)` }}
-                >
-                  <div className="absolute inset-0 shimmer opacity-20" />
-                  <div className="relative z-10">
-                    <div className="flex items-start justify-between mb-4">
-                      <div className="w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg" style={{ background: w.brandColor, color: w.accentColor }}>
-                        {w.name[0]}
-                      </div>
-                      {w.connected && (
-                        <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-[9px] font-bold text-emerald-300">
-                          <Check className="w-2.5 h-2.5" /> ACTIVE
-                        </span>
-                      )}
-                    </div>
-                    <p className="font-bold text-white text-lg">{w.name}</p>
-                    <p className="text-xs text-white/40 mb-3">{w.region}</p>
-                    <p className="text-sm text-white/50 mb-3">Link to sync your real balance</p>
-
-                    {selectedMethod === w.id && (
-                      <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4 pt-4 border-t border-white/10 flex gap-2">
-                        <button onClick={(e) => { e.stopPropagation(); setShowSend(true); }} className="flex-1 py-2 rounded-lg bg-white/10 text-xs font-bold text-white flex items-center justify-center gap-1.5">
-                          <Send className="w-3 h-3" /> Send
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); }} className="flex-1 py-2 rounded-lg bg-white/10 text-xs font-bold text-white flex items-center justify-center gap-1.5">
-                          <Download className="w-3 h-3" /> Request
-                        </button>
-                      </motion.div>
-                    )}
+        {currency === 'INR' && (inrState === 'loading' ? (
+          <div className="flex items-center gap-2 text-white/40 text-sm py-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading INR records…</div>
+        ) : inrState !== 'ready' || !inrWallet ? (
+          <div className="py-4 text-sm text-white/40">{inrState === 'none' ? 'Open your INR wallet to see INR activity.' : 'No INR wallet loaded.'}</div>
+        ) : inrWallet.transactions.length === 0 ? (
+          <div className="py-4 text-sm text-white/40">No INR activity yet — receive INR or transfer from another VaultBank user.</div>
+        ) : (
+          <div className="space-y-2">
+            {inrWallet.transactions.slice(0, 6).map((t) => {
+              const positive = t.amount > 0;
+              return (
+                <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl bg-white/3 border border-white/5">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${positive ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-rose-500/10 border border-rose-500/20'}`}>
+                    {positive ? <ArrowDownRight className="w-4 h-4 text-emerald-300" /> : <ArrowUpRight className="w-4 h-4 text-rose-300" />}
                   </div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Regional Payments Tab */}
-        {tab === 'regional' && (
-          <motion.div key="regional" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }}>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {regionalPayments.map((r, idx) => (
-                <motion.div
-                  key={r.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.06 }}
-                  whileHover={{ y: -4, scale: 1.01 }}
-                  className="glass-panel rounded-3xl p-5 cursor-pointer"
-                >
-                  <div className="flex items-start justify-between mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl" style={{ background: `${r.brandColor}20`, border: `1px solid ${r.brandColor}40` }}>
-                        {r.emoji}
-                      </div>
-                      <div>
-                        <p className="font-bold text-white">{r.name}</p>
-                        <p className="text-[11px] text-white/40">{r.region}</p>
-                      </div>
-                    </div>
-                    <span className="px-2 py-1 rounded-full text-[9px] font-bold bg-white/5 border border-white/10 text-white/40">
-                      ○ UNLINKED
-                    </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-white truncate">{t.description || t.category}</p>
+                    <p className="text-[11px] text-white/40">{t.date ? new Date(t.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : ''} · {t.status}</p>
                   </div>
-                  <p className="text-sm text-white/50">
-                    Link {r.name} to enable real {r.currency} payments
+                  <p className={`font-bold text-sm ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    {positive ? '+' : '-'}₹{Math.abs(t.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                   </p>
-                  <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between">
-                    <code className="text-[10px] text-white/40 font-mono">{r.handle}</code>
-                    <button onClick={() => copy(r.handle, r.id)} className="text-white/30 hover:text-white">
-                      {copied === r.id ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-        )}
-
-        {/* Crypto Tab */}
-        {tab === 'crypto' && (
-          <motion.div key="crypto" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -16 }} className="space-y-5">
-            {/* Crypto grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {cryptoWallets.map((c, i) => {
-                const positive = c.change >= 0;
-                return (
-                  <motion.div
-                    key={c.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.06 }}
-                    whileHover={{ y: -4, scale: 1.02 }}
-                    onClick={() => setSelectedMethod(selectedMethod === c.id ? null : c.id)}
-                    className="relative rounded-3xl p-5 cursor-pointer overflow-hidden border border-white/10"
-                    style={{ background: `linear-gradient(145deg, ${c.color}25, transparent)` }}
-                  >
-                    <div className="absolute inset-0 shimmer opacity-20" />
-                    <div className="relative z-10">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="w-11 h-11 rounded-full flex items-center justify-center text-xl font-bold" style={{ background: `${c.color}30`, border: `2px solid ${c.color}`, color: c.color }}>
-                          {c.icon}
-                        </div>
-                        <span className={`flex items-center gap-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${positive ? 'bg-emerald-500/15 text-emerald-300' : 'bg-rose-500/15 text-rose-300'}`}>
-                          {positive ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
-                          {Math.abs(c.change)}%
-                        </span>
-                      </div>
-                      <p className="font-bold text-white">{c.name}</p>
-                      <p className="text-[11px] text-white/40 mb-3">{c.chain}</p>
-                      <p className="font-display text-xl text-white">{c.symbol} <span className="text-xs text-white/40">{c.chain}</span></p>
-                      <p className="text-sm text-white/50 mt-0.5">Link a real wallet to see holdings</p>
-
-                      {selectedMethod === c.id && (
-                        <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4 pt-4 border-t border-white/10">
-                          <div className="flex items-center gap-1 mb-3">
-                            <code className="text-[9px] text-white/40 font-mono flex-1 truncate">{c.address}</code>
-                            <button onClick={(e) => { e.stopPropagation(); copy(c.address, c.id); }} className="text-white/40 hover:text-white">
-                              {copied === c.id ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <button onClick={(e) => { e.stopPropagation(); setShowSend(true); }} className="py-2 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">Receive</button>
-                            <button onClick={(e) => { e.stopPropagation(); setShowSend(true); }} className="py-2 rounded-lg bg-white/10 text-xs font-bold text-white">Send</button>
-                          </div>
-                        </motion.div>
-                      )}
-                    </div>
-                  </motion.div>
-                );
-              })}
-            </div>
-
-            {/* Deposit addresses summary */}
-            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="glass-panel rounded-3xl p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-display text-xl text-white flex items-center gap-2">
-                  <Link2 className="w-5 h-5 text-amber-400" /> Deposit Addresses
-                </h3>
-                <button onClick={() => setShowAddresses(!showAddresses)} className="text-xs font-bold text-amber-400 hover:text-amber-300">
-                  {showAddresses ? 'Hide' : 'Show All'}
-                </button>
-              </div>
-              <AnimatePresence>
-                {showAddresses && (
-                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="space-y-2">
-                    {cryptoWallets.map((c) => (
-                      <div key={c.id} className="flex items-center gap-3 p-3 rounded-xl bg-white/3 border border-white/5">
-                        <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold" style={{ background: `${c.color}25`, color: c.color, border: `1px solid ${c.color}50` }}>{c.icon}</div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-bold text-white">{c.symbol} · {c.chain}</p>
-                          <code className="text-[11px] text-white/40 font-mono">{c.address}</code>
-                        </div>
-                        <button onClick={() => copy(c.address, c.id + '-addr')} className="text-white/40 hover:text-white">
-                          {copied === c.id + '-addr' ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                        </button>
-                      </div>
-                    ))}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-              {!showAddresses && <p className="text-sm text-white/40">Tap "Show All" to reveal {cryptoWallets.length} wallet addresses for deposits.</p>}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* All Connected Methods Overview */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="glass-panel rounded-3xl p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h3 className="font-display text-xl text-white">All Payment Methods</h3>
-            <p className="text-xs text-white/40 mt-0.5">{availablePaymentMethods.length} providers available to link</p>
+                </div>
+              );
+            })}
           </div>
-          <button onClick={() => setShowAdd(true)} className="px-4 py-2 rounded-xl glass-btn text-xs font-bold text-white/70 hover:text-white flex items-center gap-2">
-            <Plus className="w-3.5 h-3.5" /> Connect
-          </button>
-        </div>
-
-        {/* Search */}
-        <div className="relative mb-4">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-          <input
-            value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search payment methods..."
-            className="w-full glass-input rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-white/30"
-          />
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {filteredMethods.map((m, i) => (
-            <motion.div
-              key={m.id}
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: i * 0.03 }}
-              whileHover={{ y: -3, scale: 1.02 }}
-              className="p-4 rounded-2xl border cursor-pointer transition-all flex flex-col items-center text-center"
-              style={{
-                background: m.connected ? `${m.color}12` : 'rgba(255,255,255,0.02)',
-                borderColor: m.connected ? `${m.color}40` : 'rgba(255,255,255,0.05)',
-              }}
-            >
-              <div className="w-12 h-12 rounded-2xl flex items-center justify-center mb-2 font-bold text-xl"
-                style={{ background: `${m.color}25`, border: `1px solid ${m.color}50` }}
-              >
-                {m.emoji || <span style={{ color: m.color }}>{m.name[0]}</span>}
-              </div>
-              <p className="font-bold text-white text-sm">{m.name}</p>
-              <p className="text-[10px] text-white/40 mb-2">{m.category}</p>
-              {m.connected ? (
-                <span className="flex items-center gap-1 text-[9px] font-bold text-emerald-400">
-                  <Check className="w-2.5 h-2.5" /> Connected
-                </span>
-              ) : (
-                <span className="flex items-center gap-1 text-[9px] font-bold text-amber-400">
-                  <Plus className="w-2.5 h-2.5" /> Connect
-                </span>
-              )}
-            </motion.div>
-          ))}
-        </div>
+        ))}
       </motion.div>
-
-      {/* ── QR Code Modal ── */}
-      <AnimatePresence>
-        {showQR && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={() => setShowQR(false)}
-            className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-xl"
-          >
-            <motion.div
-              initial={{ scale: 0.94, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.94, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-sm rounded-3xl glass-panel p-8 text-center"
-            >
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="font-display text-xl text-white">Receive Payment</h3>
-                <button onClick={() => setShowQR(false)} className="p-2 rounded-xl glass-btn"><X className="w-4 h-4 text-white/60" /></button>
-              </div>
-
-              {/* QR Code */}
-              <div className="relative w-56 h-56 mx-auto mb-6 rounded-3xl bg-white p-5">
-                <div className="absolute inset-0 rounded-3xl shimmer opacity-50" />
-                {/* Fake QR pattern */}
-                <div className="w-full h-full grid grid-cols-12 gap-0.5">
-                  {Array.from({ length: 144 }).map((_, i) => (
-                    <div key={i} className={`rounded-[1px] ${Math.random() > 0.5 ? 'bg-black' : 'bg-transparent'}`} />
-                  ))}
-                </div>
-                {/* Corner markers */}
-                <div className="absolute top-4 left-4 w-10 h-10 border-[3px] border-black rounded-lg flex items-center justify-center">
-                  <div className="w-4 h-4 bg-black rounded-sm" />
-                </div>
-                <div className="absolute top-4 right-4 w-10 h-10 border-[3px] border-black rounded-lg flex items-center justify-center">
-                  <div className="w-4 h-4 bg-black rounded-sm" />
-                </div>
-                <div className="absolute bottom-4 left-4 w-10 h-10 border-[3px] border-black rounded-lg flex items-center justify-center">
-                  <div className="w-4 h-4 bg-black rounded-sm" />
-                </div>
-              </div>
-
-              <p className="text-sm text-white/60 mb-1">Scan or share your REAL account number</p>
-              <p className="font-display text-lg text-gold mb-4">{account?.accountNumber || 'Loading…'}</p>
-
-              <div className="flex gap-2">
-                <button onClick={() => copy(account?.accountNumber || '', 'qr')} className="flex-1 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2">
-                  {copied === 'qr' ? <><Check className="w-4 h-4" /> Copied</> : <><Copy className="w-4 h-4" /> Copy ID</>}
-                </button>
-                <button className="px-4 py-3 rounded-xl glass-btn text-white/70"><Download className="w-4 h-4" /></button>
-              </div>
-
-              {/* Payment options */}
-              <div className="mt-4 pt-4 border-t border-white/10">
-                <p className="text-[10px] text-white/40 mb-2">ACCEPTED VIA</p>
-                <div className="flex justify-center gap-2 flex-wrap">
-                  {['🍎 Pay', 'G Pay', 'UPI', '₿ BTC', 'Ξ ETH', 'PayPal'].map(p => (
-                    <span key={p} className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 text-[10px] font-bold text-white/60">{p}</span>
-                  ))}
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* ── Send Money Modal ── */}
       <AnimatePresence>
@@ -605,14 +701,17 @@ export default function PaymentsSection() {
                     <Send className="w-5 h-5 text-blue-300" />
                   </div>
                   <div>
-                    <h3 className="font-display text-xl text-white">Send Money</h3>
-                    <p className="text-xs text-white/40">Instant transfer</p>
+                    <h3 className="font-display text-xl text-white">Send {currency}</h3>
+                    <p className="text-xs text-white/40">Instant internal transfer — same currency only</p>
                   </div>
                 </div>
                 <button onClick={() => setShowSend(false)} className="p-2 rounded-xl glass-btn"><X className="w-4 h-4 text-white/60" /></button>
               </div>
 
               <div className="space-y-3">
+                {currency === 'INR' && inrState !== 'ready' && (
+                  <p className="text-xs text-amber-400 font-bold bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">Open your INR wallet first to send INR.</p>
+                )}
                 <div>
                   <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">RECIPIENT — REAL VAULTBANK USERS</label>
                   {selected ? (
@@ -632,7 +731,7 @@ export default function PaymentsSection() {
                         <UserSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
                         <input
                           value={query} onChange={(e) => setQuery(e.target.value)}
-                          placeholder="Search by name, email or account number…"
+                          placeholder={`Search by name, email or account number (${currency} account)…`}
                           className="w-full glass-input rounded-xl pl-10 pr-10 py-3 text-sm text-white"
                         />
                         {searching && <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-cyan-400 animate-spin" />}
@@ -665,18 +764,13 @@ export default function PaymentsSection() {
                 <div>
                   <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
                   <div className="relative">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 font-display text-2xl">$</span>
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-400 font-display text-2xl">{curSymbol}</span>
                     <input
                       type="number" value={sendAmount} onChange={(e) => setSendAmount(e.target.value)}
                       placeholder="0.00"
                       className="w-full glass-input rounded-xl pl-10 pr-4 py-4 text-2xl font-display text-white"
                     />
                   </div>
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {['10', '25', '50', '100'].map(v => (
-                    <button key={v} onClick={() => setSendAmount(v)} className="py-2 rounded-lg glass-btn text-xs text-white/70 hover:text-white">${v}</button>
-                  ))}
                 </div>
                 {sendStatus === 'error' && (
                   <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">{sendMsg}</p>
@@ -688,15 +782,15 @@ export default function PaymentsSection() {
                 )}
                 <button
                   onClick={executeSend}
-                  disabled={sendStatus === 'sending' || !sendAmount || (!selected && query.trim().length < 2)}
+                  disabled={sendStatus === 'sending' || !sendAmount || (!selected && query.trim().length < 2) || (currency === 'INR' && inrState !== 'ready')}
                   className="w-full py-4 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
                 >
                   {sendStatus === 'sending' ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Sending real money…</>
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
                   ) : sendStatus === 'success' ? (
                     <><Check className="w-4 h-4" /> Sent!</>
                   ) : (
-                    <><Zap className="w-4 h-4" /> Send Real Transfer</>
+                    <><Zap className="w-4 h-4" /> Send {currency}</>
                   )}
                 </button>
               </div>
@@ -705,70 +799,10 @@ export default function PaymentsSection() {
         )}
       </AnimatePresence>
 
-      {/* ── Withdraw Modal — REAL bank payout ── */}
+      {/* ── Withdraw Modal (USD) ── */}
       <AnimatePresence>
         {showWithdraw && (
           <WithdrawModal isOpen={true} onClose={() => setShowWithdraw(false)} />
-        )}
-      </AnimatePresence>
-
-      {/* ── Add Payment Method Modal ── */}
-      <AnimatePresence>
-        {showAdd && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            onClick={() => setShowAdd(false)}
-            className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-xl"
-          >
-            <motion.div
-              initial={{ scale: 0.94, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.94, y: 20 }}
-              onClick={(e) => e.stopPropagation()}
-              className="w-full max-w-lg rounded-3xl glass-panel p-6 max-h-[85vh] overflow-y-auto"
-            >
-              <div className="flex items-center justify-between mb-5">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-500/20 flex items-center justify-center">
-                    <Plus className="w-5 h-5 text-cyan-300" />
-                  </div>
-                  <div>
-                    <h3 className="font-display text-xl text-white">Connect Payment Method</h3>
-                    <p className="text-xs text-white/40">Add a new wallet or payment system</p>
-                  </div>
-                </div>
-                <button onClick={() => setShowAdd(false)} className="p-2 rounded-xl glass-btn"><X className="w-4 h-4 text-white/60" /></button>
-              </div>
-
-              <div className="relative mb-4">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
-                <input placeholder="Search payment methods..." className="w-full glass-input rounded-xl pl-10 pr-4 py-2.5 text-sm text-white placeholder-white/30" />
-              </div>
-
-              <div className="space-y-2">
-                {availablePaymentMethods.filter(m => !m.connected).concat(availablePaymentMethods.filter(m => m.connected).slice(0, 4)).map((m, i) => (
-                  <motion.div
-                    key={m.id + i}
-                    initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.04 }}
-                    className="flex items-center gap-3 p-3 rounded-2xl bg-white/3 border border-white/5 hover:border-cyan-500/30 transition-all cursor-pointer"
-                  >
-                    <div className="w-11 h-11 rounded-xl flex items-center justify-center font-bold text-lg"
-                      style={{ background: `${m.color}20`, border: `1px solid ${m.color}40`, color: m.color }}
-                    >
-                      {m.emoji || m.name[0]}
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-bold text-white text-sm">{m.name}</p>
-                      <p className="text-[11px] text-white/40">{m.category}</p>
-                    </div>
-                    {m.connected ? (
-                      <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1"><Check className="w-3 h-3" /> Active</span>
-                    ) : (
-                      <button className="px-3 py-1.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs font-bold hover:bg-cyan-500/25">Connect</button>
-                    )}
-                  </motion.div>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
         )}
       </AnimatePresence>
     </div>

@@ -502,3 +502,4 @@ router.post('/api/bank-deposits/admin/instructions/:id/reverse', requireAdmin, a
 });
 
 module.exports = router;
+module.exports.receivingConfig = receivingConfig;

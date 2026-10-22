@@ -23,6 +23,7 @@ jest.mock('../config/database', () => ({
     get isDemo() { return mockState.isDemo; },
     findUserById: jest.fn(),
     findAccountByUserId: jest.fn(async () => ({ id: 'acc-1', user_id: 'u-1', balance: 100, currency: 'USD', held_balance: 0 })),
+    findAccountByUserIdAndCurrency: jest.fn(async () => ({ id: 'acc-1', user_id: 'u-1', balance: 100, currency: 'USD', held_balance: 0, status: 'active' })),
     createTransaction: jest.fn(async () => ({ id: 'tx-1' })),
     createNotification: jest.fn(async () => ({ id: 'n-1' })),
     createAuditLog: jest.fn(async () => ({ id: 'a-1' })),

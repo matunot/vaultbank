@@ -271,11 +271,43 @@ export const api = {
     return request<ApiResponse>(`api/account/users/search?q=${encodeURIComponent(q)}`);
   },
 
-  async sendMoney(data: { recipientEmail?: string; recipientAccountNumber?: string; amount: number; description?: string }): Promise<ApiResponse> {
+  async sendMoney(data: { recipientEmail?: string; recipientAccountNumber?: string; amount: number; description?: string; currency?: string }): Promise<ApiResponse> {
     return request<ApiResponse>('api/account/transfer', {
       method: 'POST',
       body: JSON.stringify(data),
     });
+  },
+
+  // ── Unified USD + INR payments core ────────────────────────────────────────
+  async paymentsReadiness(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/payments/readiness');
+  },
+
+  async openInrAccount(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/account/open-inr', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  async getInrAccount(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/account/inr');
+  },
+
+  async collectionsMyDetails(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/collections/my-details');
+  },
+
+  async createPayoutRequest(data: { amount: number; bankAccount: string; ifsc: string }, idempotencyKey?: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/payouts/requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      ...(idempotencyKey ? { headers: { 'idempotency-key': idempotencyKey } } : {}),
+    });
+  },
+
+  async myPayouts(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/payouts/requests');
   },
 
   async accountDeposit(data: { amount: number; description?: string }): Promise<ApiResponse> {

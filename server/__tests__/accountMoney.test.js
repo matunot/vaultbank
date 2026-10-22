@@ -20,6 +20,7 @@ jest.mock('../config/database', () => ({
     isDemo: false,
     findUserById: jest.fn(),
     findAccountByUserId: jest.fn(),
+    findAccountByUserIdAndCurrency: jest.fn(),
     findAccountByNumber: jest.fn(),
     searchUsers: jest.fn(),
     createAccount: jest.fn(),
@@ -63,6 +64,7 @@ describe('atomic account money (real-database mode)', () => {
     beforeEach(() => {
         jest.clearAllMocks();
         CDB.findAccountByUserId.mockResolvedValue(SENDER);
+        CDB.findAccountByUserIdAndCurrency.mockImplementation(async (userId) => (userId === 'u-222' ? RECIPIENT : SENDER));
         CDB.findAccountByNumber.mockResolvedValue(RECIPIENT);
         CDB.findUserByEmail.mockResolvedValue({ id: 'u-222' });
         CDB.createTransfer.mockResolvedValue({ id: 'tr-1' });

@@ -239,7 +239,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                     {active === 'vault' && <VaultSection />}
                     {active === 'swiss' && <SwissSection />}
                     {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} />}
-                    {active === 'payments' && <PaymentsSection />}
+                    {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
                     {active === 'invest' && <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} />}
 {active === 'pay' && <VbPaySection />}
                     {active === 'credit' && <CreditSection />}

@@ -36,6 +36,7 @@ jest.mock('../config/database', () => ({
     demoStore: { accounts: [], auditLogs: [] },
     findUserById: jest.fn(),
     findAccountByUserId: jest.fn(),
+    findAccountByUserIdAndCurrency: jest.fn(),
     findAccountByNumber: jest.fn(),
     findUserByEmail: jest.fn(),
     createAccount: jest.fn(),
@@ -191,9 +192,18 @@ beforeEach(() => {
     mockCfg.payouts = true;
     CDB.findUserById.mockResolvedValue({ id: 'u-1', full_name: 'Test User', email: 't@example.com', phone: '9999999999' });
     CDB.findAccountByUserId.mockResolvedValue({ id: 'acc-usd', user_id: 'u-1', currency: 'USD', balance: '100.00', held_balance: 0 });
+    CDB.findAccountByUserIdAndCurrency.mockImplementation(async (userId, currency) => {
+        if (userId === 'u-1') return currency === 'INR' ? INR_ACCOUNT : { id: 'acc-usd', user_id: 'u-1', currency: 'USD', balance: '100.00', status: 'active', account_number: 'VB-1', account_name: 'Sender' };
+        if (userId === 'u-2') return currency === 'INR'
+            ? { id: 'acc-inr-2', user_id: 'u-2', currency: 'INR', balance: '50.00', status: 'active', account_number: 'VB-2', account_name: 'Recipient', user_id: 'u-2' }
+            : { id: 'acc-2', user_id: 'u-2', currency: 'USD', balance: '50.00', status: 'active', account_number: 'VB-2', account_name: 'Recipient' };
+        return null;
+    });
+    CDB.findUserByEmail.mockResolvedValue({ id: 'u-2' });
     CDB.findAccountByNumber.mockResolvedValue({ id: 'acc-2', user_id: 'u-2', currency: 'USD', balance: '50.00' });
     CDB.createAccount.mockResolvedValue({ id: 'acc-inr-new', account_number: 'VB-777-777-7777', currency: 'INR' });
     CDB.createTransaction.mockResolvedValue({ id: 'tx-1' });
+    CDB.createTransfer.mockResolvedValue({ id: 'tr-1' });
     CDB.createNotification.mockResolvedValue({ id: 'n-1' });
     CDB.createAuditLog.mockResolvedValue({ id: 'a-1' });
     CDB.db.query.mockResolvedValue({ rows: [] });
@@ -471,6 +481,166 @@ describe('payout reconciliation: terminal state only from the provider status AP
     });
 });
 
+describe('unified payments: currency-aware transfers, wallet, payouts list, readiness', () => {
+    function pooledClient({ debitRows = [{ balance_before: '500.00', balance_after: '490.00' }], creditRows = [{ balance_before: '50.00', balance_after: '60.00' }] } = {}) {
+        const sqls = [];
+        const client = {
+            query: jest.fn(async (sql) => {
+                sqls.push(String(sql));
+                if (/^BEGIN|^COMMIT/.test(String(sql).trim())) return { rows: [] };
+                if (sql.includes('balance = balance - $2')) return { rows: debitRows };
+                if (sql.includes('balance = balance + $2')) return { rows: creditRows };
+                return { rows: [] };
+            }),
+            release: jest.fn(),
+        };
+        CDB.db.getClient.mockResolvedValue(client);
+        return sqls;
+    }
+
+    test('INR transfer: pooled atomic debit INR sender + credit INR recipient, currency-honest messages', async () => {
+        CDB.db.query.mockResolvedValue({ rows: [] });
+        const sqls = pooledClient();
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
+        });
+        expect(res.code).toBeNull();
+        expect(res.body.success).toBe(true);
+        expect(res.body.message).toContain('INR 10.00');
+        expect(sqls.some((s) => s.trim().startsWith('BEGIN'))).toBe(true);
+        expect(sqls.some((s) => s.trim().startsWith('COMMIT'))).toBe(true);
+        expect(sqls.some((s) => s.includes('ROLLBACK'))).toBe(false);
+        const out = CDB.createTransaction.mock.calls.find((c) => c[0].type === 'transfer_out')[0];
+        const inc = CDB.createTransaction.mock.calls.find((c) => c[0].type === 'transfer_in')[0];
+        expect(out.currency).toBe('INR');
+        expect(inc.currency).toBe('INR');
+        expect(inc.account_id).toBe('acc-inr-2');
+    });
+
+    test('USD transfer unchanged: resolves USD accounts on both sides (regression)', async () => {
+        CDB.db.query.mockResolvedValue({ rows: [] });
+        pooledClient();
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 5 },
+        });
+        expect(res.body.success).toBe(true);
+        expect(CDB.findAccountByUserIdAndCurrency).toHaveBeenCalledWith('u-1', 'USD');
+        const out = CDB.createTransaction.mock.calls.find((c) => c[0].type === 'transfer_out')[0];
+        expect(out.currency).toBe('USD');
+    });
+
+    test('sender without an INR account gets an honest 404, zero money SQL', async () => {
+        CDB.findAccountByUserIdAndCurrency.mockImplementation(async () => null);
+        const sqls = pooledClient();
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
+        });
+        expect(res.code).toBe(404);
+        expect(res.body.message).toContain('INR');
+        expect(sqls.filter((s) => s.includes('balance = balance'))).toHaveLength(0);
+    });
+
+    test('recipient without an INR account gets a 404, no debit', async () => {
+        CDB.findAccountByUserIdAndCurrency.mockImplementation(async (userId) => (userId === 'u-1' ? INR_ACCOUNT : null));
+        const sqls = pooledClient();
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
+        });
+        expect(res.code).toBe(404);
+        expect(res.body.message).toContain('Recipient has no INR');
+        expect(sqls.filter((s) => s.includes('balance = balance'))).toHaveLength(0);
+    });
+
+    test('recipient account number in a different currency is a 400, never mixed', async () => {
+        CDB.findAccountByNumber.mockResolvedValue({ id: 'acc-usd-2', user_id: 'u-2', currency: 'USD', balance: '5.00', account_number: 'VB-2' });
+        const sqls = pooledClient();
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientAccountNumber: 'VB-2', amount: 10, currency: 'INR' },
+        });
+        expect(res.code).toBe(400);
+        expect(res.body.message).toContain('USD');
+        expect(sqls.filter((s) => s.includes('balance = balance'))).toHaveLength(0);
+    });
+
+    test('idempotency-key replay: ledger guard blocks the double transfer', async () => {
+        CDB.db.query.mockImplementation(async (sql) => {
+            if (sql.includes('FROM transactions WHERE external_reference')) return { rows: [{ id: 'seen' }] };
+            return { rows: [] };
+        });
+        const sqls = pooledClient();
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
+            headers: { 'idempotency-key': 'retry-1' },
+        });
+        expect(res.body.replay).toBe(true);
+        expect(sqls.filter((s) => s.includes('balance = balance'))).toHaveLength(0);
+        expect(CDB.createTransaction).not.toHaveBeenCalled();
+    });
+
+    test('idempotency-key first call: both ledger rows carry the dedup reference', async () => {
+        CDB.db.query.mockResolvedValue({ rows: [] });
+        pooledClient();
+        const res = await call(accountsRouter, '/api/account/transfer', {
+            method: 'post',
+            body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
+            headers: { 'idempotency-key': 'retry-2' },
+        });
+        expect(res.body.success).toBe(true);
+        const out = CDB.createTransaction.mock.calls.find((c) => c[0].type === 'transfer_out')[0];
+        expect(out.external_reference).toBe('XFER-INR-retry-2');
+    });
+
+    test('GET /api/account/inr returns the INR balance plus INR-scoped records; 404 when none', async () => {
+        const sqls = scriptDb();
+        CDB.db.query.mockImplementation(async (sql) => {
+            sqls.push(String(sql));
+            if (sql.includes('FROM transactions WHERE account_id')) {
+                return { rows: [{ id: 't1', type: 'deposit', status: 'completed', amount: '10.00', currency: 'INR', description: 'INR collection', category: 'income', balance_after: '510.00', created_at: '2026-10-22', external_reference: 'cf-1' }] };
+            }
+            return { rows: [] };
+        });
+        const res = await call(accountsRouter, '/api/account/inr');
+        expect(res.code).toBeNull();
+        expect(res.body.account.currency).toBe('INR');
+        expect(res.body.account.balance).toBe(500);
+        expect(res.body.transactions[0].currency).toBe('INR');
+
+        CDB.findAccountByUserIdAndCurrency.mockImplementation(async () => null);
+        const none = await call(accountsRouter, '/api/account/inr');
+        expect(none.code).toBe(404);
+    });
+
+    test('GET /api/payouts/requests returns only my payout requests (owner-scoped)', async () => {
+        const sqls = scriptDb();
+        const res = await call(payoutsRouter, '/api/payouts/requests');
+        expect(res.code).toBe(200);
+        expect(res.body.success).toBe(true);
+        expect(sqls.some((s) => s.includes('FROM payout_requests WHERE user_id = $1'))).toBe(true);
+    });
+
+    test('GET /api/payments/readiness is public and honestly false when unconfigured', async () => {
+        const paymentsRouter = require('../routes/payments');
+        mockCfg.collections = false;
+        mockCfg.payouts = false;
+        const res = await call(paymentsRouter, '/api/payments/readiness');
+        expect(res.code).toBe(200);
+        expect(res.body.rails.usd.cardStripe).toBe(false);
+        expect(res.body.rails.usd.paypal).toBe(false);
+        expect(res.body.rails.usd.bankTransferInstructions).toBe(false);
+        expect(res.body.rails.usd.internalTransfers).toBe(true);
+        expect(res.body.rails.usd.externalWithdrawals).toBe(false);
+        expect(res.body.rails.inr.collections).toBe(false);
+        expect(res.body.rails.inr.payouts).toBe(false);
+        expect(res.body.rails.inr.internalTransfers).toBe(true);
+    });
+});
+
 describe('INR accounts: explicit opt-in, USD untouched', () => {
     test('open-inr creates a NEW INR account once; second call is a 409', async () => {
         const first = scriptDb();
@@ -494,7 +664,7 @@ describe('INR accounts: explicit opt-in, USD untouched', () => {
         expect(again.body.already).toBe(true);
     });
 
-    test('internal transfer refuses cross-currency pairs (USD->INR is a 400, not a silent FX)', async () => {
+    test('internal transfer refuses cross-currency pairs (USD account number as INR recipient is refused)', async () => {
         CDB.findAccountByNumber.mockResolvedValue({ id: 'acc-inr-2', user_id: 'u-2', currency: 'INR', balance: '50.00' });
         const sqls = scriptDb();
         const res = await call(accountsRouter, '/api/account/transfer', {
@@ -502,7 +672,7 @@ describe('INR accounts: explicit opt-in, USD untouched', () => {
             body: { recipientAccountNumber: 'VB-9', amount: 10 },
         });
         expect(res.code).toBe(400);
-        expect(res.body.code).toBe('CROSS_CURRENCY_UNSUPPORTED');
+        expect(res.body.message).toContain('INR');
         expect(sqls.filter((s) => s.includes('balance = balance'))).toHaveLength(0);
     });
 });

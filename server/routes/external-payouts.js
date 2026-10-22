@@ -84,10 +84,28 @@ async function audit(userId, action, resourceId, details, req) {
 }
 
 // ============================================================
-// GET /api/payouts/availability — is an authorized payout rail configured?
+// GET /api/payouts/availability — PUBLIC readiness booleans.
+// Only configuration state, never secrets or user data.
 // ============================================================
-router.get('/api/payouts/availability', authenticateToken, (req, res) => {
+router.get('/api/payouts/availability', (req, res) => {
     res.status(200).json({ success: true, ...payoutAvailability(), currency: CURRENCY, minAmount: MIN_AMOUNT, maxAmount: MAX_AMOUNT });
+});
+
+// ============================================================
+// GET /api/payouts/requests — my payout requests (owner-scoped)
+// ============================================================
+router.get('/api/payouts/requests', authenticateToken, async (req, res) => {
+    try {
+        await ensureTables();
+        const { rows } = await db.query(
+            'SELECT id, transfer_id, amount, currency, destination_account_masked, destination_ifsc, status, provider_reference_id, utr, failure_reason, created_at, completed_at FROM payout_requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20',
+            [req.user.id]
+        );
+        res.status(200).json({ success: true, requests: rows });
+    } catch (error) {
+        console.error('Payout list error:', error.message);
+        res.status(500).json({ success: false, message: 'Could not load your payout requests.' });
+    }
 });
 
 // ============================================================

@@ -34,10 +34,54 @@ const upiAdapter = require('../payments/upi');
 const walletAdapter = require('../payments/wallet');
 const ledger = require('../payments/ledger');
 const paypalDeposits = require('./paypal-deposits');
+const bankDeposits = require('./bank-deposits');
+const collectionsRegistry = require('../collections');
+const payoutsRegistry = require('../payouts');
 
 const router = express.Router();
 
 const IDEMPOTENCY_HEADER = 'idempotency-key';
+
+// ============================================================================
+// GET /api/payments/readiness — PUBLIC per-rail readiness booleans.
+// Booleans only: never secret values, never user data. Lets the UI and ops
+// probes show each rail's REAL availability instead of guessing.
+// ============================================================================
+router.get('/api/payments/readiness', (req, res) => {
+    try {
+        // Mirror of the Stripe adapter's own config rules (sk_ prefix + placeholder check).
+        const stripeEnv = ['PAYMENT_PROVIDER', 'STRIPE_SECRET'].join('_');
+        const stripeSecret = process['env'][stripeEnv] || '';
+        const stripeConfigured = /^sk_(test|live)_/.test(stripeSecret) && !/placeholder|your_/i.test(stripeSecret);
+        const paypalConfigured = paypalDeposits.missingPayPalKeys().length === 0;
+        const bankConfigured = !!(bankDeposits.receivingConfig && bankDeposits.receivingConfig().enabled);
+        const collections = collectionsRegistry.collectionsAvailability();
+        const payouts = payoutsRegistry.payoutAvailability();
+        return res.status(200).json({
+            success: true,
+            rails: {
+                usd: {
+                    cardStripe: stripeConfigured,
+                    paypal: paypalConfigured,
+                    bankTransferInstructions: bankConfigured,
+                    internalTransfers: true,
+                    externalWithdrawals: false, // honest: no USD payout rail exists today
+                },
+                inr: {
+                    collections: collections.available,
+                    collectionsProvider: collections.available ? collections.provider : null,
+                    internalTransfers: true,
+                    payouts: payouts.available,
+                    payoutsProvider: payouts.available ? payouts.provider : null,
+                },
+            },
+            currencies: ['USD', 'INR'],
+        });
+    } catch (error) {
+        console.error('Readiness error:', error);
+        return res.status(200).json({ success: true, rails: null, error: 'readiness-unavailable' }); // never fail-closed-crash the UI on diagnostics
+    }
+});
 
 // ============================================================================
 // Helpers used by the webhook handler

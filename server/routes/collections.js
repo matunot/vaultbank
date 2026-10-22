@@ -96,9 +96,10 @@ function vAccountIdForUser(userId) {
 }
 
 // ============================================================
-// GET /api/collections/availability — is the automatic rail configured?
+// GET /api/collections/availability — PUBLIC readiness booleans.
+// Only configuration state, never secrets or user data.
 // ============================================================
-router.get('/api/collections/availability', authenticateToken, (req, res) => {
+router.get('/api/collections/availability', (req, res) => {
     res.status(200).json({ success: true, ...collectionsAvailability(), currency: CURRENCY });
 });
 
@@ -178,10 +179,25 @@ router.get('/api/collections/my-details', authenticateToken, async (req, res) =>
                 `UPDATE virtual_accounts
                  SET status = 'active', bank_code = $3, account_number = $4, ifsc = $5,
                      provisioned_at = NOW(), last_error = NULL, updated_at = NOW()
-                 WHERE provider = $1 AND provider_virtual_account_id = $2
+                 WHERE provider = $1 AND provider_virtual_account_id = $2 AND status != 'active'
                  RETURNING *`,
                 [active.name, providerVAccountId, issued.bankCode, issued.accountNumber, issued.ifsc]
             );
+            if (updated.length === 0) {
+                // Row became active concurrently — re-read and return the live details.
+                const { rows: liveRows } = await db.query(
+                    'SELECT * FROM virtual_accounts WHERE provider = $1 AND provider_virtual_account_id = $2 LIMIT 1',
+                    [active.name, providerVAccountId]
+                );
+                const live = liveRows[0];
+                return res.status(200).json({
+                    success: true,
+                    currency: CURRENCY,
+                    provider: active.name,
+                    details: { accountNumber: live.account_number, ifsc: live.ifsc, bankCode: live.bank_code },
+                    status: 'active',
+                });
+            }
             await audit(req.user.id, 'virtual_account_provisioned', providerVAccountId, { provider: active.name }, req);
             return res.status(200).json({
                 success: true,
@@ -196,10 +212,12 @@ router.get('/api/collections/my-details', authenticateToken, async (req, res) =>
             });
         } catch (e) {
             const conflict = e.code === 'COLLECTIONS_VBA_ALREADY_EXISTS';
+            // Guarded failure mark: never downgrade a row that became active
+            // concurrently (a lost race must not clobber real details).
             await db.query(
                 `UPDATE virtual_accounts
                  SET status = $3, last_error = $4, updated_at = NOW()
-                 WHERE provider = $1 AND provider_virtual_account_id = $2`,
+                 WHERE provider = $1 AND provider_virtual_account_id = $2 AND status != 'active'`,
                 [active.name, providerVAccountId, conflict ? 'conflict' : 'error', e.message]
             );
             await audit(req.user.id, conflict ? 'virtual_account_provision_conflict' : 'virtual_account_provision_failed', providerVAccountId, { error: e.code }, req);
