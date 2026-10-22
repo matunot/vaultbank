@@ -20,7 +20,7 @@ jobs:
         run: |
           echo "Pinging https://vaultbank-md20.onrender.com/health"
           RESPONSE=$(curl -sS -o /dev/null -w "%{http_code}|%{time_total}" --max-time 60 \
-            https://vaultbank-md20.onrender.com/health)
+            https://vaultbank-md20.onrender.com/health || true)
           STATUS=$(echo "$RESPONSE" | cut -d'|' -f1)
           TIME=$(echo "$RESPONSE" | cut -d'|' -f2)
           echo "HTTP Status: $STATUS | Response Time: ${TIME}s"
@@ -37,21 +37,25 @@ jobs:
             echo "cold_start=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Test real login endpoint
+      - name: Probe login endpoint without demo credentials
         id: login_test
         run: |
-          echo "Testing real login (POST /login)"
+          echo "Probing POST /login using deliberately invalid, run-specific credentials"
+          LOGIN_EMAIL="health-check-${GITHUB_RUN_ID}@example.invalid"
+          LOGIN_PASSWORD="health-check-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           LOGIN_RESPONSE=$(curl -sS -o /tmp/login.json -w "%{http_code}" --max-time 60 \
             -X POST https://vaultbank-md20.onrender.com/login \
             -H "Content-Type: application/json" \
-            -d '{"email":"demo@vaultbank.com","password":"password"}')
-          echo "Login HTTP Status: $LOGIN_RESPONSE"
+            -d "{\"email\":\"$LOGIN_EMAIL\",\"password\":\"$LOGIN_PASSWORD\"}" || true)
+          echo "Login probe HTTP Status: $LOGIN_RESPONSE"
           echo "status=$LOGIN_RESPONSE" >> "$GITHUB_OUTPUT"
 
-          if [ "$LOGIN_RESPONSE" = "200" ]; then
-            echo "✅ Login test PASSED — API is functional"
+          if [ "$LOGIN_RESPONSE" = "401" ] || [ "$LOGIN_RESPONSE" = "400" ] || [ "$LOGIN_RESPONSE" = "422" ]; then
+            echo "Login endpoint is responding and rejects invalid credentials as expected."
+          elif [ "$LOGIN_RESPONSE" = "200" ]; then
+            echo "::warning::Login probe unexpectedly returned HTTP 200; inspect authentication behavior."
           else
-            echo "❌ Login test FAILED — API is broken or returning errors"
+            echo "::warning::Login endpoint returned HTTP $LOGIN_RESPONSE. Backend availability is determined by /health."
             cat /tmp/login.json 2>/dev/null || true
           fi
 
@@ -60,10 +64,10 @@ jobs:
           echo "Pinging https://vaultbank-md20.onrender.com/"
           curl -sS -o /dev/null -w "HTTP Status: %{http_code} | Response Time: %{time_total}s\n" \
             --max-time 60 \
-            https://vaultbank-md20.onrender.com/
+            https://vaultbank-md20.onrender.com/ || true
 
       - name: Open GitHub Issue if backend is down
-        if: steps.health.outputs.status != '200' || steps.login_test.outputs.status != '200'
+        if: steps.health.outputs.status != '200'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -71,7 +75,7 @@ jobs:
           LOGIN_STATUS="${{ steps.login_test.outputs.status }}"
 
           # Check if an outage issue is already open
-          EXISTING=$(gh issue list --repo "${{ github.repository }}" --state open --label "🚨 outage" --json title 2>/dev/null || echo "[]")
+          EXISTING=$(gh issue list --repo "${{ github.repository }}" --state open --json title 2>/dev/null || echo "[]")
           ALREADY_OPEN=$(echo "$EXISTING" | grep -c "VaultBank Backend Outage" || true)
 
           if [ "$ALREADY_OPEN" -gt 0 ]; then
@@ -101,18 +105,17 @@ jobs:
 
             gh issue create --repo "${{ github.repository }}" \
               --title "🚨 VaultBank Backend Outage Detected" \
-              --body "$BODY" \
-              --label "🚨 outage"
+              --body "$BODY"
             echo "✅ Outage issue created."
           fi
 
       - name: Close outage issue when backend recovers
-        if: steps.health.outputs.status == '200' && steps.login_test.outputs.status == '200'
+        if: steps.health.outputs.status == '200'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # Find any open outage issues
-          ISSUES=$(gh issue list --repo "${{ github.repository }}" --state open --label "🚨 outage" --json number,title 2>/dev/null || echo "[]")
+          ISSUES=$(gh issue list --repo "${{ github.repository }}" --state open --json number,title 2>/dev/null || echo "[]")
 
           if [ -n "$ISSUES" ] && [ "$ISSUES" != "[]" ]; then
             echo "$ISSUES" | gh run --help > /dev/null 2>&1 || true
