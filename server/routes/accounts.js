@@ -22,6 +22,7 @@ const {
     createAuditLog,
     db,
     isDemo,
+    demoStore,
 } = require('../config/database');
 
 // ============================================================
@@ -363,6 +364,63 @@ router.post('/api/account/withdraw', authenticateToken, async (req, res) => {
 });
 
 // ============================================================
+// POST /api/account/open-inr — EXPLICIT opt-in INR sub-account.
+// Never reinterprets existing USD accounts or balances: it creates a NEW,
+// separate, zero-balance account the collections rail can credit.
+// ============================================================
+router.post('/api/account/open-inr', authenticateToken, async (req, res) => {
+    try {
+        if (isDemo) {
+            // Demo platform: in-memory store (db.query throws in demo).
+            const dupe = demoStore.accounts.find((a) => a.user_id === req.user.id && a.currency === 'INR');
+            if (dupe) {
+                return res.status(409).json({ success: true, already: true, account: dupe, message: 'You already have an INR account.' });
+            }
+            const created = await createAccount(req.user.id, 'savings', 'INR');
+            return res.status(201).json({
+                success: true,
+                account: { id: created.id, accountNumber: created.account_number, currency: 'INR', balance: 0 },
+                message: 'INR account opened.',
+            });
+        }
+        const account = await findAccountByUserId(req.user.id);
+        if (!account) {
+            return res.status(404).json({ success: false, message: 'No account found.' });
+        }
+        const { rows: existing } = await db.query(
+            "SELECT id, account_number, currency, balance FROM accounts WHERE user_id = $1 AND currency = 'INR' LIMIT 1",
+            [req.user.id]
+        );
+        if (existing.length > 0) {
+            return res.status(409).json({ success: true, already: true, account: existing[0], message: 'You already have an INR account.' });
+        }
+        const created = await createAccount(req.user.id, 'savings', 'INR');
+        await createAuditLog({
+            userId: req.user.id,
+            action: 'inr_account_opened',
+            resourceType: 'account',
+            resourceId: created.id,
+            details: { currency: 'INR', explicitOptIn: true },
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+        });
+        await createNotification(req.user.id, {
+            type: 'success',
+            title: 'INR account opened',
+            message: 'Your INR account is ready. Once the collections rail is enabled you will get your own receiving details.',
+        });
+        res.status(201).json({
+            success: true,
+            account: { id: created.id, accountNumber: created.account_number, currency: 'INR', balance: 0 },
+            message: 'INR account opened.',
+        });
+    } catch (error) {
+        console.error('Open INR account error:', error);
+        res.status(500).json({ success: false, message: 'Could not open an INR account.' });
+    }
+});
+
+// ============================================================
 // POST /api/account/transfer — Transfer money to another user
 // ============================================================
 router.post('/api/account/transfer', authenticateToken, async (req, res) => {
@@ -397,6 +455,17 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
 
         if (recipientAccount.id === senderAccount.id) {
             return res.status(400).json({ success: false, message: 'Cannot transfer to your own account.' });
+        }
+
+        // Multi-currency safety: internal transfers are same-currency only.
+        // Existing USD -> USD transfers are unaffected; USD <-> INR is refused
+        // rather than silently reinterpreted.
+        if (String(senderAccount.currency).toUpperCase() !== String(recipientAccount.currency).toUpperCase()) {
+            return res.status(400).json({
+                success: false,
+                code: 'CROSS_CURRENCY_UNSUPPORTED',
+                message: `Internal transfers require matching currencies (yours: ${senderAccount.currency}, recipient: ${recipientAccount.currency}). FX conversion is not available.`,
+            });
         }
 
         const transferAmount = parseFloat(amount);

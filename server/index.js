@@ -164,6 +164,8 @@ app.use('/', usdcWithdrawalRoutes);
 app.use(stripePaymentRoutes);
 app.use('/', require('./routes/paypal-deposits'));
 app.use('/', require('./routes/bank-deposits'));
+app.use('/', require('./routes/collections'));
+app.use('/', require('./routes/external-payouts'));
 app.use('/', require('./routes/usdc-deposits'));
 
 // ─── Provider Payout Webhooks (authenticated server-to-server) ─────────────
