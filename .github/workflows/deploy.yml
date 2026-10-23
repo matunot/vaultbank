@@ -34,7 +34,7 @@ jobs:
           echo "✅ Backend syntax OK"
 
       - name: Run backend tests
-        run: npm test -- --runInBand 2>&1 || echo "⚠️ Tests not configured or failed (non-blocking)"
+        run: npm test -- --runInBand
 
       # ─── Deploy to Render via Deploy Hook ─────────────────────────
       - name: Trigger Render deployment
