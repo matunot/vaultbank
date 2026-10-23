@@ -726,6 +726,8 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
 
             // ── A. Sender ledger row — same client, INSIDE the transaction.
             // Uses reference_id (the FK to transfers.id) for durable linkage.
+            // Parameter order MUST match the SQL columns: $8=reference_id (UUID),
+            // $9=counterparty_name, $10=counterparty_account.
             await client.query(
                 `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
                     balance_before, balance_after, description, category, reference_id,
@@ -734,10 +736,12 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
                 [senderAccount.id, req.user.id, -(transferAmount + fee), wantedCurrency,
                  parseFloat(debit.rows[0].balance_before), parseFloat(debit.rows[0].balance_after),
                  description || `Transfer to ${recipientAccount.account_number}`,
-                 recipientAccount.account_name, recipientAccount.account_number, transferId]
+                 transferId, recipientAccount.account_name, recipientAccount.account_number]
             );
 
             // ── A. Recipient ledger row — same client, same transaction.
+            // Parameter order MUST match the SQL columns: $8=reference_id (UUID),
+            // $9=counterparty_name, $10=counterparty_account.
             await client.query(
                 `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
                     balance_before, balance_after, description, category, reference_id,
@@ -746,7 +750,7 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
                 [recipientAccount.id, recipientAccount.user_id, transferAmount, wantedCurrency,
                  parseFloat(credit.rows[0].balance_before), parseFloat(credit.rows[0].balance_after),
                  description || `Transfer from ${senderAccount.account_number}`,
-                 req.user.full_name, senderAccount.account_number, transferId]
+                 transferId, req.user.full_name, senderAccount.account_number]
             );
 
             // ── A. COMMIT: everything above is one atomic operation ──
