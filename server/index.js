@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
@@ -418,6 +418,16 @@ async function startServer() {
     try {
         await ensureConnection();
         console.info('âœ… Database connection established');
+        // One-time schema ensure for the transfer idempotency table (the
+        // authoritative migration is 009_transfer_idempotency.sql; this is
+        // a safety net so the route never hits a missing table on a fresh
+        // deploy before the operator runs migrations).
+        try {
+            const { query: rawQuery } = require('./config/db');
+            await rawQuery(`CREATE TABLE IF NOT EXISTS transfer_idempotency (id UUID PRIMARY KEY DEFAULT gen_random_uuid(), user_id UUID NOT NULL, currency TEXT NOT NULL, idempotency_key TEXT NOT NULL, transfer_id UUID, created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(), UNIQUE (user_id, currency, idempotency_key))`);
+        } catch (idemErr) {
+            console.warn('transfer_idempotency startup ensure skipped:', idemErr.message);
+        }
         // Seed demo data (safe: only runs if no users exist)
         await seedDemoData();
     } catch (err) {

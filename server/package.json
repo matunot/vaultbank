@@ -8,6 +8,7 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "jest",
+    "test:integration": "jest __tests__/pgIntegration.test.js --testPathIgnorePatterns /node_modules/",
     "test:sepolia": "node scripts/sepolia-integration.js"
   },
   "dependencies": {
