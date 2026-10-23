@@ -135,22 +135,13 @@ describeIfDb('HTTP handler integration: real route + real middleware + real Post
         // Run the real middleware chain: [authenticateToken, routeHandler]
         // route is the LAYER; route.route.stack is the actual handler chain
         const handlers = route.route.stack.map((s) => s.handle);
-        const start = Date.now();
-        for (let i = 0; i < handlers.length; i++) {
-            const handler = handlers[i];
-            const label = i === 0 ? 'auth' : 'handler';
+        for (const handler of handlers) {
             await new Promise((resolve, reject) => {
-                const timer = setTimeout(() => {
-                    console.error(`[DIAG] ${label} handler did not complete in 120s`);
-                    resolve(); // don't reject — let the response tell the story
-                }, 120000);
                 handler(req, res, (err) => {
-                    clearTimeout(timer);
                     if (err) reject(err);
                     else resolve();
                 });
             });
-            console.log(`[DIAG] ${label} completed in ${Date.now() - start}ms (status=${res.statusCode})`);
         }
         return { statusCode: res.statusCode, body: res.body, headers: res.headers };
     }
