@@ -37,11 +37,15 @@ async function connectToTestDb() {
     const testUrl = process['env'][TEST_DB] || deriveTestUrl();
     if (!testUrl) return null;
 
+    // SSL: only for remote connections that request it; local CI PostgreSQL
+    // (e.g. GitHub Actions service containers) does not use SSL.
+    const needsSsl = /sslmode=require|ssl=true/.test(testUrl) && !/localhost|127\.0\.0\.1/.test(testUrl);
+
     let pool;
     try {
         pool = new Pool({
             connectionString: testUrl,
-            ssl: { rejectUnauthorized: false },
+            ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
             max: 5,
         });
         await pool.query('SELECT 1');
@@ -52,16 +56,17 @@ async function connectToTestDb() {
         const mainUrl = process['env'][MAIN_DB];
         if (!mainUrl) return null;
         try {
+            const mainNeedsSsl = /sslmode=require|ssl=true/.test(mainUrl) && !/localhost|127\.0\.0\.1/.test(mainUrl);
             const mainPool = new Pool({
                 connectionString: mainUrl,
-                ssl: { rejectUnauthorized: false },
+                ssl: mainNeedsSsl ? { rejectUnauthorized: false } : undefined,
                 max: 1,
             });
             await mainPool.query('CREATE DATABASE vaultbank_test');
             await mainPool.end();
             pool = new Pool({
                 connectionString: testUrl,
-                ssl: { rejectUnauthorized: false },
+                ssl: needsSsl ? { rejectUnauthorized: false } : undefined,
                 max: 5,
             });
             await pool.query('SELECT 1');
