@@ -53,7 +53,7 @@ jobs:
           PGPASSWORD=vaultbank_test_pw psql -h localhost -U vaultbank -d vaultbank -c "CREATE DATABASE vaultbank_test"
 
       - name: Run mock-level unit tests (regression check)
-        run: npm test -- --forceExit
+        run: npm test -- --runInBand --forceExit
 
       - name: Run SQL-direct integration tests (real PostgreSQL concurrency)
         run: |
