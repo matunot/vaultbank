@@ -10,7 +10,7 @@ module.exports = {
     testMatch: ['<rootDir>/__tests__/**/*.test.js'],
     // PostgreSQL integration tests require a real isolated test database —
     // run them separately with: npx jest __tests__/pgIntegration.test.js
-    testPathIgnorePatterns: ['/node_modules/', '__tests__/pgIntegration'],
+    testPathIgnorePatterns: ['/node_modules/', '__tests__/pgIntegration', '__tests__/pgHttpIntegration'],
     moduleNameMapper: {
         // Jest cannot `require()` the ESM-only uuid@14 build, so swap
         // it out for a tiny CJS shim that returns a deterministic v4.
