@@ -15,6 +15,10 @@
  */
 
 const base = String(process.argv[2] || 'https://vaultbank-md20.onrender.com').replace(/\/+$/, '');
+const REQUEST_TIMEOUT_MS = 10000;
+function fetchWithTimeout(url, options = {}) {
+    return fetch(url, { ...options, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+}
 const results = [];
 function mark(step, ok, note) {
     results.push({ step, ok, note });
@@ -24,7 +28,7 @@ function mark(step, ok, note) {
 async function main() {
     let ok = true;
     try {
-        const h = await fetch(base + '/health');
+        const h = await fetchWithTimeout(base + '/health');
         const body = await h.json();
         const healthOk = h.status === 200 && body.status === 'ok';
         mark('health', healthOk, 'HTTP ' + h.status + ' authProbe=' + body.authProbe + ' uptime=' + Math.round((body.uptime || 0) / 1000) + 's');
@@ -32,14 +36,14 @@ async function main() {
     } catch (e) { mark('health', false, e.message); ok = false; }
 
     try {
-        const s = await fetch(base + '/');
+        const s = await fetchWithTimeout(base + '/');
         const text = await s.text();
         mark('SPA shell', s.status === 200 && /<\/html>/i.test(text), 'HTTP ' + s.status + ', ' + text.length + ' bytes');
         if (!(s.status === 200)) ok = false;
     } catch (e) { mark('SPA shell', false, e.message); ok = false; }
 
     try {
-        const w = await fetch(base + '/api/providers/nium/webhook', {
+        const w = await fetchWithTimeout(base + '/api/providers/nium/webhook', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: '{}',

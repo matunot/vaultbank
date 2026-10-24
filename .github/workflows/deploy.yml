@@ -38,35 +38,34 @@ jobs:
       - name: Run backend tests
         run: npm test -- --runInBand
 
-      # ─── Deploy to Render via Deploy Hook ─────────────────────────
-      - name: Trigger Render deployment
-        if: success() && env.RENDER_DEPLOY_HOOK != ''
+      # Render has autoDeploy=yes on main. Always run a blocking public verification;
+      # don't silently skip the check just because an optional deploy-hook secret is absent.
+      - name: Verify Render deployment (health + SPA + fail-closed webhook)
+        if: success()
+        timeout-minutes: 7
+        shell: bash
         env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
+          RENDER_BASE_URL: https://vaultbank-md20.onrender.com
         run: |
-          echo "🚀 Triggering Render auto-deploy..."
-          RESPONSE=$(curl -sS -o /tmp/render-response.txt -w "%{http_code}" --max-time 60 \
-            -X POST "$RENDER_DEPLOY_HOOK")
-          echo "Render deploy hook response: HTTP $RESPONSE"
-          cat /tmp/render-response.txt || true
-          if [ "$RESPONSE" = "200" ] || [ "$RESPONSE" = "201" ]; then
-            echo "✅ Render deploy triggered successfully!"
-          else
-            echo "❌ Render deploy hook failed (HTTP $RESPONSE)"
-            echo "⚠️ Check the RENDER_DEPLOY_HOOK secret in GitHub Settings → Secrets → Actions"
-          fi
-
-      - name: Verify Render health after deploy
-        if: success() && env.RENDER_DEPLOY_HOOK != ''
-        env:
-          RENDER_DEPLOY_HOOK: ${{ secrets.RENDER_DEPLOY_HOOK }}
-        run: |
-          echo "⏳ Waiting for Render to redeploy (up to 120s)..."
-          sleep 120
-          echo "Pinging health endpoint..."
-          curl -sS -o /dev/null -w "Health: HTTP %{http_code} | Time: %{time_total}s\n" \
-            --max-time 60 \
-            https://vaultbank-md20.onrender.com/health
+          set -euo pipefail
+          echo "Allowing the Render auto-deploy to start..."
+          sleep 60
+          for attempt in $(seq 1 30); do
+            echo "Render readiness check $attempt/30"
+            status=$(curl -sS -o /tmp/render-health.json -w "%{http_code}" --max-time 10 "$RENDER_BASE_URL/health" || true)
+            if [ "$status" = "200" ]; then
+              if node scripts/verify-deploy.js "$RENDER_BASE_URL"; then
+                echo "✅ Render health, SPA shell, and webhook fail-closed checks passed."
+                exit 0
+              fi
+              echo "Health responded 200 but full deployment verification is not ready yet."
+            else
+              echo "Render /health returned HTTP ${status:-no-response}"
+            fi
+            if [ "$attempt" -lt 30 ]; then sleep 10; fi
+          done
+          echo "::error::Render deployment did not pass health + SPA + webhook verification."
+          exit 1
 
   # ─── Frontend: Verify Build (Vercel auto-deploys from GitHub) ───────
   frontend:
