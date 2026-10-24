@@ -11,9 +11,11 @@
  *   reconciliation_required → ambiguous — funds may have moved; operator review
  *
  * Legal transitions (centralized — no route or connector can skip validation):
- *   created      → pending, cancelled, failed, succeeded
+ *   created      → pending, cancelled, failed, succeeded, reconciliation_required
  *     (created → succeeded: the synchronous internal rail settles inside
  *      the create request — money and intent state commit atomically)
+ *     (created → reconciliation_required: the COMMIT acknowledgement was
+ *      lost AND the persisted intent could not be read — outcome unknown)
  *   pending      → processing, cancelled, failed, reconciliation_required
  *   processing   → succeeded, failed, reconciliation_required
  *   succeeded    → (terminal)
@@ -34,7 +36,9 @@ const STATES = Object.freeze({
 
 const LEGAL_TRANSITIONS = Object.freeze({
     // succeeded is reachable from created: the internal rail is synchronous.
-    [STATES.CREATED]: [STATES.PENDING, STATES.CANCELLED, STATES.FAILED, STATES.SUCCEEDED],
+    // reconciliation_required is reachable from created when a commit
+    // acknowledgement is lost and the persisted intent is unreadable.
+    [STATES.CREATED]: [STATES.PENDING, STATES.CANCELLED, STATES.FAILED, STATES.SUCCEEDED, STATES.RECONCILIATION_REQUIRED],
     [STATES.PENDING]: [STATES.PROCESSING, STATES.CANCELLED, STATES.FAILED, STATES.RECONCILIATION_REQUIRED],
     [STATES.PROCESSING]: [STATES.SUCCEEDED, STATES.FAILED, STATES.RECONCILIATION_REQUIRED],
     [STATES.SUCCEEDED]: [],

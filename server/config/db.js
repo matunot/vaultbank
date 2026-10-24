@@ -80,7 +80,10 @@ async function getClient() {
             const result = await client.query(text, params);
             return { rows: result.rows, rowCount: result.rowCount };
         },
-        release: () => client.release(),
+        // release(true) destroys the connection instead of returning it to the
+        // pool — required when a COMMIT acknowledgement was lost and the
+        // connection's protocol state is unknown.
+        release: (destroy) => client.release(destroy),
     };
 }
 

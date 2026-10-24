@@ -93,7 +93,12 @@ async function applySchema(pool) {
     } catch (_) { /* may already exist or lack permissions */ }
     const needed = ['007_real_banking_schema.sql', '008_credit_schema.sql', '009_transfer_idempotency.sql', '011_vbr_payment_intents.sql'];
     for (const file of needed) {
-        const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
+        const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8')
+            // 007 opens with DROP TABLE ... CASCADE (a one-time reset of the
+            // pre-007 demo schema). Re-running it would wipe the SHARED test
+            // database and break suites that run in parallel — the tables are
+            // created by CREATE TABLE IF NOT EXISTS below either way.
+            .replace(/^\s*DROP TABLE IF EXISTS [^;]+;\s*$/gim, '');
         // Execute the whole file as one batch (pg handles multi-statement).
         try {
             await pool.query(sql);

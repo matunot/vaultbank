@@ -133,6 +133,7 @@ describe('atomic account money (real-database mode)', () => {
             if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK') return { rows: [], rowCount: 0 };
             if (s.includes('INSERT INTO transfer_idempotency')) return { rows: [{ id: 'idem-1' }], rowCount: 1 };
             if (s.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }], rowCount: 1 };
+            if (s.includes('SELECT status, currency FROM accounts')) return { rows: [{ status: 'active', currency: 'USD' }] };
             if (s.includes('available_balance = available_balance - $2')) return { rows: [] }; // debit finds no row (available_balance guard failed)
             return { rows: [] };
         });
@@ -160,6 +161,7 @@ describe('atomic account money (real-database mode)', () => {
             if (s.includes('INSERT INTO transfer_idempotency')) return { rows: [{ id: 'idem-1' }], rowCount: 1 };
             if (s.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }], rowCount: 1 };
             if (s.includes('available_balance = available_balance - $2')) return { rows: [{ balance_before: '100.00', balance_after: '95.00' }] };
+            if (s.includes('SELECT status, currency FROM accounts')) return { rows: [{ status: 'active', currency: 'USD' }] };
             return { rows: [] }; // credit half failed (recipient deleted mid-flight)
         });
         CDB.db.getClient.mockResolvedValue(client);

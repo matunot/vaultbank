@@ -654,17 +654,33 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
             res.setHeader('Idempotent-Replay', 'true');
             return res.json({ success: true, replay: true, transferId: result.transferId, message: 'Transfer already processed — replayed result.' });
         }
+        if (result.ambiguous) {
+            // The COMMIT acknowledgement was lost and a fresh-connection check
+            // could not determine the outcome. Money may have moved: never
+            // report a definitive failure, and never advise a new key.
+            return res.status(409).json({
+                success: false,
+                code: 'TRANSFER_OUTCOME_UNKNOWN',
+                message: idempotencyKey
+                    ? 'The transfer outcome could not be confirmed. Retry with the SAME idempotency key to resolve it safely — a new key could move money twice.'
+                    : 'The transfer outcome could not be confirmed. Check your transfer history before retrying.',
+            });
+        }
         if (result.error) {
-            if (result.code === 'TRANSFER_IN_PROGRESS') {
-                return res.status(409).json({ success: false, code: result.code, message: result.message });
+            const code = result.code;
+            if (code === 'INSUFFICIENT_FUNDS') {
+                return res.status(400).json({ success: false, code, message: result.message, availableBalance: result.availableBalance });
             }
-            if (result.code === 'INSUFFICIENT_FUNDS') {
-                return res.status(400).json({ success: false, message: result.message, availableBalance: result.availableBalance });
+            if (code === 'RECIPIENT_NOT_FOUND' || code === 'SENDER_ACCOUNT_NOT_FOUND') {
+                return res.status(404).json({ success: false, code, message: result.message });
             }
-            if (result.code === 'RECIPIENT_NOT_FOUND') {
-                return res.status(404).json({ success: false, message: result.message });
+            if (code === 'TRANSFER_IN_PROGRESS' || code === 'IDEMPOTENCY_CONFLICT') {
+                return res.status(409).json({ success: false, code, message: result.message });
             }
-            return res.status(400).json({ success: false, message: result.message || 'Transfer failed.' });
+            if (code === 'COMMIT_FAILED') {
+                return res.status(500).json({ success: false, code, message: result.message });
+            }
+            return res.status(400).json({ success: false, code, message: result.message || 'Transfer failed.' });
         }
 
         const transferId = result.transferId;

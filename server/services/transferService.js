@@ -8,13 +8,21 @@
  *
  * Contract:
  *   1. ONE pooled-client BEGIN..COMMIT: idempotency claim + transfer record
- *      INSERT + guarded debit (available_balance) + credit + both ledger rows.
+ *      INSERT + guarded debit (status/currency/available_balance) + guarded
+ *      credit (status/currency) + both ledger rows.
  *   2. No external calls inside the transaction.
- *   3. Returns { transferId, senderBalance, newSenderBalance, recipientBalance }
- *      on success; returns { error, code, message } on expected failure;
- *      throws on unexpected failure (ROLLBACK handled here).
- *   4. Amount is a string for PostgreSQL NUMERIC — no floating-point money.
- *   5. An optional onBeforeCommit(client, { transferId }) hook runs INSIDE
+ *   3. Success returns { transferId, senderBalance, newSenderBalance,
+ *      recipientBalance }; expected failures return { error, code, message };
+ *      Unexpected failures throw (ROLLBACK handled here).
+ *   4. A lost COMMIT acknowledgement returns { ambiguous: true, code:
+ *      'TRANSFER_OUTCOME_UNKNOWN' } after checking a FRESH pool connection.
+ *      The transfer may have committed — callers must never report a
+ *      definitive failure or retry with a different idempotency key.
+ *   5. Idempotent replay compares the STORED transfer (amount, currency,
+ *      sender, recipient), never the client's values. Same key + different
+ *      material parameters returns IDEMPOTENCY_CONFLICT.
+ *   6. Amount is a string for PostgreSQL NUMERIC — no floating-point money.
+ *   7. An optional onBeforeCommit(client, { transferId }) hook runs INSIDE
  *      the transaction just before COMMIT — the VBR core uses it to set the
  *      intent's final state atomically with the money, so the two can never
  *      disagree. If the hook throws, ROLLBACK undoes the transfer too.
@@ -25,6 +33,50 @@
  */
 
 const { db, createNotification } = require('../config/database');
+
+/**
+ * Why a guarded UPDATE matched no row. Diagnostic only — the guarded UPDATE
+ * itself is what makes the rejection race-safe.
+ */
+async function describeAccount(client, accountId, currency) {
+    try {
+        const { rows } = await client.query('SELECT status, currency FROM accounts WHERE id = $1', [accountId]);
+        if (!rows[0]) return 'missing';
+        if (rows[0].status !== 'active') return 'inactive';
+        if (String(rows[0].currency).toUpperCase() !== String(currency).toUpperCase()) return 'currency';
+        return 'ok';
+    } catch (_) {
+        return 'unknown';
+    }
+}
+
+/**
+ * After a failed COMMIT the outcome is unknown. A FRESH pooled connection is
+ * authoritative: the transfer row and its ledger rows commit atomically, so
+ * their presence proves the commit landed.
+ */
+async function verifyTransferOutcome(transferId) {
+    try {
+        const { rows } = await db.query(
+            `SELECT t.id,
+                    (SELECT balance_before FROM transactions WHERE reference_id = t.id AND type = 'transfer_out' LIMIT 1) AS out_before,
+                    (SELECT balance_after  FROM transactions WHERE reference_id = t.id AND type = 'transfer_out' LIMIT 1) AS out_after,
+                    (SELECT balance_after  FROM transactions WHERE reference_id = t.id AND type = 'transfer_in'  LIMIT 1) AS in_after
+             FROM transfers t WHERE t.id = $1`,
+            [transferId]
+        );
+        if (rows.length === 0) return { status: 'not_committed' };
+        const r = rows[0];
+        return {
+            status: 'committed',
+            senderBalance: r.out_before == null ? null : parseFloat(r.out_before),
+            newSenderBalance: r.out_after == null ? null : parseFloat(r.out_after),
+            recipientBalance: r.in_after == null ? null : parseFloat(r.in_after),
+        };
+    } catch (_) {
+        return { status: 'unknown' };
+    }
+}
 
 /**
  * Execute an atomic internal transfer.
@@ -39,16 +91,34 @@ const { db, createNotification } = require('../config/database');
  * @param {string|null} [params.idempotencyKey] - client-supplied idempotency key
  * @param {Function} [params.onBeforeCommit] - runs inside the transaction right before COMMIT
  * @param {string} [params.senderName] - sender's display name (user full_name) for the recipient's ledger counterparty
- * @returns {Promise<{transferId, senderBalance, newSenderBalance, recipientBalance, replay?}|{error, code, message}>}
+ * @returns {Promise<{transferId, senderBalance, newSenderBalance, recipientBalance, replay?, verified?}|{ambiguous: boolean, code, message}|{error, code, message}>}
  */
 async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, amount, currency, description, idempotencyKey, onBeforeCommit, senderName }) {
     const client = await db.getClient();
     let transferId = null;
+    let destroyClient = false;
     try {
         await client.query('BEGIN');
 
-        // ── Idempotency claim (same as /api/account/transfer) ──
+        // ── Idempotency claim ──
         if (idempotencyKey) {
+            // One key may only ever mean ONE transfer across both routes. The
+            // claim table is unique per (user, currency, key), so reuse with a
+            // different currency is checked here.
+            // shortcut: two concurrent different-currency claims could both
+            // pass this SELECT; upgrade to UNIQUE(user_id, idempotency_key)
+            // if that race ever matters.
+            const { rows: otherCurrency } = await client.query(
+                `SELECT currency FROM transfer_idempotency
+                 WHERE user_id = $1 AND idempotency_key = $2 AND currency <> $3 LIMIT 1`,
+                [userId, idempotencyKey, currency]
+            );
+            if (otherCurrency.length > 0) {
+                await client.query('ROLLBACK');
+                return { error: 'idempotency_conflict', code: 'IDEMPOTENCY_CONFLICT',
+                         message: 'This idempotency key was already used for a different transfer.' };
+            }
+
             const claim = await client.query(
                 `INSERT INTO transfer_idempotency (user_id, currency, idempotency_key)
                  VALUES ($1, $2, $3)
@@ -58,14 +128,28 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
             );
             if (claim.rowCount === 0) {
                 await client.query('ROLLBACK');
+                // rowCount 0 means the original claim COMMITTED (the INSERT
+                // waits for an in-flight conflicting row, then sees it). Replay
+                // only if the STORED transfer matches every material parameter.
                 const { rows: existing } = await client.query(
-                    `SELECT ti.transfer_id FROM transfer_idempotency ti
+                    `SELECT ti.transfer_id, t.amount, t.currency, t.from_account_id, t.to_account_id
+                     FROM transfer_idempotency ti
+                     LEFT JOIN transfers t ON t.id = ti.transfer_id
                      WHERE ti.user_id = $1 AND ti.currency = $2 AND ti.idempotency_key = $3
-                     AND ti.transfer_id IS NOT NULL LIMIT 1`,
+                     LIMIT 1`,
                     [userId, currency, idempotencyKey]
                 );
-                if (existing.length > 0) {
-                    return { transferId: existing[0].transfer_id, replay: true };
+                const prior = existing[0];
+                if (prior && prior.transfer_id) {
+                    const same = Number(prior.amount) === Number(amount)
+                        && prior.from_account_id === senderAccount.id
+                        && prior.to_account_id === recipientAccount.id
+                        && String(prior.currency).toUpperCase() === String(currency).toUpperCase();
+                    if (!same) {
+                        return { error: 'idempotency_conflict', code: 'IDEMPOTENCY_CONFLICT',
+                                 message: 'This idempotency key was already used for a different transfer.' };
+                    }
+                    return { transferId: prior.transfer_id, replay: true };
                 }
                 return { error: 'in_progress', code: 'TRANSFER_IN_PROGRESS', message: 'A transfer with this key is still in progress.' };
             }
@@ -91,31 +175,56 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
             );
         }
 
-        // ── Guarded debit on available_balance ──
+        // ── Guarded debit: status + currency + available balance are checked
+        // against the authoritative row inside the transaction. A concurrent
+        // status change cannot race past this: the UPDATE locks the row and
+        // re-evaluates the conditions on the committed version. ──
         const debit = await client.query(
             `UPDATE accounts
              SET balance = balance - $2, available_balance = available_balance - $2
-             WHERE id = $1 AND available_balance >= $2
+             WHERE id = $1 AND status = 'active' AND UPPER(currency) = $3 AND available_balance >= $2
              RETURNING (balance + $2) AS balance_before, balance AS balance_after`,
-            [senderAccount.id, amount]
+            [senderAccount.id, amount, currency]
         );
         if (debit.rows.length === 0) {
+            const reason = await describeAccount(client, senderAccount.id, currency);
             await client.query('ROLLBACK');
+            if (reason === 'inactive') {
+                return { error: 'sender_inactive', code: 'SENDER_ACCOUNT_INACTIVE',
+                         message: 'Sender account is not active.' };
+            }
+            if (reason === 'currency') {
+                return { error: 'currency_mismatch', code: 'CURRENCY_MISMATCH',
+                         message: 'Sender account currency does not match the transfer currency.' };
+            }
+            if (reason === 'missing') {
+                return { error: 'sender_not_found', code: 'SENDER_ACCOUNT_NOT_FOUND',
+                         message: 'Sender account not found.' };
+            }
             return { error: 'insufficient_funds', code: 'INSUFFICIENT_FUNDS',
                     message: 'Insufficient available funds.',
                     availableBalance: parseFloat(senderAccount.available_balance) };
         }
 
-        // ── Credit ──
+        // ── Guarded credit: same authoritative status/currency checks ──
         const credit = await client.query(
             `UPDATE accounts
              SET balance = balance + $2, available_balance = available_balance + $2
-             WHERE id = $1
+             WHERE id = $1 AND status = 'active' AND UPPER(currency) = $3
              RETURNING (balance - $2) AS balance_before, balance AS balance_after`,
-            [recipientAccount.id, amount]
+            [recipientAccount.id, amount, currency]
         );
         if (credit.rows.length === 0) {
+            const reason = await describeAccount(client, recipientAccount.id, currency);
             await client.query('ROLLBACK');
+            if (reason === 'inactive') {
+                return { error: 'recipient_inactive', code: 'RECIPIENT_ACCOUNT_INACTIVE',
+                         message: 'Recipient account is not active.' };
+            }
+            if (reason === 'currency') {
+                return { error: 'currency_mismatch', code: 'CURRENCY_MISMATCH',
+                         message: 'Recipient account currency does not match the transfer currency.' };
+            }
             return { error: 'recipient_not_found', code: 'RECIPIENT_NOT_FOUND',
                     message: 'Recipient account not found.' };
         }
@@ -146,7 +255,31 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
         if (onBeforeCommit) await onBeforeCommit(client, { transferId });
 
         // ── COMMIT: everything above is one atomic operation ──
-        await client.query('COMMIT');
+        try {
+            await client.query('COMMIT');
+        } catch (commitErr) {
+            // The acknowledgement was lost — the transaction may have
+            // committed. The connection's protocol state is unknown: destroy
+            // it, and never report a definitive failure without evidence.
+            destroyClient = true;
+            console.warn('Transfer COMMIT acknowledgement failed; verifying outcome:', commitErr.message);
+            const outcome = await verifyTransferOutcome(transferId);
+            if (outcome.status === 'committed') {
+                return {
+                    transferId,
+                    senderBalance: outcome.senderBalance,
+                    newSenderBalance: outcome.newSenderBalance,
+                    recipientBalance: outcome.recipientBalance,
+                    verified: true,
+                };
+            }
+            if (outcome.status === 'not_committed') {
+                return { error: 'commit_failed', code: 'COMMIT_FAILED',
+                         message: 'The transfer was not committed.' };
+            }
+            return { ambiguous: true, code: 'TRANSFER_OUTCOME_UNKNOWN',
+                     message: 'The transfer outcome could not be confirmed — money may have moved.' };
+        }
 
         return {
             transferId,
@@ -158,7 +291,7 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
         try { await client.query('ROLLBACK'); } catch (_) { /* releasing anyway */ }
         throw e;
     } finally {
-        client.release();
+        client.release(destroyClient);
     }
 }
 

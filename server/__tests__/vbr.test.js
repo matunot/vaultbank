@@ -208,6 +208,7 @@ describe('VBR API routes', () => {
                 if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rowCount: 0 };
                 if (sql.includes('INSERT INTO transfer_idempotency')) return { rowCount: 1, rows: [{ id: 101 }] };
                 if (sql.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }] };
+                if (sql.includes('SELECT status, currency FROM accounts')) return { rows: [{ status: 'active', currency: 'USD' }] };
                 if (sql.includes('SET balance = balance - $2')) return { rows: debitRows };
                 if (sql.includes('SET balance = balance + $2')) return { rows: creditRows };
                 if (sql.includes('INSERT INTO transactions')) return { rowCount: 1 };

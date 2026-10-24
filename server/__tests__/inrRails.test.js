@@ -679,8 +679,15 @@ describe('unified payments: currency-aware transfers, wallet, payouts list, read
                 if (s.includes('INSERT INTO transactions')) {
                     return { rows: [{ id: 'txn-' + Math.random() }], rowCount: 1 };
                 }
+                if (s.includes('SELECT status, currency FROM accounts')) {
+                    // Diagnostic after a rejected guarded UPDATE.
+                    return { rows: [{ status: 'active', currency: 'INR' }] };
+                }
                 if (s.includes('FROM transfer_idempotency')) {
-                    return { rows: [{ transfer_id: 'transfer-uuid-1' }] };
+                    // Cross-currency reuse pre-check finds nothing; the claim
+                    // conflict lookup returns the STORED transfer's params.
+                    if (s.includes('currency <> $3')) return { rows: [] };
+                    return { rows: [{ transfer_id: 'transfer-uuid-1', amount: '10.00', currency: 'INR', from_account_id: 'acc-inr', to_account_id: 'acc-inr-2' }] };
                 }
                 return { rows: [] };
             }),

@@ -56,6 +56,7 @@ if (testDbUrl) {
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
 const { connectToTestDb, applySchema, seedTestData, cleanupTestData } = require('./helpers/pgTestSetup');
+const CDB = require('../config/database');
 
 let pool = null;
 let testPrefix = null;
@@ -160,6 +161,39 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
         await pool.query('DELETE FROM transactions WHERE reference_id = $1', [transferId]);
         await pool.query('DELETE FROM transfers WHERE id = $1', [transferId]);
         await pool.query('DELETE FROM transfer_idempotency WHERE transfer_id = $1', [transferId]);
+    }
+
+    // ── Failure-injection helpers (real database, simulated network faults) ──
+    // Lose the COMMIT acknowledgement: 'committed' really commits first (the
+    // dangerous ambiguity), 'aborted' really rolls back first.
+    function loseNextCommitAck(mode) {
+        const original = CDB.db.getClient;
+        CDB.db.getClient = async () => {
+            const inner = await original();
+            return {
+                query: async (sql, params) => {
+                    if (String(sql).trim().toUpperCase() === 'COMMIT') {
+                        await inner.query(mode === 'committed' ? 'COMMIT' : 'ROLLBACK');
+                        const err = new Error('Connection terminated unexpectedly');
+                        err.code = 'ECONNRESET';
+                        throw err;
+                    }
+                    return inner.query(sql, params);
+                },
+                release: (destroy) => inner.release(destroy),
+            };
+        };
+        return () => { CDB.db.getClient = original; };
+    }
+
+    // Make selected queries fail, as if the database were unreachable.
+    function failQueriesOn(fragments) {
+        const original = CDB.db.query;
+        CDB.db.query = async (sql, params) => {
+            if (fragments.some((f) => String(sql).includes(f))) throw new Error('connection lost');
+            return original(sql, params);
+        };
+        return () => { CDB.db.query = original; };
     }
 
     // ── Test 1: Successful USD internal transfer — full pipeline + intent linkage ──
@@ -601,5 +635,311 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
         expect(parseFloat(aliceFinal.balance)).toBe(750); // unchanged by the rejected attempt
 
         await cleanupTransfer(direct.body.transfer.id);
+    });
+
+    // ── Test 15: Lost COMMIT ack — the transaction REALLY committed ──
+    test('lost COMMIT acknowledgement after a real commit: reports success, never failure', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setBalances([alice.id, bob.id], 1000);
+        const key = `vbrit-lostack-ok-${Date.now()}`;
+
+        const restore = loseNextCommitAck('committed');
+        let response;
+        try {
+            response = await postIntent(
+                { direction: 'send', method: 'internal', amount: '250.00', currency: 'USD', counterparty: `${testPrefix}-bob@test.invalid` },
+                { 'idempotency-key': key }
+            );
+        } finally {
+            restore();
+        }
+
+        // The transfer committed before the ack was lost: success, never failed.
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.intent.state).toBe('succeeded');
+        expect(response.body.transferId).toBeTruthy();
+        expect(response.body.message).toContain('Successfully transferred');
+
+        expect(await transferCount(alice.id, bob.id)).toBe(1);
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(750);
+        expect(parseFloat((await getAccount(bob.id)).balance)).toBe(1250);
+        const intent = await getIntent(response.body.intent.id);
+        expect(intent.state).toBe('succeeded');
+        expect(intent.failure_reason).toBeNull();
+        expect(intent.transfer_id).toBe(response.body.transferId);
+
+        await cleanupTransfer(response.body.transferId);
+    });
+
+    // ── Test 16: Lost COMMIT ack — the transaction did NOT commit ──
+    test('lost COMMIT acknowledgement with no commit: intent failed, no money moved', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setBalances([alice.id, bob.id], 1000);
+
+        const restore = loseNextCommitAck('aborted');
+        let response;
+        try {
+            response = await postIntent({
+                direction: 'send', method: 'internal', amount: '250.00', currency: 'USD',
+                counterparty: `${testPrefix}-bob@test.invalid`,
+            });
+        } finally {
+            restore();
+        }
+
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.intent.state).toBe('failed');
+        expect(response.body.intent.failure_reason).toContain('not committed');
+        expect(await transferCount(alice.id, bob.id)).toBe(0);
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(1000);
+        expect(parseFloat((await getAccount(bob.id)).balance)).toBe(1000);
+    });
+
+    // ── Test 17: Ambiguous ack, verification unavailable — intent proves success ──
+    test('ambiguous commit with unreadable transfer record: persisted succeeded intent wins, never failed', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setBalances([alice.id, bob.id], 1000);
+
+        const restoreClient = loseNextCommitAck('committed');
+        const restoreQuery = failQueriesOn(['FROM transfers t WHERE t.id = $1']);
+        let response;
+        try {
+            response = await postIntent({
+                direction: 'send', method: 'internal', amount: '300.00', currency: 'USD',
+                counterparty: `${testPrefix}-bob@test.invalid`,
+            });
+        } finally {
+            restoreQuery();
+            restoreClient();
+        }
+
+        // The intent row commits WITH the money: succeeded is proof of the commit.
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.intent.state).toBe('succeeded');
+        expect(await transferCount(alice.id, bob.id)).toBe(1);
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(700);
+        const intent = await getIntent(response.body.intent.id);
+        expect(intent.state).toBe('succeeded');
+
+        await cleanupTransfer(response.body.transferId);
+    });
+
+    // ── Test 18: Ambiguous ack, verification unavailable — intent proves NOT committed ──
+    test('ambiguous commit with a still-created intent: confirmed failure, no money moved', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setBalances([alice.id, bob.id], 1000);
+
+        const restoreClient = loseNextCommitAck('aborted');
+        const restoreQuery = failQueriesOn(['FROM transfers t WHERE t.id = $1']);
+        let response;
+        try {
+            response = await postIntent({
+                direction: 'send', method: 'internal', amount: '300.00', currency: 'USD',
+                counterparty: `${testPrefix}-bob@test.invalid`,
+            });
+        } finally {
+            restoreQuery();
+            restoreClient();
+        }
+
+        // 'created' proves the transaction did not commit — safe to fail.
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.code).toBe('COMMIT_FAILED');
+        expect(response.body.intent.state).toBe('failed');
+        expect(await transferCount(alice.id, bob.id)).toBe(0);
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(1000);
+        expect(parseFloat((await getAccount(bob.id)).balance)).toBe(1000);
+    });
+
+    // ── Test 19: Genuinely unknown outcome → reconciliation_required, never failure ──
+    test('unreadable outcome and unreadable intent: reconciliation_required, 503, no definitive failure', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setBalances([alice.id, bob.id], 1000);
+
+        const restoreClient = loseNextCommitAck('aborted');
+        const restoreQuery = failQueriesOn(['FROM transfers t WHERE t.id = $1', 'FROM payment_intents WHERE id = $1']);
+        let response;
+        try {
+            response = await postIntent({
+                direction: 'send', method: 'internal', amount: '300.00', currency: 'USD',
+                counterparty: `${testPrefix}-bob@test.invalid`,
+            });
+        } finally {
+            restoreQuery();
+            restoreClient();
+        }
+
+        expect(response.status).toBe(503);
+        expect(response.body.success).toBe(false);
+        expect(response.body.code).toBe('TRANSFER_OUTCOME_UNKNOWN');
+        expect(response.body.intent.state).toBe('reconciliation_required');
+
+        const intent = await getIntent(response.body.intent.id);
+        expect(intent.state).toBe('reconciliation_required');
+        expect(intent.failure_reason).toContain('outcome unknown');
+        expect(intent.transfer_id).toBeNull();
+        expect(await transferCount(alice.id, bob.id)).toBe(0);
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(1000);
+    });
+
+    // ── Test 20: Direct route ambiguity → 409, retry with the SAME key replays ──
+    test('direct route ambiguous commit: 409 outcome-unknown, same-key retry replays without a second debit', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setBalances([alice.id, bob.id], 1000);
+        const key = `vbrit-direct-ambiguous-${Date.now()}`;
+        const bobEmail = `${testPrefix}-bob@test.invalid`;
+        const body = { recipientEmail: bobEmail, amount: 100, currency: 'USD' };
+
+        const restoreClient = loseNextCommitAck('committed');
+        const restoreQuery = failQueriesOn(['FROM transfers t WHERE t.id = $1']);
+        let first;
+        try {
+            first = await postDirectTransfer(body, { 'idempotency-key': key });
+        } finally {
+            restoreQuery();
+            restoreClient();
+        }
+
+        // Never a definitive failure — and never a definitive success either.
+        expect(first.status).toBe(409);
+        expect(first.body.success).toBe(false);
+        expect(first.body.code).toBe('TRANSFER_OUTCOME_UNKNOWN');
+        // It actually committed (the ambiguity was real), so the debit happened.
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(900);
+
+        // Retrying with the SAME key is safe: committed → replay, no new debit.
+        const retry = await postDirectTransfer(body, { 'idempotency-key': key });
+        expect(retry.status).toBe(200);
+        expect(retry.body.replay).toBe(true);
+        expect(retry.body.transferId).toBeTruthy();
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(900);
+        expect(await transferCount(alice.id, bob.id)).toBe(1);
+
+        await cleanupTransfer(retry.body.transferId);
+    });
+
+    // ── Test 21: Cross-path VBR → direct route param matching ──
+    test('VBR intent then direct transfer with the same key: same params replay, different amount 409', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setBalances([alice.id, bob.id], 1000);
+        const key = `vbrit-reverse-crosspath-${Date.now()}`;
+        const bobEmail = `${testPrefix}-bob@test.invalid`;
+
+        const vbr = await postIntent(
+            { direction: 'send', method: 'internal', amount: '100.00', currency: 'USD', counterparty: bobEmail },
+            { 'idempotency-key': key }
+        );
+        expect(vbr.status).toBe(200);
+        const transferId = vbr.body.transferId;
+
+        // The direct route compares the STORED transfer — same params replay.
+        const same = await postDirectTransfer(
+            { recipientEmail: bobEmail, amount: 100, currency: 'USD' },
+            { 'idempotency-key': key }
+        );
+        expect(same.status).toBe(200);
+        expect(same.body.replay).toBe(true);
+        expect(same.body.transferId).toBe(transferId);
+
+        const conflict = await postDirectTransfer(
+            { recipientEmail: bobEmail, amount: 200, currency: 'USD' },
+            { 'idempotency-key': key }
+        );
+        expect(conflict.status).toBe(409);
+        expect(conflict.body.code).toBe('IDEMPOTENCY_CONFLICT');
+
+        expect(await transferCount(alice.id, bob.id)).toBe(1);
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(900);
+        await cleanupTransfer(transferId);
+    });
+
+    // ── Test 22: Inactive sender is rejected INSIDE the transaction ──
+    test('inactive sender: rejected by the in-transaction guard, no transfer record survives', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setBalances([alice.id, bob.id], 1000);
+        const { executeAtomicTransfer } = require('../services/transferService');
+
+        await pool.query("UPDATE accounts SET status = 'closed' WHERE id = $1", [alice.id]);
+        try {
+            // Bypass the status-filtering resolver — this row reaches the service.
+            const { rows } = await pool.query('SELECT * FROM accounts WHERE id = $1', [alice.id]);
+            const result = await executeAtomicTransfer({
+                userId: testData.userIds.alice,
+                senderAccount: rows[0],
+                recipientAccount: await getAccount(bob.id),
+                amount: '10.00',
+                currency: 'USD',
+                description: 'inactive sender guard test',
+            });
+            expect(result.code).toBe('SENDER_ACCOUNT_INACTIVE');
+
+            const { rows: n } = await pool.query(
+                'SELECT COUNT(*)::int AS n FROM transfers WHERE from_account_id = $1',
+                [alice.id]
+            );
+            expect(n[0].n).toBe(0);
+            expect(parseFloat((await getAccount(alice.id)).balance)).toBe(1000);
+            expect(parseFloat((await getAccount(alice.id)).available_balance)).toBe(1000);
+        } finally {
+            await pool.query("UPDATE accounts SET status = 'active' WHERE id = $1", [alice.id]);
+        }
+    });
+
+    // ── Test 23: Status-change race — recipient closed while the transfer is in flight ──
+    test('status-change race: recipient closed mid-transfer → rejected, full ROLLBACK', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setBalances([alice.id, bob.id], 1000);
+        const lockClient = await pool.connect();
+        try {
+            // Hold an uncommitted status change on the recipient row: the
+            // transfer's guarded credit blocks on the lock, then re-evaluates.
+            await lockClient.query('BEGIN');
+            await lockClient.query("UPDATE accounts SET status = 'closed' WHERE id = $1", [bob.id]);
+
+            const pending = postDirectTransfer({
+                recipientAccountNumber: bob.account_number,
+                amount: 300,
+                currency: 'USD',
+            });
+            await new Promise((resolve) => setTimeout(resolve, 400));
+            await lockClient.query('COMMIT');
+
+            const response = await pending;
+            expect(response.status).toBe(400);
+            expect(response.body.code).toBe('RECIPIENT_ACCOUNT_INACTIVE');
+
+            // The debit already ran inside the transaction — ROLLBACK undid it.
+            const aliceFinal = await getAccount(alice.id);
+            expect(parseFloat(aliceFinal.balance)).toBe(1000);
+            expect(parseFloat(aliceFinal.available_balance)).toBe(1000);
+            expect(parseFloat((await getAccount(bob.id)).balance)).toBe(1000);
+            expect(await transferCount(alice.id, bob.id)).toBe(0);
+        } finally {
+            try { await lockClient.query('ROLLBACK'); } catch (_) { /* already committed */ }
+            lockClient.release();
+            await pool.query("UPDATE accounts SET status = 'active' WHERE id = $1", [bob.id]);
+        }
     });
 });

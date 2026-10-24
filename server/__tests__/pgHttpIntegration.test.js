@@ -394,4 +394,101 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         await pool.query('DELETE FROM transfers WHERE id = $1', [transferId]);
         await pool.query('DELETE FROM transfer_idempotency WHERE transfer_id = $1', [transferId]);
     });
+
+    // ── Test 10: Idempotency material-parameter matching ──
+    test('idempotency: same key + same params replays; changed amount, recipient or currency → 409', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        const carol = testData.accounts.carol_usd;
+        await pool.query(
+            'UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = ANY($1)',
+            [[alice.id, bob.id, carol.id]]
+        );
+        const key = `http-it-params-${Date.now()}`;
+        const bobEmail = `${testPrefix}-bob@test.invalid`;
+        const base = { recipientEmail: bobEmail, amount: 100, currency: 'USD' };
+
+        const first = await postTransfer(base, { 'idempotency-key': key });
+        expect(first.status).toBe(200);
+        const transferId = first.body.transfer.id;
+
+        // Same material parameters — replay the ORIGINAL, move no money.
+        const replay = await postTransfer(base, { 'idempotency-key': key });
+        expect(replay.status).toBe(200);
+        expect(replay.body.replay).toBe(true);
+        expect(replay.body.transferId).toBe(transferId);
+
+        // Different amount — conflict.
+        const differentAmount = await postTransfer({ ...base, amount: 250 }, { 'idempotency-key': key });
+        expect(differentAmount.status).toBe(409);
+        expect(differentAmount.body.code).toBe('IDEMPOTENCY_CONFLICT');
+
+        // Different recipient — conflict.
+        const differentRecipient = await postTransfer(
+            { recipientEmail: `${testPrefix}-carol@test.invalid`, amount: 100, currency: 'USD' },
+            { 'idempotency-key': key }
+        );
+        expect(differentRecipient.status).toBe(409);
+        expect(differentRecipient.body.code).toBe('IDEMPOTENCY_CONFLICT');
+
+        // Different currency — conflict (key is one transfer, not one per currency).
+        const differentCurrency = await postTransfer(
+            { recipientEmail: bobEmail, amount: 100, currency: 'INR' },
+            { 'idempotency-key': key }
+        );
+        expect(differentCurrency.status).toBe(409);
+        expect(differentCurrency.body.code).toBe('IDEMPOTENCY_CONFLICT');
+
+        // Exactly ONE transfer and ONE debit/credit pair.
+        const { rows: n } = await pool.query(
+            'SELECT COUNT(*)::int AS n FROM transfers WHERE from_account_id = $1 AND to_account_id = $2',
+            [alice.id, bob.id]
+        );
+        expect(n[0].n).toBe(1);
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(900);
+        expect(parseFloat((await getAccount(bob.id)).balance)).toBe(1100);
+        expect(await getLedgerRows(transferId)).toHaveLength(2);
+
+        await pool.query('DELETE FROM transactions WHERE reference_id = $1', [transferId]);
+        await pool.query('DELETE FROM transfers WHERE id = $1', [transferId]);
+        await pool.query('DELETE FROM transfer_idempotency WHERE transfer_id = $1', [transferId]);
+    });
+
+    // ── Test 11: Inactive recipient is rejected INSIDE the transaction ──
+    test('inactive recipient: rejected by the in-transaction guard, balances and ledger unchanged', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await pool.query(
+            'UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = ANY($1)',
+            [[alice.id, bob.id]]
+        );
+        // Account-number resolution does NOT filter status — this reaches the
+        // guarded credit inside the transaction.
+        await pool.query("UPDATE accounts SET status = 'closed' WHERE id = $1", [bob.id]);
+
+        try {
+            const response = await postTransfer({
+                recipientAccountNumber: bob.account_number,
+                amount: 100,
+                currency: 'USD',
+            });
+            expect(response.status).toBe(400);
+            expect(response.body.code).toBe('RECIPIENT_ACCOUNT_INACTIVE');
+
+            const aliceFinal = await getAccount(alice.id);
+            expect(parseFloat(aliceFinal.balance)).toBe(1000);
+            expect(parseFloat(aliceFinal.available_balance)).toBe(1000);
+            expect(parseFloat((await getAccount(bob.id)).balance)).toBe(1000);
+
+            const { rows } = await pool.query(
+                'SELECT COUNT(*)::int AS n FROM transfers WHERE from_account_id = $1 AND to_account_id = $2',
+                [alice.id, bob.id]
+            );
+            expect(rows[0].n).toBe(0);
+        } finally {
+            await pool.query("UPDATE accounts SET status = 'active' WHERE id = $1", [bob.id]);
+        }
+    });
 });

@@ -9,6 +9,7 @@ name: Integration Tests (PostgreSQL)
       - 'server/routes/external-payouts.js'
       - 'server/services/**'
       - 'server/vbr/**'
+      - 'server/config/**'
       - 'server/migrations/**'
       - 'server/__tests__/pgIntegration.test.js'
       - 'server/__tests__/pgHttpIntegration.test.js'
