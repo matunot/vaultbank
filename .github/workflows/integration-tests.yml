@@ -7,10 +7,12 @@ name: Integration Tests (PostgreSQL)
     paths:
       - 'server/routes/accounts.js'
       - 'server/routes/external-payouts.js'
+      - 'server/services/**'
       - 'server/vbr/**'
       - 'server/migrations/**'
       - 'server/__tests__/pgIntegration.test.js'
       - 'server/__tests__/pgHttpIntegration.test.js'
+      - 'server/__tests__/vbrHttpIntegration.test.js'
       - 'server/__tests__/vbr.test.js'
       - 'server/__tests__/helpers/pgTestSetup.js'
       - '.github/workflows/integration-tests.yml'
@@ -67,6 +69,15 @@ jobs:
       - name: Run HTTP handler integration tests (real route + real middleware + real PostgreSQL)
         run: |
           npx --yes jest@30.5.2 __tests__/pgHttpIntegration.test.js \
+            --testPathIgnorePatterns /node_modules/ \
+            --testTimeout=120000 \
+            --verbose --forceExit
+        env:
+          TEST_DATABASE_URL: postgres://vaultbank:vaultbank_test_pw@localhost:5432/vaultbank_test
+
+      - name: Run VBR intent execution integration tests (real VBR route + real PostgreSQL)
+        run: |
+          npx --yes jest@30.5.2 __tests__/vbrHttpIntegration.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --testTimeout=120000 \
             --verbose --forceExit

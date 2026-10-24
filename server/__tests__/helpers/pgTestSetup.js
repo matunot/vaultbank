@@ -91,7 +91,7 @@ async function applySchema(pool) {
     try {
         await pool.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
     } catch (_) { /* may already exist or lack permissions */ }
-    const needed = ['007_real_banking_schema.sql', '008_credit_schema.sql', '009_transfer_idempotency.sql'];
+    const needed = ['007_real_banking_schema.sql', '008_credit_schema.sql', '009_transfer_idempotency.sql', '011_vbr_payment_intents.sql'];
     for (const file of needed) {
         const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8');
         // Execute the whole file as one batch (pg handles multi-statement).
@@ -151,6 +151,10 @@ async function seedTestData(pool, prefix) {
 
 async function cleanupTestData(pool, prefix) {
     // Clean up by prefix (safe: only removes test entities)
+    // payment_intents first — its transfer_id FK would block the transfers delete.
+    await pool.query(`DELETE FROM payment_intents WHERE user_id IN (
+        SELECT id FROM users WHERE email LIKE $1
+    )`, [`${prefix}-%`]);
     await pool.query(`DELETE FROM transfer_idempotency WHERE user_id IN (
         SELECT id FROM users WHERE email LIKE $1
     )`, [`${prefix}-%`]);

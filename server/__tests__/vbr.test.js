@@ -103,13 +103,15 @@ describe('VBR state machine', () => {
         expect(canTransition(STATES.PROCESSING, STATES.FAILED)).toBe(true);
         expect(canTransition(STATES.RECONCILIATION_REQUIRED, STATES.SUCCEEDED)).toBe(true);
         expect(canTransition(STATES.CREATED, STATES.CANCELLED)).toBe(true);
+        // The synchronous internal rail settles inside the create request.
+        expect(canTransition(STATES.CREATED, STATES.SUCCEEDED)).toBe(true);
     });
 
     test('illegal transitions are rejected', () => {
         expect(canTransition(STATES.SUCCEEDED, STATES.PENDING)).toBe(false);
         expect(canTransition(STATES.FAILED, STATES.PROCESSING)).toBe(false);
         expect(canTransition(STATES.CANCELLED, STATES.PENDING)).toBe(false);
-        expect(canTransition(STATES.CREATED, STATES.SUCCEEDED)).toBe(false); // must go through pending+processing
+        expect(canTransition(STATES.FAILED, STATES.SUCCEEDED)).toBe(false); // terminal states never leave
     });
 
     test('terminal states are identified', () => {
@@ -196,12 +198,48 @@ describe('VBR API routes', () => {
         expect(res.body.usd_external.reason).toContain('no authorized USD');
     });
 
-    test('POST /api/vbr/intents: valid internal send intent', async () => {
+    // ── Internal send intents now EXECUTE the transfer through the shared service ──
+    function mkTxnClient({ debitRows = [{ balance_before: 1000, balance_after: 900 }], creditRows = [{ balance_before: 500, balance_after: 600 }] } = {}) {
+        const calls = [];
+        const client = {
+            release: jest.fn(),
+            query: jest.fn(async (sql) => {
+                calls.push(sql);
+                if (sql === 'BEGIN' || sql === 'COMMIT' || sql === 'ROLLBACK') return { rowCount: 0 };
+                if (sql.includes('INSERT INTO transfer_idempotency')) return { rowCount: 1, rows: [{ id: 101 }] };
+                if (sql.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }] };
+                if (sql.includes('SET balance = balance - $2')) return { rows: debitRows };
+                if (sql.includes('SET balance = balance + $2')) return { rows: creditRows };
+                if (sql.includes('INSERT INTO transactions')) return { rowCount: 1 };
+                if (sql.includes('UPDATE transfer_idempotency')) return { rowCount: 1 };
+                if (sql.includes('UPDATE payment_intents')) return { rowCount: 1 };
+                return { rows: [] };
+            }),
+        };
+        client.calls = calls;
+        return client;
+    }
+
+    function setupIntentMocks({ intentRow, freshRow, recipient }) {
         CDB.db.query.mockImplementation(async (sql) => {
-            if (sql.includes('INSERT INTO payment_intents')) {
-                return { rows: [{ id: 'pi-1', state: 'created', direction: 'send', method: 'internal', amount: '100.00', currency: 'USD' }] };
-            }
+            if (sql.includes('INSERT INTO payment_intents')) return { rows: [intentRow] };
+            if (sql.includes('UPDATE payment_intents') && sql.includes('RETURNING *')) return { rows: [freshRow] };
+            if (sql.includes('SELECT * FROM payment_intents WHERE id = $1')) return { rows: [freshRow] };
             return { rows: [] };
+        });
+        CDB.findUserByEmail.mockResolvedValue({ id: 'u-2' });
+        CDB.findAccountByUserIdAndCurrency.mockImplementation(async (userId) =>
+            userId === 'u-1'
+                ? { id: 'acc-1', user_id: 'u-1', currency: 'USD', account_number: 'VB-1', account_name: 'Alice' }
+                : recipient || { id: 'acc-2', user_id: 'u-2', currency: 'USD', account_number: 'VB-2', account_name: 'Bob' });
+    }
+
+    test('POST /api/vbr/intents: internal send EXECUTES the transfer and returns the persisted succeeded intent', async () => {
+        const client = mkTxnClient();
+        CDB.db.getClient.mockResolvedValue(client);
+        setupIntentMocks({
+            intentRow: { id: 'pi-1', state: 'created', direction: 'send', method: 'internal', amount: '100.00', currency: 'USD' },
+            freshRow: { id: 'pi-1', state: 'succeeded', transfer_id: 'tr-1', direction: 'send', method: 'internal', amount: '100.00', currency: 'USD' },
         });
         const res = await call('/api/vbr/intents', {
             method: 'post',
@@ -209,7 +247,57 @@ describe('VBR API routes', () => {
         });
         expect(res.code).toBe(200);
         expect(res.body.success).toBe(true);
-        expect(res.body.intent.state).toBe('pending');
+        expect(res.body.transferId).toBe('tr-1');
+        expect(res.body.intent.state).toBe('succeeded');
+        expect(res.body.intent.transfer_id).toBe('tr-1');
+        // One atomic transaction: BEGIN ... COMMIT on a single pooled client.
+        expect(client.calls[0]).toBe('BEGIN');
+        expect(client.calls).toContain('COMMIT');
+        expect(client.calls).not.toContain('ROLLBACK');
+        // The intent success is written INSIDE the transfer transaction.
+        const hookIdx = client.calls.findIndex((s) => s.includes("SET state = 'succeeded'"));
+        expect(hookIdx).toBeGreaterThan(-1);
+        expect(hookIdx).toBeLessThan(client.calls.indexOf('COMMIT'));
+        // Both ledger rows are inside the transaction.
+        const ledgerInserts = client.calls.filter((s) => s.includes('INSERT INTO transactions'));
+        expect(ledgerInserts).toHaveLength(2);
+    });
+
+    test('POST /api/vbr/intents: insufficient funds → intent failed, ROLLBACK, no success reported', async () => {
+        const client = mkTxnClient({ debitRows: [] });
+        CDB.db.getClient.mockResolvedValue(client);
+        setupIntentMocks({
+            intentRow: { id: 'pi-1', state: 'created', direction: 'send', method: 'internal', amount: '500.00', currency: 'USD' },
+            freshRow: { id: 'pi-1', state: 'failed', failure_reason: 'Insufficient available funds.', direction: 'send', method: 'internal' },
+        });
+        const res = await call('/api/vbr/intents', {
+            method: 'post',
+            body: { direction: 'send', method: 'internal', amount: '500.00', currency: 'USD', counterparty: 'bob@test.com' },
+        });
+        expect(res.code).toBe(400);
+        expect(res.body.success).toBe(false);
+        expect(res.body.intent.state).toBe('failed');
+        expect(res.body.intent.failure_reason).toContain('Insufficient');
+        expect(client.calls).toContain('ROLLBACK');
+        expect(client.calls).not.toContain('COMMIT');
+    });
+
+    test('POST /api/vbr/intents: self-transfer → intent failed, no transfer executed', async () => {
+        const client = mkTxnClient();
+        CDB.db.getClient.mockResolvedValue(client);
+        setupIntentMocks({
+            intentRow: { id: 'pi-1', state: 'created', direction: 'send', method: 'internal', amount: '100.00', currency: 'USD' },
+            freshRow: { id: 'pi-1', state: 'failed', failure_reason: 'Self-transfer rejected' },
+            recipient: { id: 'acc-1', user_id: 'u-1', currency: 'USD', account_number: 'VB-1', account_name: 'Alice' },
+        });
+        const res = await call('/api/vbr/intents', {
+            method: 'post',
+            body: { direction: 'send', method: 'internal', amount: '100.00', currency: 'USD', counterparty: 'alice@test.com' },
+        });
+        expect(res.code).toBe(400);
+        expect(res.body.intent.state).toBe('failed');
+        // The transfer service was never invoked.
+        expect(client.calls).toHaveLength(0);
     });
 
     test('POST /api/vbr/intents: unsupported currency rejected', async () => {
@@ -273,10 +361,10 @@ describe('VBR API routes', () => {
         expect(res.body.message).toContain('no authorized USD');
     });
 
-    test('POST /api/vbr/intents: idempotency-key replay returns original', async () => {
+    test('POST /api/vbr/intents: idempotency-key replay with same params returns original', async () => {
         CDB.db.query.mockImplementation(async (sql) => {
             if (sql.includes('FROM payment_intents WHERE user_id = $1 AND idempotency_key')) {
-                return { rows: [{ id: 'pi-existing', state: 'pending', amount: '100.00' }] };
+                return { rows: [{ id: 'pi-existing', state: 'succeeded', direction: 'send', method: 'internal', amount: '100.00', currency: 'USD', counterparty: null }] };
             }
             return { rows: [] };
         });
@@ -288,6 +376,24 @@ describe('VBR API routes', () => {
         expect(res.code).toBe(200);
         expect(res.body.replay).toBe(true);
         expect(res.body.intent.id).toBe('pi-existing');
+    });
+
+    test('POST /api/vbr/intents: same idempotency key with DIFFERENT params → 409 conflict, nothing executed', async () => {
+        CDB.db.query.mockImplementation(async (sql) => {
+            if (sql.includes('FROM payment_intents WHERE user_id = $1 AND idempotency_key')) {
+                return { rows: [{ id: 'pi-existing', state: 'succeeded', direction: 'send', method: 'internal', amount: '100.00', currency: 'USD', counterparty: null }] };
+            }
+            return { rows: [] };
+        });
+        const res = await call('/api/vbr/intents', {
+            method: 'post',
+            body: { direction: 'send', method: 'internal', amount: '250.00', currency: 'USD' }, // different amount
+            headers: { 'idempotency-key': 'test-key-1' },
+        });
+        expect(res.code).toBe(409);
+        expect(res.body.success).toBe(false);
+        expect(res.body.code).toBe('IDEMPOTENCY_CONFLICT');
+        expect(CDB.db.getClient).not.toHaveBeenCalled();
     });
 
     test('GET /api/vbr/intents/:id returns owner-scoped intent', async () => {

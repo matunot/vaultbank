@@ -19,7 +19,7 @@ const express = require('express');
 const router = express.Router();
 const { STATES, canTransition, isTerminal, assertTransition, isCurrencySupported, SUPPORTED_CURRENCIES } = require('./states');
 const { validateConnector } = require('./connector');
-const { db, findUserById, createNotification } = require('../config/database');
+const { db, findUserById, findUserByEmail, findAccountByUserIdAndCurrency, findAccountByNumber, createNotification } = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
 
 // ── Amount validation: string-based, NO floating-point ──
@@ -150,6 +150,16 @@ router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
     const { direction, method, amount, currency, counterparty, description, metadata } = req.body;
     const idempotencyKey = req.headers['idempotency-key'] ? String(req.headers['idempotency-key']).slice(0, 100) : null;
 
+    // Material-params match for idempotency: same key + same params = replay,
+    // same key + different params = clear conflict (never a silent wrong
+    // result). Defined before the try so the 23505 race handler can use it.
+    const paramsMatch = (row) => !!row
+        && row.direction === direction
+        && row.method === method
+        && String(row.currency || '').trim().toUpperCase() === String(currency || '').trim().toUpperCase()
+        && Number(row.amount) === Number(String(amount || '').trim())
+        && String(row.counterparty || '').trim() === String(counterparty || '').trim();
+
     try {
         // ── Validation: currency, amount, method ──
         const wantedCurrency = String(currency || '').trim().toUpperCase();
@@ -185,7 +195,6 @@ router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
         }
 
         // ── Resolve the user's account in the requested currency ──
-        const { findAccountByUserIdAndCurrency } = require('../config/database');
         const account = await findAccountByUserIdAndCurrency(req.user.id, wantedCurrency);
         if (!account) {
             return res.status(404).json({ success: false, message: `You don't have a ${wantedCurrency} account yet.` });
@@ -193,13 +202,20 @@ router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
 
         await ensureTables();
 
-        // ── Idempotent replay: same key returns the original intent ──
+        // ── Idempotent replay: same key + same params returns the original;
+        // same key + different params is a clear conflict ──
         if (idempotencyKey) {
             const { rows: existing } = await db.query(
                 'SELECT * FROM payment_intents WHERE user_id = $1 AND idempotency_key = $2 LIMIT 1',
                 [req.user.id, idempotencyKey]
             );
             if (existing.length > 0) {
+                if (!paramsMatch(existing[0])) {
+                    return res.status(409).json({
+                        success: false, code: 'IDEMPOTENCY_CONFLICT',
+                        message: 'This idempotency key was already used with different parameters.',
+                    });
+                }
                 res.setHeader('Idempotent-Replay', 'true');
                 return res.status(200).json({ success: true, replay: true, intent: existing[0] });
             }
@@ -218,33 +234,179 @@ router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
 
         // ── Route to the connector ──
         if (method === 'internal' && direction === 'send') {
-            // Internal transfer: wrap the EXISTING /api/account/transfer logic.
-            // The VBR intent is a tracking record; the actual transfer goes
-            // through the same atomic pipeline users already trust.
+            // ── EXECUTE the transfer through the shared atomic service ──
+            // The VBR intent is NOT just a tracking record — it triggers the
+            // same atomic transfer pipeline as /api/account/transfer, and its
+            // final state is written INSIDE that transaction (onBeforeCommit),
+            // so money and intent status can never disagree.
+
+            // Resolve the recipient: email or account number (same semantics
+            // as the existing /api/account/transfer route).
+            let recipientAccount = null;
+            if (counterparty && counterparty.includes('@')) {
+                const recipientUser = await findUserByEmail(counterparty);
+                if (recipientUser) {
+                    recipientAccount = await findAccountByUserIdAndCurrency(recipientUser.id, wantedCurrency);
+                }
+            } else if (counterparty) {
+                recipientAccount = await findAccountByNumber(counterparty);
+                if (recipientAccount && String(recipientAccount.currency).toUpperCase() !== wantedCurrency) {
+                    const { rows: failed } = await db.query(
+                        `UPDATE payment_intents SET state = 'failed', failure_reason = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+                        [intent.id, `Recipient account is ${recipientAccount.currency}, not ${wantedCurrency}`]
+                    );
+                    return res.status(400).json({ success: false, intent: failed[0], message: `That recipient account is ${recipientAccount.currency} — ${wantedCurrency} transfers need a ${wantedCurrency} recipient.` });
+                }
+            }
+            if (!recipientAccount) {
+                const { rows: failed } = await db.query(
+                    `UPDATE payment_intents SET state = 'failed', failure_reason = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+                    [intent.id, `Recipient has no ${wantedCurrency} account`]
+                );
+                return res.status(404).json({ success: false, intent: failed[0], message: `Recipient has no ${wantedCurrency} account yet.` });
+            }
+            if (recipientAccount.id === account.id) {
+                const { rows: failed } = await db.query(
+                    `UPDATE payment_intents SET state = 'failed', failure_reason = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+                    [intent.id, 'Self-transfer rejected']
+                );
+                return res.status(400).json({ success: false, intent: failed[0], message: 'Cannot transfer to your own account.' });
+            }
+            if (String(account.currency).toUpperCase() !== String(recipientAccount.currency).toUpperCase()) {
+                const { rows: failed } = await db.query(
+                    `UPDATE payment_intents SET state = 'failed', failure_reason = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+                    [intent.id, 'Cross-currency rejected']
+                );
+                return res.status(400).json({ success: false, intent: failed[0], code: 'CROSS_CURRENCY_UNSUPPORTED', message: 'Internal transfers require matching currencies.' });
+            }
+
+            const { executeAtomicTransfer, notifyTransferCompletion } = require('../services/transferService');
+            let result;
+            try {
+                result = await executeAtomicTransfer({
+                    userId: req.user.id,
+                    senderAccount: account,
+                    recipientAccount,
+                    amount: amountStr,
+                    currency: wantedCurrency,
+                    description: description || `VBR intent ${intent.id}`,
+                    idempotencyKey,
+                    senderName: req.user.full_name,
+                    onBeforeCommit: async (client, { transferId }) => {
+                        // Intent linkage INSIDE the transaction: if this fails,
+                        // ROLLBACK undoes the transfer too — they commit together.
+                        // Unconditional on purpose: if the money moved, the
+                        // intent MUST record success even if a concurrent
+                        // cancel raced in — never report moved money as
+                        // cancelled or created.
+                        await client.query(
+                            `UPDATE payment_intents SET state = 'succeeded', transfer_id = $1, updated_at = NOW() WHERE id = $2`,
+                            [transferId, intent.id]
+                        );
+                    },
+                });
+            } catch (execErr) {
+                // Unexpected failure — ROLLBACK already ran; nothing moved.
+                const { rows: failed } = await db.query(
+                    `UPDATE payment_intents SET state = 'failed', failure_reason = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+                    [intent.id, `Execution error: ${execErr.message}`]
+                );
+                return res.status(500).json({ success: false, intent: failed[0], message: 'Transfer execution failed.' });
+            }
+
+            if (result.replay) {
+                // The transfer idempotency key was already used — either by a
+                // concurrent request or by POST /api/account/transfer with the
+                // same key. Verify the original transfer matches THIS request
+                // before claiming success — never silently return an
+                // unrelated prior result.
+                const { rows: orig } = await db.query(
+                    'SELECT amount, to_account_id FROM transfers WHERE id = $1 LIMIT 1',
+                    [result.transferId]
+                );
+                if (!orig[0] || Number(orig[0].amount) !== Number(amountStr) || orig[0].to_account_id !== recipientAccount.id) {
+                    const { rows: failed } = await db.query(
+                        `UPDATE payment_intents SET state = 'failed', failure_reason = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+                        [intent.id, 'Idempotency key already used for a different transfer']
+                    );
+                    return res.status(409).json({ success: false, code: 'IDEMPOTENCY_CONFLICT', intent: failed[0], message: 'This idempotency key was already used for a different transfer.' });
+                }
+                const { rows: fresh } = await db.query(
+                    `UPDATE payment_intents SET state = 'succeeded', transfer_id = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+                    [intent.id, result.transferId]
+                );
+                res.setHeader('Idempotent-Replay', 'true');
+                return res.status(200).json({ success: true, replay: true, intent: fresh[0], transferId: result.transferId });
+            }
+            if (result.error) {
+                // Expected failure — ROLLBACK already ran; nothing moved.
+                const { rows: failed } = await db.query(
+                    `UPDATE payment_intents SET state = 'failed', failure_reason = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+                    [intent.id, result.message || result.code]
+                );
+                const statusCode = result.code === 'TRANSFER_IN_PROGRESS' ? 409
+                    : result.code === 'RECIPIENT_NOT_FOUND' ? 404 : 400;
+                return res.status(statusCode).json({ success: false, intent: failed[0], message: result.message });
+            }
+
+            // Success: the hook already set state='succeeded' + transfer_id
+            // atomically with the transfer. Return the PERSISTED row.
+            const { rows: freshIntent } = await db.query('SELECT * FROM payment_intents WHERE id = $1 LIMIT 1', [intent.id]);
+
+            // Notifications AFTER the commit — failure-tolerant, they never
+            // change the reported result.
+            await notifyTransferCompletion({
+                userId: req.user.id,
+                recipientAccount,
+                senderAccount: account,
+                amount: amountStr,
+                currency: wantedCurrency,
+                newSenderBalance: result.newSenderBalance,
+                recipientBalance: result.recipientBalance,
+            });
+
             return res.status(200).json({
                 success: true,
-                intent: { ...intent, state: 'pending' },
-                message: 'Internal transfer intent created — use POST /api/account/transfer to execute it.',
-                hint: 'The VBR intent tracks the payment; the transfer endpoint moves the money atomically.',
+                intent: freshIntent[0],
+                transferId: result.transferId,
+                message: `Successfully transferred ${wantedCurrency} ${amountStr}`,
             });
+        }
+
+        if (method === 'internal' && direction === 'receive') {
+            // Internal receive is not a valid combination — internal transfers
+            // are always initiated by the sender.
+            const { rows: failed } = await db.query(
+                `UPDATE payment_intents SET state = 'failed', failure_reason = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+                [intent.id, 'receive+internal not supported']
+            );
+            return res.status(400).json({ success: false, intent: failed[0], message: 'Internal "receive" intents are not supported — internal transfers are always initiated by the sender.' });
         }
 
         if (method === 'collections' && direction === 'receive') {
             // Collections: the intent tracks a pending inbound payment.
-            // The user needs receiving details from the collections connector.
+            // PERSIST the pending state — never a response-only override.
+            const { rows: pending } = await db.query(
+                `UPDATE payment_intents SET state = 'pending', updated_at = NOW() WHERE id = $1 RETURNING *`,
+                [intent.id]
+            );
             return res.status(200).json({
                 success: true,
-                intent: { ...intent, state: 'pending' },
+                intent: pending[0],
                 message: 'Receiving intent created — get your provider-issued details from /api/collections/my-details.',
             });
         }
 
         if (method === 'payouts' && direction === 'send') {
             // Payouts: the intent tracks an outbound withdrawal.
-            // The user submits the payout through /api/payouts/requests.
+            // PERSIST the pending state — never a response-only override.
+            const { rows: pending } = await db.query(
+                `UPDATE payment_intents SET state = 'pending', updated_at = NOW() WHERE id = $1 RETURNING *`,
+                [intent.id]
+            );
             return res.status(200).json({
                 success: true,
-                intent: { ...intent, state: 'pending' },
+                intent: pending[0],
                 message: 'Payout intent created — submit the withdrawal through /api/payouts/requests.',
             });
         }
@@ -255,13 +417,21 @@ router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
             message: `Method "${method}" with direction "${direction}" is not supported yet.`,
         });
     } catch (error) {
-        // DB-enforced idempotency: unique violation → return the original
+        // DB-enforced idempotency: unique violation means a concurrent request
+        // with the same key won the INSERT race. Same params → replay the
+        // original; different params → clear conflict.
         if (error.code === '23505' && String(error.message || '').includes('payment_intent_idempotency')) {
             const { rows: existing } = await db.query(
                 'SELECT * FROM payment_intents WHERE user_id = $1 AND idempotency_key = $2 LIMIT 1',
                 [req.user.id, idempotencyKey]
             );
             if (existing.length > 0) {
+                if (!paramsMatch(existing[0])) {
+                    return res.status(409).json({
+                        success: false, code: 'IDEMPOTENCY_CONFLICT',
+                        message: 'This idempotency key was already used with different parameters.',
+                    });
+                }
                 res.setHeader('Idempotent-Replay', 'true');
                 return res.status(200).json({ success: true, replay: true, intent: existing[0] });
             }

@@ -636,149 +636,53 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
             });
         }
 
-        // ── A+B+C: ONE atomic database transaction on ONE pooled client ──
-        // Every operation below uses the SAME client. No helper that
-        // silently acquires a second connection is called inside the
-        // transaction. If ANY write fails, ROLLBACK undoes everything.
-        // The transfer_idempotency table is created at startup (index.js)
-        // and via migration 009 — never on the per-transfer hot path.
+        // ── A+B+C: ONE atomic database transaction via the shared service ──
+        // The same implementation used by VBR intents — no duplicated logic.
+        const { executeAtomicTransfer, notifyTransferCompletion } = require('../services/transferService');
+        const result = await executeAtomicTransfer({
+            userId: req.user.id,
+            senderAccount,
+            recipientAccount,
+            amount: String(transferAmount),
+            currency: wantedCurrency,
+            description: description || reason || 'Internal transfer',
+            idempotencyKey,
+            senderName: req.user.full_name,
+        });
 
-        const client = await db.getClient();
-        let transferId = null;
-        try {
-            await client.query('BEGIN');
-
-            // ── C. Durable idempotency claim — database-enforced UNIQUE ──
-            if (idempotencyKey) {
-                const claim = await client.query(
-                    `INSERT INTO transfer_idempotency (user_id, currency, idempotency_key)
-                     VALUES ($1, $2, $3)
-                     ON CONFLICT (user_id, currency, idempotency_key) DO NOTHING
-                     RETURNING id`,
-                    [req.user.id, wantedCurrency, idempotencyKey]
-                );
-                if (claim.rowCount === 0) {
-                    await client.query('ROLLBACK');
-                    // Concurrent duplicate or retry — return the original result.
-                    const { rows: existing } = await client.query(
-                        `SELECT ti.transfer_id FROM transfer_idempotency ti
-                         WHERE ti.user_id = $1 AND ti.currency = $2 AND ti.idempotency_key = $3
-                         AND ti.transfer_id IS NOT NULL LIMIT 1`,
-                        [req.user.id, wantedCurrency, idempotencyKey]
-                    );
-                    if (existing.length > 0) {
-                        res.setHeader('Idempotent-Replay', 'true');
-                        return res.json({ success: true, replay: true, transferId: existing[0].transfer_id, message: 'Transfer already processed — replayed result.' });
-                    }
-                    // The original is still in flight — tell the client to retry.
-                    return res.status(409).json({ success: false, code: 'TRANSFER_IN_PROGRESS', message: 'A transfer with this idempotency key is still in progress. Retry shortly.' });
-                }
-            }
-
-            // ── A. Insert the transfer record INSIDE the transaction — gets
-            // the UUID that both ledger rows will reference via reference_id.
-            const transferResult = await client.query(
-                `INSERT INTO transfers (from_account_id, to_account_id, from_user_id, to_user_id,
-                    amount, currency, fee, transfer_type, status, description)
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, 'internal', 'completed', $8)
-                 RETURNING id`,
-                [senderAccount.id, recipientAccount.id, req.user.id, recipientAccount.user_id,
-                 transferAmount, wantedCurrency, fee, description || reason || 'Internal transfer']
-            );
-            transferId = transferResult.rows[0].id;
-
-            // Link the idempotency claim to the completed transfer.
-            if (idempotencyKey) {
-                await client.query(
-                    `UPDATE transfer_idempotency SET transfer_id = $1
-                     WHERE user_id = $2 AND currency = $3 AND idempotency_key = $4`,
-                    [transferId, req.user.id, wantedCurrency, idempotencyKey]
-                );
-            }
-
-            // ── B. Guarded debit: both balance + available_balance, guarded
-            // on the AUTHORITATIVE available_balance (not a stale read).
-            // held_balance is never touched.
-            const debit = await client.query(
-                `UPDATE accounts
-                 SET balance = balance - $2, available_balance = available_balance - $2
-                 WHERE id = $1 AND available_balance >= $2
-                 RETURNING (balance + $2) AS balance_before, balance AS balance_after`,
-                [senderAccount.id, transferAmount + fee]
-            );
-            if (!debit.rows.length) {
-                await client.query('ROLLBACK');
-                return res.status(400).json({ success: false, message: 'Insufficient available funds.', availableBalance: senderAccount.available_balance });
-            }
-
-            // ── B. Credit: both balance + available_balance consistently.
-            const credit = await client.query(
-                `UPDATE accounts
-                 SET balance = balance + $2, available_balance = available_balance + $2
-                 WHERE id = $1
-                 RETURNING (balance - $2) AS balance_before, balance AS balance_after`,
-                [recipientAccount.id, transferAmount]
-            );
-            if (!credit.rows.length) {
-                await client.query('ROLLBACK');
-                return res.status(404).json({ success: false, message: 'Recipient account not found.' });
-            }
-
-            // ── A. Sender ledger row — same client, INSIDE the transaction.
-            // Uses reference_id (the FK to transfers.id) for durable linkage.
-            // Parameter order MUST match the SQL columns: $8=reference_id (UUID),
-            // $9=counterparty_name, $10=counterparty_account.
-            await client.query(
-                `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
-                    balance_before, balance_after, description, category, reference_id,
-                    counterparty_name, counterparty_account)
-                 VALUES ($1, $2, 'transfer_out', 'completed', $3, $4, $5, $6, $7, 'transfer', $8, $9, $10)`,
-                [senderAccount.id, req.user.id, -(transferAmount + fee), wantedCurrency,
-                 parseFloat(debit.rows[0].balance_before), parseFloat(debit.rows[0].balance_after),
-                 description || `Transfer to ${recipientAccount.account_number}`,
-                 transferId, recipientAccount.account_name, recipientAccount.account_number]
-            );
-
-            // ── A. Recipient ledger row — same client, same transaction.
-            // Parameter order MUST match the SQL columns: $8=reference_id (UUID),
-            // $9=counterparty_name, $10=counterparty_account.
-            await client.query(
-                `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
-                    balance_before, balance_after, description, category, reference_id,
-                    counterparty_name, counterparty_account)
-                 VALUES ($1, $2, 'transfer_in', 'completed', $3, $4, $5, $6, $7, 'income', $8, $9, $10)`,
-                [recipientAccount.id, recipientAccount.user_id, transferAmount, wantedCurrency,
-                 parseFloat(credit.rows[0].balance_before), parseFloat(credit.rows[0].balance_after),
-                 description || `Transfer from ${senderAccount.account_number}`,
-                 transferId, req.user.full_name, senderAccount.account_number]
-            );
-
-            // ── A. COMMIT: everything above is one atomic operation ──
-            await client.query('COMMIT');
-            senderBalance = parseFloat(debit.rows[0].balance_before);
-            newSenderBalance = parseFloat(debit.rows[0].balance_after);
-            recipientBalance = parseFloat(credit.rows[0].balance_after);
-        } catch (e) {
-            try { await client.query('ROLLBACK'); } catch (_) { /* releasing anyway */ }
-            throw e;
-        } finally {
-            client.release();
+        if (result.replay) {
+            res.setHeader('Idempotent-Replay', 'true');
+            return res.json({ success: true, replay: true, transferId: result.transferId, message: 'Transfer already processed — replayed result.' });
         }
+        if (result.error) {
+            if (result.code === 'TRANSFER_IN_PROGRESS') {
+                return res.status(409).json({ success: false, code: result.code, message: result.message });
+            }
+            if (result.code === 'INSUFFICIENT_FUNDS') {
+                return res.status(400).json({ success: false, message: result.message, availableBalance: result.availableBalance });
+            }
+            if (result.code === 'RECIPIENT_NOT_FOUND') {
+                return res.status(404).json({ success: false, message: result.message });
+            }
+            return res.status(400).json({ success: false, message: result.message || 'Transfer failed.' });
+        }
+
+        const transferId = result.transferId;
+        senderBalance = result.senderBalance;
+        newSenderBalance = result.newSenderBalance;
+        recipientBalance = result.recipientBalance;
 
         // ── Notifications AFTER the transaction — a failure here must never
         // make a completed transfer appear failed or encourage a retry.
-        try {
-            await createNotification(req.user.id, {
-                type: 'transaction', title: 'Transfer Sent',
-                message: `${wantedCurrency} ${transferAmount.toFixed(2)} sent to ${recipientAccount.account_number}. Remaining balance: ${wantedCurrency} ${newSenderBalance.toFixed(2)}`,
-            });
-            await createNotification(recipientAccount.user_id, {
-                type: 'transaction', title: 'Transfer Received',
-                message: `${wantedCurrency} ${transferAmount.toFixed(2)} received from ${senderAccount.account_number}. New balance: ${wantedCurrency} ${recipientBalance.toFixed(2)}`,
-            });
-        } catch (notifErr) {
-            console.warn('Transfer notification failure (transfer completed):', notifErr.message);
-        }
+        await notifyTransferCompletion({
+            userId: req.user.id,
+            recipientAccount,
+            senderAccount,
+            amount: transferAmount.toFixed(2),
+            currency: wantedCurrency,
+            newSenderBalance,
+            recipientBalance,
+        });
 
         // In-memory alert for the receiver (best-effort, never fatal).
         try {
