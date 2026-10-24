@@ -7,9 +7,11 @@ name: Integration Tests (PostgreSQL)
     paths:
       - 'server/routes/accounts.js'
       - 'server/routes/external-payouts.js'
+      - 'server/vbr/**'
       - 'server/migrations/**'
       - 'server/__tests__/pgIntegration.test.js'
       - 'server/__tests__/pgHttpIntegration.test.js'
+      - 'server/__tests__/vbr.test.js'
       - 'server/__tests__/helpers/pgTestSetup.js'
       - '.github/workflows/integration-tests.yml'
 
