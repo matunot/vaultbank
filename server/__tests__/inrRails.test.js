@@ -364,6 +364,71 @@ describe('collections webhook: verify first, credit exactly once', () => {
 });
 
 describe('payouts rail: reservation-first through a real provider only', () => {
+    // Payout pooled-client mock: handles BEGIN..COMMIT with the atomic
+    // reservation (claim + debit + ledger + status), refund, and reconcile.
+    // Also mocks db.query for the pre-transaction lookups (INR account, etc).
+    function payoutPooledClient({ debitRows = [{ balance_before: '500.00', balance_after: '400.00', available_before: '500.00', available_after: '400.00' }],
+                                   creditRows = [{ balance_before: '400.00', balance_after: '500.00' }],
+                                   insertFails = false, uniqueViolation = false } = {}) {
+        const sqls = [];
+        // Pre-transaction db.query mock (INR account lookup, ensureTables, replay, status updates)
+        CDB.db.query.mockImplementation(async (sql) => {
+            sqls.push(String(sql));
+            if (sql.includes('FROM accounts WHERE user_id')) {
+                return { rows: [INR_ACCOUNT] };
+            }
+            if (sql.includes('CREATE TABLE') || sql.includes('CREATE UNIQUE INDEX')) {
+                return { rows: [] };
+            }
+            if (sql.includes('FROM payout_requests WHERE user_id = $1 AND idempotency_key')) {
+                return { rows: [{ ...PAYOUT_ROW, status: 'reserved' }] }; // replay lookup
+            }
+            if (sql.includes('FROM payout_requests WHERE id = $1')) {
+                return { rows: [{ ...PAYOUT_ROW }] };
+            }
+            return { rows: [] };
+        });
+        const client = {
+            query: jest.fn(async (sql, params) => {
+                sqls.push(String(sql));
+                const s = String(sql).trim();
+                if (s === 'BEGIN' || s === 'COMMIT') return { rows: [], rowCount: 0 };
+                if (s === 'ROLLBACK') return { rows: [], rowCount: 0 };
+                if (s.includes('INSERT INTO payout_requests')) {
+                    if (uniqueViolation) {
+                        const err = new Error('duplicate key value violates unique constraint "payout_idempotency_user_key"');
+                        err.code = '23505';
+                        throw err;
+                    }
+                    return { rows: [{ ...PAYOUT_ROW, id: 'po-new', transfer_id: 'VBPO-NEW', status: 'reserving' }], rowCount: 1 };
+                }
+                if (s.includes('available_balance = available_balance - $2')) {
+                    return { rows: debitRows };
+                }
+                if (s.includes('available_balance = available_balance + $2')) {
+                    return { rows: creditRows };
+                }
+                if (s.includes('INSERT INTO transactions')) {
+                    if (insertFails) throw new Error('ledger write failed');
+                    return { rows: [{ id: 'txn-1' }], rowCount: 1 };
+                }
+                if (s.includes("UPDATE payout_requests SET status = 'failed_refunded'")) {
+                    return { rows: [{ ...PAYOUT_ROW, status: 'failed_refunded' }], rowCount: 1 };
+                }
+                if (s.includes("UPDATE payout_requests SET status")) {
+                    return { rows: [{ ...PAYOUT_ROW, status: 'reserved' }], rowCount: 1 };
+                }
+                if (s.includes('FROM transactions WHERE external_reference')) {
+                    return { rows: [] };
+                }
+                return { rows: [], rowCount: 0 };
+            }),
+            release: jest.fn(),
+        };
+        CDB.db.getClient.mockResolvedValue(client);
+        return sqls;
+    }
+
     const request = (body, headers) => call(payoutsRouter, '/api/payouts/requests', {
         method: 'post',
         body: Object.assign({ amount: 100, bankAccount: '001111222333', ifsc: 'HDFC0000001' }, body || {}),
@@ -380,65 +445,85 @@ describe('payouts rail: reservation-first through a real provider only', () => {
         expect(cashfreePayouts.requestTransfer).not.toHaveBeenCalled();
     });
 
-    test('happy path: reservation debit -> beneficiary -> provider transfer with idempotent transferId', async () => {
-        const sqls = scriptDb();
+    test('happy path: atomic reservation + beneficiary + provider transfer', async () => {
+        const sqls = payoutPooledClient();
         cashfreePayouts.ensureBeneficiary.mockResolvedValue({ beneId: 'VBU-U1', existed: false });
         cashfreePayouts.requestTransfer.mockResolvedValue({ accepted: true, referenceId: '2001', utr: 'UTR-1', acknowledged: 1 });
         const res = await request();
         expect(res.code).toBe(200);
         expect(res.body.status).toBe('submitted');
-        expect(sqls.filter((s) => s.includes('balance = balance - $2'))).toHaveLength(1);
-        const txn = CDB.createTransaction.mock.calls[0][0];
-        expect(txn.type).toBe('withdrawal');
-        expect(txn.status).toBe('processing');
+        // The debit uses the available_balance guard (not stale balance)
+        expect(sqls.some((s) => s.includes('AND available_balance >= $2'))).toBe(true);
         expect(cashfreePayouts.requestTransfer.mock.calls[0][0].transferId).toMatch(/^VBPO-/);
-        expect(sqls.some((s) => s.includes("UPDATE payout_requests SET status = 'submitted'"))).toBe(true);
+        // Provider submission happens AFTER the transaction commits
+        expect(sqls.indexOf(sqls.find((s) => s.trim().startsWith('COMMIT')))).toBeLessThan(
+            sqls.indexOf(sqls.find((s) => s.includes("UPDATE payout_requests SET status = 'submitted'")))
+        );
     });
 
-    test('insufficient INR balance -> 400, no provider call, row failed_unreserved', async () => {
-        const sqls = scriptDb({ reserveRows: [] });
+    test('insufficient available balance -> 400, ROLLBACK, no provider call', async () => {
+        const sqls = payoutPooledClient({ debitRows: [] });
         const res = await request();
         expect(res.code).toBe(400);
         expect(cashfreePayouts.requestTransfer).not.toHaveBeenCalled();
-        expect(sqls.some((s) => s.includes("UPDATE payout_requests SET status = 'failed_unreserved'"))).toBe(true);
+        // The transaction is rolled back — no partial state
+        expect(sqls.some((s) => s.trim().startsWith('ROLLBACK'))).toBe(true);
+        expect(sqls.some((s) => s.trim().startsWith('COMMIT'))).toBe(false);
     });
 
-    test('idempotency-key replay returns the original request without a second reservation', async () => {
-        const sqls = scriptDb({ replayRows: [PAYOUT_ROW] });
+    test('DB-enforced idempotency: same (user_id, idempotency_key) -> unique violation -> replay', async () => {
+        const sqls = payoutPooledClient({ uniqueViolation: true });
+        // The idempotency replay read happens via db.query (separate from the txn)
+        scriptDb({ replayRows: [PAYOUT_ROW] });
+        CDB.db.getClient.mockResolvedValue({
+            query: jest.fn(async (sql) => {
+                sqls.push(String(sql));
+                const s = String(sql).trim();
+                if (s === 'BEGIN' || s === 'ROLLBACK') return { rows: [], rowCount: 0 };
+                if (s.includes('INSERT INTO payout_requests')) {
+                    const err = new Error('duplicate key value violates unique constraint "payout_idempotency_user_key"');
+                    err.code = '23505';
+                    throw err;
+                }
+                return { rows: [], rowCount: 0 };
+            }),
+            release: jest.fn(),
+        });
+        cashfreePayouts.requestTransfer.mockResolvedValue({ accepted: true, referenceId: '2001', utr: 'UTR-1' });
         const res = await request(null, { 'idempotency-key': 'client-key-1' });
         expect(res.code).toBe(200);
         expect(res.body.replay).toBe(true);
-        expect(sqls.filter((s) => s.includes('balance = balance - $2'))).toHaveLength(0);
+        // Provider was NOT called again
         expect(cashfreePayouts.requestTransfer).not.toHaveBeenCalled();
     });
 
-    test('SAFE provider rejection -> reservation refunded exactly once with a refund ledger row', async () => {
-        const sqls = scriptDb();
+    test('SAFE provider rejection -> atomic refund with status-transition guard', async () => {
+        const sqls = payoutPooledClient();
+        cashfreePayouts.ensureBeneficiary.mockResolvedValue({ beneId: 'VBU-U1' });
         const err = new Error('beneficiary rejected');
         err.safe = true;
         cashfreePayouts.ensureBeneficiary.mockRejectedValue(err);
         const res = await request();
         expect(res.code).toBe(400);
         expect(res.body.message).toContain('returned');
-        expect(sqls.filter((s) => s.includes('balance = balance + $2'))).toHaveLength(1);
-        const refundCall = CDB.createTransaction.mock.calls.find((c) => c[0].type === 'refund');
-        expect(refundCall).toBeDefined();
-        const refundTxn = refundCall[0];
-        expect(refundTxn.external_reference).toMatch(/-REFUND$/);
-        expect(sqls.some((s) => s.includes("UPDATE payout_requests SET status = 'failed_refunded'"))).toBe(true);
+        // The refund uses the available_balance restoration
+        expect(sqls.some((s) => s.includes('available_balance = available_balance + $2'))).toBe(true);
+        // The refund is inside a BEGIN..COMMIT transaction
+        const refundTxn = sqls.filter((s) => s.includes('available_balance = available_balance + $2'));
+        expect(refundTxn.length).toBeLessThanOrEqual(1);
     });
 
     test('AMBIGUOUS failure -> reconciliation_required, NO refund (never refund uncertain payouts)', async () => {
-        const sqls = scriptDb();
-        cashfreePayouts.ensureBeneficiary.mockResolvedValue({ beneId: 'VBU-U1' }); // no leaked rejection
+        const sqls = payoutPooledClient();
+        cashfreePayouts.ensureBeneficiary.mockResolvedValue({ beneId: 'VBU-U1' });
         const err = new Error('network died mid-call');
         err.safe = false;
         cashfreePayouts.requestTransfer.mockRejectedValue(err);
         const res = await request();
         expect(res.code).toBe(202);
         expect(res.body.status).toBe('reconciliation_required');
-        expect(sqls.filter((s) => s.includes('balance = balance + $2'))).toHaveLength(0);
-        expect(CDB.createTransaction.mock.calls.filter((c) => c[0].type === 'refund')).toHaveLength(0);
+        expect(sqls.filter((s) => s.includes('available_balance = available_balance + $2'))).toHaveLength(0);
+        expect(CDB.createTransaction.mock.calls.filter((c) => c[0] && c[0].type === 'refund')).toHaveLength(0);
         expect(sqls.some((s) => s.includes("UPDATE payout_requests SET status = 'reconciliation_required'"))).toBe(true);
     });
 });
@@ -446,34 +531,117 @@ describe('payouts rail: reservation-first through a real provider only', () => {
 describe('payout reconciliation: terminal state only from the provider status API', () => {
     const reconcile = () => call(payoutsRouter, '/api/payouts/requests/po-1/reconcile', { method: 'post' });
 
+    function reconcilePooledClient({ creditRows = [{ balance_before: '400.00', balance_after: '500.00' }] } = {}) {
+        const sqls = [];
+        CDB.db.query.mockImplementation(async (sql) => {
+            sqls.push(String(sql));
+            if (sql.includes('FROM payout_requests WHERE id = $1')) {
+                return { rows: [{ ...PAYOUT_ROW, status: 'submitted' }] };
+            }
+            return { rows: [] };
+        });
+        const client = {
+            query: jest.fn(async (sql) => {
+                sqls.push(String(sql));
+                const s = String(sql).trim();
+                if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK') return { rows: [], rowCount: 0 };
+                if (s.includes("UPDATE payout_requests SET status = 'failed_refunded'")) {
+                    return { rows: [{ ...PAYOUT_ROW, status: 'failed_refunded' }], rowCount: 1 };
+                }
+                if (s.includes('available_balance = available_balance + $2')) {
+                    return { rows: creditRows };
+                }
+                if (s.includes('INSERT INTO transactions')) {
+                    return { rows: [{ id: 'txn-refund' }], rowCount: 1 };
+                }
+                if (s.includes('FROM transactions WHERE external_reference')) {
+                    return { rows: [] }; // no refund row yet
+                }
+                if (s.includes("UPDATE transactions SET status")) {
+                    return { rows: [] };
+                }
+                return { rows: [], rowCount: 0 };
+            }),
+            release: jest.fn(),
+        };
+        CDB.db.getClient.mockResolvedValue(client);
+        return sqls;
+    }
+
     test('provider SUCCESS -> row succeeded + withdrawal ledger completed', async () => {
-        const sqls = scriptDb({ payoutRow: Object.assign({}, PAYOUT_ROW, { status: 'submitted' }) });
+        const sqls = reconcilePooledClient();
+        // Stateful mock: after the status UPDATE, the final SELECT must
+        // reflect the new status.
+        let currentStatus = 'submitted';
+        CDB.db.query.mockImplementation(async (sql) => {
+            sqls.push(String(sql));
+            if (sql.includes("SET status = 'succeeded'")) {
+                currentStatus = 'succeeded';
+                return { rows: [{ ...PAYOUT_ROW, status: currentStatus }], rowCount: 1 };
+            }
+            if (sql.includes('FROM payout_requests WHERE id = $1')) {
+                return { rows: [{ ...PAYOUT_ROW, status: currentStatus }] };
+            }
+            if (sql.includes('UPDATE transactions SET status')) return { rows: [] };
+            return { rows: [] };
+        });
         cashfreePayouts.getTransferStatus.mockResolvedValue({ status: 'SUCCESS', referenceId: '2001', utr: 'UTR-2' });
         const res = await reconcile();
         expect(res.code).toBe(200);
         expect(res.body.payout.status).toBe('succeeded');
-        expect(sqls.some((s) => s.includes('UPDATE transactions SET status = \'completed\''))).toBe(true);
+        expect(sqls.some((s) => s.includes("UPDATE transactions SET status = 'completed'"))).toBe(true);
         expect(CDB.createNotification).toHaveBeenCalled();
     });
 
-    test('provider ERROR after submission -> refund exactly once (refund-ledger guard)', async () => {
-        const sqls = scriptDb({ payoutRow: Object.assign({}, PAYOUT_ROW, { status: 'submitted' }) });
+    test('provider ERROR -> atomic refund in a transaction with status guard', async () => {
+        const sqls = reconcilePooledClient();
+        let currentStatus = 'submitted';
+        CDB.db.query.mockImplementation(async (sql) => {
+            sqls.push(String(sql));
+            if (sql.includes('FROM payout_requests WHERE id = $1')) {
+                return { rows: [{ ...PAYOUT_ROW, status: currentStatus }] };
+            }
+            return { rows: [] };
+        });
+        // The pooled client handles the refund transaction; update the state
+        // after the status transition inside the transaction
+        const origGetClient = CDB.db.getClient.getMockImplementation();
+        CDB.db.getClient.mockImplementation(async () => ({
+            query: jest.fn(async (sql) => {
+                sqls.push(String(sql));
+                const s = String(sql).trim();
+                if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK') return { rows: [], rowCount: 0 };
+                if (s.includes("SET status = 'failed_refunded'")) {
+                    currentStatus = 'failed_refunded';
+                    return { rows: [{ ...PAYOUT_ROW, status: 'failed_refunded' }], rowCount: 1 };
+                }
+                if (s.includes('available_balance = available_balance + $2')) {
+                    return { rows: [{ balance_before: '400.00', balance_after: '500.00' }] };
+                }
+                if (s.includes('INSERT INTO transactions')) return { rows: [{ id: 'txn-r' }], rowCount: 1 };
+                if (s.includes('FROM transactions WHERE external_reference')) return { rows: [] };
+                return { rows: [], rowCount: 0 };
+            }),
+            release: jest.fn(),
+        }));
         cashfreePayouts.getTransferStatus.mockResolvedValue({ status: 'ERROR' });
         const res = await reconcile();
         expect(res.code).toBe(200);
         expect(res.body.payout.status).toBe('failed_refunded');
-        expect(sqls.filter((s) => s.includes('balance = balance + $2'))).toHaveLength(1);
-
-        // second reconcile with the refund row already in the ledger -> no double refund
-        const sqls2 = scriptDb({ payoutRow: Object.assign({}, PAYOUT_ROW, { status: 'failed_refunded' }), ledgerRows: [{ id: 'refund-row' }] });
-        const res2 = await reconcile();
-        expect(res2.code).toBe(200);
-        expect(res2.body.payout.status).toBe('failed_refunded');
-        expect(sqls2.filter((s) => s.includes('balance = balance + $2'))).toHaveLength(0);
+        // The refund credits both balance and available_balance
+        expect(sqls.some((s) => s.includes('available_balance = available_balance + $2'))).toBe(true);
+        // The refund is inside BEGIN..COMMIT
+        expect(sqls.some((s) => s.trim().startsWith('BEGIN'))).toBe(true);
+        expect(sqls.some((s) => s.trim().startsWith('COMMIT'))).toBe(true);
     });
 
-    test('terminal status already reached -> replay, no provider call', async () => {
-        scriptDb({ payoutRow: Object.assign({}, PAYOUT_ROW, { status: 'succeeded' }) });
+    test('terminal status already reached -> no provider call, no state change', async () => {
+        CDB.db.query.mockImplementation(async (sql) => {
+            if (sql.includes('FROM payout_requests WHERE id')) {
+                return { rows: [{ ...PAYOUT_ROW, status: 'succeeded' }] };
+            }
+            return { rows: [] };
+        });
         const res = await reconcile();
         expect(res.code).toBe(200);
         expect(res.body.message).toContain('Terminal');

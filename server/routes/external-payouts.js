@@ -2,19 +2,26 @@
  * VaultBank External Payouts — outbound INR transfers through a REAL payout
  * provider (Cashfree Payouts today), fail-closed until credentials exist.
  *
- * Money discipline (mirrors the USDC withdrawal rail contract):
- *   1. Reservation FIRST: a guarded, atomic balance decrement + a payout row
- *      claimed by a UNIQUE transfer id BEFORE any provider call.
- *   2. transferId is OUR idempotency key — the provider rejects duplicates, so
- *      a retried request can never double-send.
- *   3. Beneficiary details are validated server-side and bound to the user
- *      (beneId derived from the user id; a mismatch is refused).
- *   4. Terminal state comes ONLY from the provider's Check Status API —
- *      elapsed time, client callbacks, or redirects never mark a payout done.
- *   5. SAFE provider rejection (transfer explicitly not accepted) refunds the
- *      reservation exactly once. AMBIGUOUS failures (network error, unknown
- *      whether the provider accepted) NEVER auto-refund — the row is flagged
- *      'reconciliation_required' for operator review, like the USDC holds.
+ * Safety contract (Phase 1.7 hardened):
+ *   1. ATOMIC reservation: the payout claim + balance decrement + ledger
+ *      row run in ONE database transaction (BEGIN..COMMIT on ONE pooled
+ *      client). No external calls inside the transaction.
+ *   2. DB-ENFORCED idempotency: UNIQUE(user_id, idempotency_key) on the
+ *      payout_requests table (migration 010). A concurrent duplicate gets
+ *      a unique violation and returns the original payout as a replay —
+ *      the provider is never called twice for the same logical payout.
+ *   3. AVAILABLE-BALANCE guard: the reservation guards on available_balance
+ *      (the spendable amount), not the total balance. Held funds are never
+ *      spendable. Both balance and available_balance are updated on every
+ *      debit/credit so the invariant available_balance = balance - held
+ *      is preserved.
+ *   4. Terminal state from provider ONLY: the reconcile route uses a
+ *      status-transition guard (WHERE status NOT IN terminal) so concurrent
+ *      or repeated reconciliations never double-refund or double-complete.
+ *   5. SAFE provider rejection refunds EXACTLY ONCE (guarded by both the
+ *      status transition and the refund ledger row's external_reference).
+ *      AMBIGUOUS failures NEVER auto-refund — the row stays reserved with
+ *      status 'reconciliation_required'.
  *   6. Fail-closed: with no configured payout provider the route answers 503
  *      and moves nothing.
  */
@@ -38,6 +45,9 @@ const MAX_AMOUNT = 500000; // INR 5,00,000 per transfer until tuned by ops polic
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 const BANK_ACCOUNT_RE = /^[0-9]{6,20}$/;
+
+// Terminal payout statuses — once reached, no further transitions.
+const TERMINAL_STATUSES = ['succeeded', 'failed_refunded', 'failed_unreserved'];
 
 let tablesReady = false;
 async function ensureTables() {
@@ -66,6 +76,17 @@ async function ensureTables() {
             updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
     `);
+    // DB-enforced idempotency: at most ONE payout per (user_id, idempotency_key).
+    try {
+        await db.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS payout_idempotency_user_key
+            ON payout_requests (user_id, idempotency_key)
+            WHERE idempotency_key IS NOT NULL
+        `);
+    } catch (idxErr) {
+        // If duplicates exist, the index creation fails — operator must resolve.
+        console.warn('payout_idempotency_user_key index ensure skipped:', idxErr.message);
+    }
     tablesReady = true;
 }
 
@@ -77,15 +98,14 @@ async function audit(userId, action, resourceId, details, req) {
             resourceType: 'payout_request',
             resourceId,
             details,
-            ipAddress: req.ip,
-            userAgent: req.headers['user-agent'],
+            ipAddress: req ? req.ip : null,
+            userAgent: req ? req.headers['user-agent'] : null,
         });
     } catch (_) { /* best-effort */ }
 }
 
 // ============================================================
 // GET /api/payouts/availability — PUBLIC readiness booleans.
-// Only configuration state, never secrets or user data.
 // ============================================================
 router.get('/api/payouts/availability', (req, res) => {
     res.status(200).json({ success: true, ...payoutAvailability(), currency: CURRENCY, minAmount: MIN_AMOUNT, maxAmount: MAX_AMOUNT });
@@ -109,11 +129,19 @@ router.get('/api/payouts/requests', authenticateToken, async (req, res) => {
 });
 
 // ============================================================
-// POST /api/payouts/requests — reserve + submit a payout (auth)
+// POST /api/payouts/requests — atomic reserve + submit (auth)
+// The reservation (claim + debit + ledger) is ONE database transaction.
+// The provider call happens AFTER the transaction commits.
 // ============================================================
 router.post('/api/payouts/requests', authenticateToken, async (req, res) => {
+    let active = null;
+    let payoutId = null;
+    let transferId = null;
+    let inrAccount = null;
+    let amount = 0;
+
     try {
-        const active = activePayoutProvider();
+        active = activePayoutProvider();
         if (!active) {
             return res.status(503).json({
                 success: false,
@@ -122,12 +150,12 @@ router.post('/api/payouts/requests', authenticateToken, async (req, res) => {
                 availability: payoutAvailability(),
             });
         }
-        const amount = Math.round(parseFloat(req.body.amount) * 100) / 100;
+        amount = Math.round(parseFloat(req.body.amount) * 100) / 100;
         const bankAccount = String(req.body.bankAccount || '').trim();
         const ifsc = String(req.body.ifsc || '').trim().toUpperCase();
-        const idempotencyKey = req.headers['idempotency-key'] ? String(req.headers['idempotency-key']) : null;
+        const idempotencyKey = req.headers['idempotency-key'] ? String(req.headers['idempotency-key']).slice(0, 100) : null;
 
-        if (!(amount >= MIN_AMOUNT) || amount > MAX_AMOUNT) {
+        if (!Number.isFinite(amount) || amount < MIN_AMOUNT || amount > MAX_AMOUNT) {
             return res.status(400).json({ success: false, message: `Amount must be between ${CURRENCY} ${MIN_AMOUNT} and ${CURRENCY} ${MAX_AMOUNT}.` });
         }
         if (!BANK_ACCOUNT_RE.test(bankAccount) || !IFSC_RE.test(ifsc)) {
@@ -137,7 +165,6 @@ router.post('/api/payouts/requests', authenticateToken, async (req, res) => {
         const user = await findUserById(req.user.id);
         if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
 
-        // Payouts debit the user's INR account — it must exist.
         const { rows: inrRows } = await db.query(
             "SELECT * FROM accounts WHERE user_id = $1 AND currency = $2 AND status = 'active' ORDER BY created_at ASC LIMIT 1",
             [req.user.id, CURRENCY]
@@ -145,128 +172,203 @@ router.post('/api/payouts/requests', authenticateToken, async (req, res) => {
         if (inrRows.length === 0) {
             return res.status(409).json({ success: false, code: 'INR_ACCOUNT_REQUIRED', message: 'Payouts debit your INR account — open one first.' });
         }
-        const inrAccount = inrRows[0];
+        inrAccount = inrRows[0];
 
         await ensureTables();
-
-        // Idempotent replay: the same client key returns the original request.
-        if (idempotencyKey) {
-            const { rows: existing } = await db.query(
-                'SELECT * FROM payout_requests WHERE user_id = $1 AND idempotency_key = $2 LIMIT 1',
-                [req.user.id, idempotencyKey]
-            );
-            if (existing.length > 0) {
-                res.setHeader('Idempotent-Replay', 'true');
-                return res.status(200).json({ success: true, replay: true, payout: existing[0] });
-            }
-        }
-
-        const transferId = 'VBPO-' + crypto.randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase();
+        transferId = 'VBPO-' + crypto.randomUUID().replace(/-/g, '').slice(0, 20).toUpperCase();
         const beneId = 'VBU-' + String(req.user.id).replace(/-/g, '').slice(0, 24).toUpperCase();
 
-        // 1. Claim the payout row (UNIQUE transfer_id = idempotency backstop).
-        const { rows: claimedRows } = await db.query(
-            `INSERT INTO payout_requests (user_id, account_id, transfer_id, idempotency_key, bene_id, amount, currency, destination_account_masked, destination_ifsc, status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'reserving')
-             RETURNING *`,
-            [req.user.id, inrAccount.id, transferId, idempotencyKey, beneId, amount, CURRENCY, '****' + bankAccount.slice(-4), ifsc]
-        );
-        const payout = claimedRows[0];
+        // ── ATOMIC RESERVATION: ONE transaction for claim + debit + ledger ──
+        const client = await db.getClient();
+        let payoutRow = null;
+        let reserved = null;
+        try {
+            await client.query('BEGIN');
 
-        // 2. Atomic reservation: guarded decrement (insufficient funds -> release).
-        const { rows: reserved } = await db.query(
-            'UPDATE accounts SET balance = balance - $2 WHERE id = $1 AND balance >= $2 RETURNING (balance + $2) AS balance_before, balance AS balance_after',
-            [inrAccount.id, amount]
-        );
-        if (reserved.length === 0) {
-            await db.query("UPDATE payout_requests SET status = 'failed_unreserved', failure_reason = 'insufficient funds', updated_at = NOW() WHERE id = $1", [payout.id]);
-            return res.status(400).json({ success: false, message: 'Insufficient INR balance.', payoutId: payout.id });
+            // 1. Claim the payout row. The UNIQUE(user_id, idempotency_key)
+            //    index (migration 010) makes this atomic — a concurrent
+            //    duplicate with the same key gets a unique violation.
+            const claimResult = await client.query(
+                `INSERT INTO payout_requests (user_id, account_id, transfer_id, idempotency_key, bene_id, amount, currency, destination_account_masked, destination_ifsc, status)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'reserving')
+                 RETURNING *`,
+                [req.user.id, inrAccount.id, transferId, idempotencyKey, beneId, amount, CURRENCY, '****' + bankAccount.slice(-4), ifsc]
+            );
+            payoutRow = claimResult.rows[0];
+            payoutId = payoutRow.id;
+
+            // 2. Guarded debit on available_balance (the spendable amount).
+            //    Both balance and available_balance are updated so the
+            //    invariant available_balance = balance - held is preserved.
+            const debitResult = await client.query(
+                `UPDATE accounts
+                 SET balance = balance - $2, available_balance = available_balance - $2
+                 WHERE id = $1 AND available_balance >= $2
+                 RETURNING (balance + $2) AS balance_before, balance AS balance_after,
+                           (available_balance + $2) AS available_before, available_balance AS available_after`,
+                [inrAccount.id, amount]
+            );
+            if (debitResult.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ success: false, message: 'Insufficient available INR balance.', availableBalance: parseFloat(inrAccount.available_balance) });
+            }
+            reserved = debitResult.rows[0];
+
+            // 3. Ledger row for the reservation (withdrawal, processing).
+            //    INSIDE the transaction — same client, no separate connection.
+            await client.query(
+                `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
+                    balance_before, balance_after, description, category, external_reference, metadata)
+                 VALUES ($1, $2, 'withdrawal', 'processing', $3, $4, $5, $6, $7, 'expense', $8, $9)`,
+                [inrAccount.id, req.user.id, -amount, CURRENCY,
+                 parseFloat(reserved.balance_before), parseFloat(reserved.balance_after),
+                 `External payout ${transferId} — to bank ****${bankAccount.slice(-4)}`,
+                 transferId,
+                 JSON.stringify({ provider: active.name, automatic: false, bene_id: beneId })]
+            );
+
+            // 4. Mark the payout as reserved.
+            await client.query(
+                "UPDATE payout_requests SET status = 'reserved', updated_at = NOW() WHERE id = $1",
+                [payoutId]
+            );
+
+            await client.query('COMMIT');
+        } catch (txErr) {
+            try { await client.query('ROLLBACK'); } catch (_) { /* releasing anyway */ }
+
+            // DB-enforced idempotency: a concurrent duplicate with the same
+            // (user_id, idempotency_key) hits the unique index. Return the
+            // original payout as a replay — the provider was NOT called twice.
+            if (txErr.code === '23505' && String(txErr.message || '').includes('payout_idempotency')) {
+                const { rows: existing } = await db.query(
+                    'SELECT * FROM payout_requests WHERE user_id = $1 AND idempotency_key = $2 LIMIT 1',
+                    [req.user.id, idempotencyKey]
+                );
+                if (existing.length > 0) {
+                    res.setHeader('Idempotent-Replay', 'true');
+                    return res.status(200).json({ success: true, replay: true, payout: existing[0] });
+                }
+            }
+            throw txErr;
+        } finally {
+            client.release();
         }
-        const before = parseFloat(reserved[0].balance_before);
-        const after = parseFloat(reserved[0].balance_after);
-        await db.query("UPDATE payout_requests SET status = 'reserved', updated_at = NOW() WHERE id = $1", [payout.id]);
 
-        // 3. Ledger the reservation as a processing withdrawal (money is now held).
-        await createTransaction({
-            account_id: inrAccount.id,
-            user_id: req.user.id,
-            type: 'withdrawal',
-            status: 'processing',
-            amount: -amount,
-            currency: CURRENCY,
-            balance_before: before,
-            balance_after: after,
-            description: `External payout ${transferId} — to bank ****${bankAccount.slice(-4)}`,
-            category: 'expense',
-            external_reference: transferId,
-            metadata: { provider: active.name, automatic: false, bene_id: beneId },
-        });
-
-        // 4. Provider submit. SAFE failure -> refund reservation; AMBIGUOUS -> hold.
+        // ── Provider submission (OUTSIDE the DB transaction) ──
+        // The reservation is committed. If the provider call fails:
+        //   SAFE → refund (atomic transaction below)
+        //   AMBIGUOUS → keep the reservation, flag for reconciliation
         try {
             await active.adapter.ensureBeneficiary({ beneId, name: user.full_name, email: user.email, phone: user.phone, bankAccount, ifsc });
             const accepted = await active.adapter.requestTransfer({ transferId, beneId, amount });
             await db.query(
                 `UPDATE payout_requests SET status = 'submitted', provider_reference_id = $2, utr = $3, submitted_at = NOW(), updated_at = NOW() WHERE id = $1`,
-                [payout.id, accepted.referenceId, accepted.utr]
+                [payoutId, accepted.referenceId, accepted.utr]
             );
             await audit(req.user.id, 'payout_submitted', transferId, { amount, provider: active.name }, req);
             return res.status(200).json({
                 success: true,
                 message: 'Payout submitted to the provider — the terminal status arrives after provider reconciliation.',
-                payoutId: payout.id,
+                payoutId,
                 transferId,
                 status: 'submitted',
             });
         } catch (e) {
             const safe = e.safe === true;
             if (safe) {
-                // Provider explicitly did NOT accept the transfer — refund the
-                // reservation exactly once (guarded credit back).
-                const { rows: refunded } = await db.query(
-                    'UPDATE accounts SET balance = balance + $2 WHERE id = $1 RETURNING (balance - $2) AS balance_before, balance AS balance_after',
-                    [inrAccount.id, amount]
-                );
-                if (refunded.length > 0) {
-                    const rBefore = parseFloat(refunded[0].balance_before);
-                    const rAfter = parseFloat(refunded[0].balance_after);
-                    await createTransaction({
-                        account_id: inrAccount.id,
-                        user_id: req.user.id,
-                        type: 'refund',
-                        status: 'completed',
-                        amount,
-                        currency: CURRENCY,
-                        balance_before: rBefore,
-                        balance_after: rAfter,
-                        description: `Payout ${transferId} rejected by provider — funds returned`,
-                        category: 'income',
-                        external_reference: transferId + '-REFUND',
-                        metadata: { provider: active.name, payout_id: payout.id, reason: e.message },
-                    });
+                // ── SAFE rejection: refund EXACTLY ONCE in an atomic transaction ──
+                const refundClient = await db.getClient();
+                try {
+                    await refundClient.query('BEGIN');
+
+                    // Guarded status transition: only refund if not already terminal.
+                    const claimStatus = await refundClient.query(
+                        `UPDATE payout_requests SET status = 'failed_refunded', failure_reason = $2, updated_at = NOW()
+                         WHERE id = $1 AND status NOT IN ('succeeded', 'failed_refunded', 'failed_unreserved')
+                         RETURNING *`,
+                        [payoutId, e.message]
+                    );
+                    if (claimStatus.rows.length === 0) {
+                        // Already terminal (concurrent reconciliation) — no refund.
+                        await refundClient.query('COMMIT'); // release the claim
+                        return res.status(200).json({ success: true, message: 'Payout already resolved.', payoutId, transferId });
+                    }
+
+                    // Refund ledger guard: only refund if no refund row exists.
+                    const { rows: refundSeen } = await refundClient.query(
+                        'SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1',
+                        [transferId + '-REFUND']
+                    );
+                    if (refundSeen.length === 0) {
+                        const { rows: refunded } = await refundClient.query(
+                            `UPDATE accounts
+                             SET balance = balance + $2, available_balance = available_balance + $2
+                             WHERE id = $1
+                             RETURNING (balance - $2) AS balance_before, balance AS balance_after`,
+                            [inrAccount.id, amount]
+                        );
+                        if (refunded.length > 0) {
+                            await refundClient.query(
+                                `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
+                                    balance_before, balance_after, description, category, external_reference, metadata)
+                                 VALUES ($1, $2, 'refund', 'completed', $3, $4, $5, $6, $7, 'income', $8, $9)`,
+                                [inrAccount.id, req.user.id, amount, CURRENCY,
+                                 parseFloat(refunded[0].balance_before), parseFloat(refunded[0].balance_after),
+                                 `Payout ${transferId} rejected by provider — funds returned`,
+                                 transferId + '-REFUND',
+                                 JSON.stringify({ provider: active.name, payout_id: payoutId, reason: e.message })]
+                            );
+                        }
+                    }
+                    await refundClient.query('COMMIT');
+                } catch (refundErr) {
+                    try { await refundClient.query('ROLLBACK'); } catch (_) {}
+                    throw refundErr;
+                } finally {
+                    refundClient.release();
+                }
+
+                // Notifications AFTER the refund commits — failure-tolerant.
+                try {
                     await createNotification(req.user.id, {
                         type: 'warning',
                         title: 'Payout rejected — funds returned',
                         message: `Your ${CURRENCY} ${amount.toFixed(2)} payout could not be sent and has been returned to your balance.`,
                     });
+                } catch (notifErr) {
+                    console.warn('Payout refund notification failure (refund completed):', notifErr.message);
                 }
-                await db.query("UPDATE payout_requests SET status = 'failed_refunded', failure_reason = $2, updated_at = NOW() WHERE id = $1", [payout.id, e.message]);
                 await audit(req.user.id, 'payout_failed_refunded', transferId, { reason: e.message }, req);
-                return res.status(400).json({ success: false, message: 'Payout rejected by the provider — your funds were returned.', payoutId: payout.id, transferId });
+                return res.status(400).json({ success: false, message: 'Payout rejected by the provider — your funds were returned.', payoutId, transferId });
             }
-            // AMBIGUOUS: never auto-refund — flag for operator reconciliation.
-            await db.query("UPDATE payout_requests SET status = 'reconciliation_required', failure_reason = $2, updated_at = NOW() WHERE id = $1", [payout.id, e.message]);
+
+            // ── AMBIGUOUS: NEVER auto-refund — flag for reconciliation ──
+            await db.query(
+                "UPDATE payout_requests SET status = 'reconciliation_required', failure_reason = $2, updated_at = NOW() WHERE id = $1 AND status NOT IN ('succeeded', 'failed_refunded', 'failed_unreserved')",
+                [payoutId, e.message]
+            );
             await audit(req.user.id, 'payout_reconciliation_required', transferId, { reason: e.message }, req);
             return res.status(202).json({
                 success: true,
                 message: 'Payout submission was interrupted — it is queued for reconciliation. Your funds stay reserved until the provider confirms.',
-                payoutId: payout.id,
+                payoutId,
                 transferId,
                 status: 'reconciliation_required',
             });
         }
     } catch (error) {
         console.error('Payout request error:', error.message);
+        // If we have a payoutId but the error isn't a handled case, flag for
+        // reconciliation — the reservation is committed and must be resolved.
+        if (payoutId && !TERMINAL_STATUSES.includes('pending')) {
+            try {
+                await db.query(
+                    "UPDATE payout_requests SET status = 'reconciliation_required', failure_reason = $2, updated_at = NOW() WHERE id = $1 AND status NOT IN ('succeeded', 'failed_refunded', 'failed_unreserved')",
+                    [payoutId, 'unhandled: ' + error.message]
+                );
+            } catch (_) { /* best-effort flag */ }
+        }
         res.status(500).json({ success: false, message: 'Could not submit the payout request.' });
     }
 });
@@ -291,7 +393,9 @@ router.get('/api/payouts/requests/:id', authenticateToken, async (req, res) => {
 
 // ============================================================
 // POST /api/payouts/requests/:id/reconcile — authoritative status refresh
-// Terminal state comes ONLY from the provider status API (docs).
+// Terminal state from the provider status API ONLY. Idempotent: a
+// status-transition guard prevents concurrent/repeated reconciliations
+// from double-refunding or double-completing.
 // ============================================================
 router.post('/api/payouts/requests/:id/reconcile', authenticateToken, async (req, res) => {
     try {
@@ -305,60 +409,106 @@ router.post('/api/payouts/requests/:id/reconcile', authenticateToken, async (req
         if (!payout || payout.user_id !== req.user.id) {
             return res.status(404).json({ success: false, message: 'Payout request not found.' });
         }
-        if (payout.status === 'succeeded' || payout.status === 'failed_refunded' || payout.status === 'failed_unreserved') {
+        if (TERMINAL_STATUSES.includes(payout.status)) {
             return res.status(200).json({ success: true, payout, message: 'Terminal status already reached.' });
         }
+
+        // Call the provider status API (OUTSIDE any DB transaction).
         const status = await active.adapter.getTransferStatus({ transferId: payout.transfer_id });
         if (!status) {
             return res.status(200).json({ success: true, payout, message: 'Provider has no record yet — retry reconciliation later.' });
         }
+
         if (status.status === 'SUCCESS') {
-            await db.query("UPDATE payout_requests SET status = 'succeeded', utr = $2, completed_at = NOW(), updated_at = NOW() WHERE id = $1", [payout.id, status.utr || payout.utr]);
-            await db.query("UPDATE transactions SET status = 'completed' WHERE external_reference = $1", [payout.transfer_id]);
-            await createNotification(payout.user_id, {
-                type: 'transaction',
-                title: 'Payout completed',
-                message: `${CURRENCY} ${parseFloat(payout.amount).toFixed(2)} was sent to your bank (UTR ${status.utr || 'n/a'}).`,
-            });
-        } else if (status.status === 'ERROR' || status.status === 'REVERSED') {
-            // Provider-authoritative failure AFTER submission: refund exactly
-            // once, guarded by the existence of the refund ledger row.
-            const { rows: refundSeen } = await db.query(
-                'SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1',
-                [payout.transfer_id + '-REFUND']
+            // ── Idempotent success transition ──
+            const { rows: transitioned } = await db.query(
+                `UPDATE payout_requests SET status = 'succeeded', utr = $2, completed_at = NOW(), updated_at = NOW()
+                 WHERE id = $1 AND status NOT IN ('succeeded', 'failed_refunded', 'failed_unreserved')
+                 RETURNING *`,
+                [payout.id, status.utr || payout.utr]
             );
-            if (refundSeen.length === 0) {
-                const { rows: refunded } = await db.query(
-                    'UPDATE accounts SET balance = balance + $2 WHERE id = $1 RETURNING (balance - $2) AS balance_before, balance AS balance_after',
-                    [payout.account_id, parseFloat(payout.amount)]
-                );
-                if (refunded.length > 0) {
-                    const rBefore = parseFloat(refunded[0].balance_before);
-                    const rAfter = parseFloat(refunded[0].balance_after);
-                    await createTransaction({
-                        account_id: payout.account_id,
-                        user_id: payout.user_id,
-                        type: 'refund',
-                        status: 'completed',
-                        amount: parseFloat(payout.amount),
-                        currency: CURRENCY,
-                        balance_before: rBefore,
-                        balance_after: rAfter,
-                        description: `Payout ${payout.transfer_id} failed at the bank — funds returned`,
-                        category: 'income',
-                        external_reference: payout.transfer_id + '-REFUND',
-                        metadata: { provider: active.name, payout_id: payout.id, utr: status.utr },
-                    });
+            if (transitioned.length > 0) {
+                await db.query("UPDATE transactions SET status = 'completed' WHERE external_reference = $1", [payout.transfer_id]);
+                try {
                     await createNotification(payout.user_id, {
-                        type: 'warning',
-                        title: 'Payout failed at the bank — funds returned',
-                        message: `${CURRENCY} ${parseFloat(payout.amount).toFixed(2)} was returned to your balance.`,
+                        type: 'transaction',
+                        title: 'Payout completed',
+                        message: `${CURRENCY} ${parseFloat(payout.amount).toFixed(2)} was sent to your bank (UTR ${status.utr || 'n/a'}).`,
                     });
+                } catch (notifErr) {
+                    console.warn('Payout success notification failure (payout completed):', notifErr.message);
                 }
             }
-            await db.query("UPDATE payout_requests SET status = 'failed_refunded', failure_reason = $2, updated_at = NOW() WHERE id = $1", [payout.id, 'provider reported ' + status.status]);
-            await db.query("UPDATE transactions SET status = 'failed' WHERE external_reference = $1", [payout.transfer_id]);
+        } else if (status.status === 'ERROR' || status.status === 'REVERSED') {
+            // ── Idempotent refund: status-transition guard + atomic transaction ──
+            const refundClient = await db.getClient();
+            try {
+                await refundClient.query('BEGIN');
+
+                // Guard: only transition if not already terminal.
+                const { rows: claimed } = await refundClient.query(
+                    `UPDATE payout_requests SET status = 'failed_refunded', failure_reason = $2, updated_at = NOW()
+                     WHERE id = $1 AND status NOT IN ('succeeded', 'failed_refunded', 'failed_unreserved')
+                     RETURNING *`,
+                    [payout.id, 'provider reported ' + status.status]
+                );
+                if (claimed.length === 0) {
+                    // Already terminal (concurrent reconciliation) — no refund.
+                    await refundClient.query('COMMIT');
+                    const { rows: fresh } = await db.query('SELECT * FROM payout_requests WHERE id = $1 LIMIT 1', [payout.id]);
+                    return res.status(200).json({ success: true, payout: fresh[0], message: 'Already resolved by a concurrent reconciliation.' });
+                }
+
+                // Refund ledger guard: only refund if no refund row exists.
+                const { rows: refundSeen } = await refundClient.query(
+                    'SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1',
+                    [payout.transfer_id + '-REFUND']
+                );
+                if (refundSeen.length === 0) {
+                    const refundAmount = parseFloat(payout.amount);
+                    const { rows: refunded } = await refundClient.query(
+                        `UPDATE accounts
+                         SET balance = balance + $2, available_balance = available_balance + $2
+                         WHERE id = $1
+                         RETURNING (balance - $2) AS balance_before, balance AS balance_after`,
+                        [payout.account_id, refundAmount]
+                    );
+                    if (refunded.length > 0) {
+                        await refundClient.query(
+                            `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
+                                balance_before, balance_after, description, category, external_reference, metadata)
+                             VALUES ($1, $2, 'refund', 'completed', $3, $4, $5, $6, $7, 'income', $8, $9)`,
+                            [payout.account_id, payout.user_id, refundAmount, CURRENCY,
+                             parseFloat(refunded[0].balance_before), parseFloat(refunded[0].balance_after),
+                             `Payout ${payout.transfer_id} failed at the bank — funds returned`,
+                             payout.transfer_id + '-REFUND',
+                             JSON.stringify({ provider: active.name, payout_id: payout.id, utr: status.utr })]
+                        );
+                    }
+                    await refundClient.query(
+                        "UPDATE transactions SET status = 'failed' WHERE external_reference = $1",
+                        [payout.transfer_id]
+                    );
+                }
+                await refundClient.query('COMMIT');
+            } catch (refundErr) {
+                try { await refundClient.query('ROLLBACK'); } catch (_) {}
+                throw refundErr;
+            } finally {
+                refundClient.release();
+            }
+
+            try {
+                await createNotification(payout.user_id, {
+                    type: 'warning',
+                    title: 'Payout failed at the bank — funds returned',
+                    message: `${CURRENCY} ${parseFloat(payout.amount).toFixed(2)} was returned to your balance.`,
+                });
+            } catch (notifErr) {
+                console.warn('Payout refund notification failure (refund completed):', notifErr.message);
+            }
         }
+
         const { rows: fresh } = await db.query('SELECT * FROM payout_requests WHERE id = $1 LIMIT 1', [payout.id]);
         res.status(200).json({ success: true, payout: fresh[0] });
     } catch (error) {

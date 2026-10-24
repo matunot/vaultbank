@@ -100,23 +100,29 @@ afterEach(() => {
 describe('fail-closed configuration', () => {
     test('no env -> adapter refuses before any network attempt', async () => {
         setEnvs({});
-        const fetchSpy = jest.spyOn(global, 'fetch');
+        // Node's native fetch is non-configurable in some versions, so replace
+        // it with a mock instead of spying on it.
+        const fetchMock = jest.fn();
+        const savedFetch = global.fetch;
+        global.fetch = fetchMock;
         try {
             await expect(nium.createPayout({ requestId: 'r1', beneficiary: {} })).rejects.toMatchObject({ code: 'NOT_CONFIGURED' });
-            expect(fetchSpy).not.toHaveBeenCalled();
+            expect(fetchMock).not.toHaveBeenCalled();
         } finally {
-            fetchSpy.mockRestore();
+            global.fetch = savedFetch;
         }
     });
 
     test('live without explicit NIUM_BASE_URL -> fail-closed (undocumented production host is operator-supplied)', async () => {
         setEnvs({ NIUM_ENV: 'live', NIUM_CLIENT_KEY: FAKE_KEY, NIUM_CLIENT_SECRET: FAKE_SECRET });
-        const fetchSpy = jest.spyOn(global, 'fetch');
+        const fetchMock = jest.fn();
+        const savedFetch = global.fetch;
+        global.fetch = fetchMock;
         try {
             await expect(nium.createPayout({ requestId: 'r1' })).rejects.toMatchObject({ code: 'NOT_CONFIGURED' });
-            expect(fetchSpy).not.toHaveBeenCalled();
+            expect(fetchMock).not.toHaveBeenCalled();
         } finally {
-            fetchSpy.mockRestore();
+            global.fetch = savedFetch;
         }
     });
 

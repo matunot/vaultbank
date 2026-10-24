@@ -6,6 +6,7 @@ name: Integration Tests (PostgreSQL)
     branches: [main]
     paths:
       - 'server/routes/accounts.js'
+      - 'server/routes/external-payouts.js'
       - 'server/migrations/**'
       - 'server/__tests__/pgIntegration.test.js'
       - 'server/__tests__/pgHttpIntegration.test.js'
