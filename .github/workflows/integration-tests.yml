@@ -43,7 +43,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install dependencies
         run: npm ci
@@ -54,7 +54,7 @@ jobs:
 
       - name: Run SQL-direct integration tests (real PostgreSQL concurrency)
         run: |
-          npx jest __tests__/pgIntegration.test.js \
+          npx --yes jest@30.5.2 __tests__/pgIntegration.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --testTimeout=60000 \
             --verbose --forceExit
@@ -63,7 +63,7 @@ jobs:
 
       - name: Run HTTP handler integration tests (real route + real middleware + real PostgreSQL)
         run: |
-          npx jest __tests__/pgHttpIntegration.test.js \
+          npx --yes jest@30.5.2 __tests__/pgHttpIntegration.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --testTimeout=120000 \
             --verbose --forceExit
