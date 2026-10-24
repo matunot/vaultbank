@@ -16,6 +16,7 @@ jest.mock('../config/database', () => ({
 }));
 
 const ENV = process['env'];
+const NATIVE_FETCH = global.fetch;
 let nium;            // fresh per test (module caches config + token state)
 const webhooks = () => require('../routes/provider-webhooks');
 let CDB;             // fresh per test: jest.resetModules() re-runs the mock factory,
@@ -92,20 +93,31 @@ beforeEach(() => {
 afterEach(() => {
     delete ENV.NIUM_ENV; delete ENV.NIUM_BASE_URL;
     delete ENV.NIUM_CLIENT_KEY; delete ENV.NIUM_CLIENT_SECRET; delete ENV.NIUM_WEBHOOK_API_KEY;
-    delete global.fetch;
+    if (NATIVE_FETCH === undefined) delete global.fetch;
+    else global.fetch = NATIVE_FETCH;
 });
 
 describe('fail-closed configuration', () => {
     test('no env -> adapter refuses before any network attempt', async () => {
         setEnvs({});
-        await expect(nium.createPayout({ requestId: 'r1', beneficiary: {} })).rejects.toMatchObject({ code: 'NOT_CONFIGURED' });
-        expect(global.fetch).toBeUndefined();
+        const fetchSpy = jest.spyOn(global, 'fetch');
+        try {
+            await expect(nium.createPayout({ requestId: 'r1', beneficiary: {} })).rejects.toMatchObject({ code: 'NOT_CONFIGURED' });
+            expect(fetchSpy).not.toHaveBeenCalled();
+        } finally {
+            fetchSpy.mockRestore();
+        }
     });
 
     test('live without explicit NIUM_BASE_URL -> fail-closed (undocumented production host is operator-supplied)', async () => {
         setEnvs({ NIUM_ENV: 'live', NIUM_CLIENT_KEY: FAKE_KEY, NIUM_CLIENT_SECRET: FAKE_SECRET });
-        await expect(nium.createPayout({ requestId: 'r1' })).rejects.toMatchObject({ code: 'NOT_CONFIGURED' });
-        expect(global.fetch).toBeUndefined();
+        const fetchSpy = jest.spyOn(global, 'fetch');
+        try {
+            await expect(nium.createPayout({ requestId: 'r1' })).rejects.toMatchObject({ code: 'NOT_CONFIGURED' });
+            expect(fetchSpy).not.toHaveBeenCalled();
+        } finally {
+            fetchSpy.mockRestore();
+        }
     });
 
     test('sandbox resolves the documented sandbox host; missing webhook key is reported', async () => {
