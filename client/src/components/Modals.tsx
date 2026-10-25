@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Plus, Receipt, ArrowRightLeft, Globe, Smartphone, CheckCircle2, Loader2, TrendingUp, UserSearch, CreditCard, Zap, Banknote, Building2 } from 'lucide-react';
+import { X, Send, Plus, Receipt, ArrowRightLeft, Globe, Smartphone, CheckCircle2, Loader2, TrendingUp, UserSearch, Banknote, Building2 } from 'lucide-react';
 import RichIcon from './RichIcon';
 import Avatar from './Avatar';
 import { api } from '../api';
