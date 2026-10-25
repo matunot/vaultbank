@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Banknote, CheckCircle2, Loader2, RefreshCw, ShieldCheck, Undo2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, ShieldCheck, Undo2 } from 'lucide-react';
 import { api } from '../api';
 
 interface RequestRow {
