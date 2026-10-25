@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Copy, ExternalLink, Loader2, QrCode, ShieldCheck, X } from 'lucide-react';
 import { api } from '../api';
 
@@ -58,6 +58,7 @@ export function DirectUpiDepositModal({ isOpen, onClose, accountState, onOpenInr
   const [current, setCurrent] = useState<{ intent: DirectUpiIntent; transfer: DirectUpiTransfer } | null>(null);
   const [history, setHistory] = useState<DirectUpiIntent[]>([]);
   const [copied, setCopied] = useState('');
+  const intentKeyRef = useRef<string | null>(null);
 
   const refresh = async () => {
     setError('');
@@ -89,10 +90,16 @@ export function DirectUpiDepositModal({ isOpen, onClose, accountState, onOpenInr
     setBusy(true);
     setError('');
     try {
-      const response = await api.createDirectUpiIntent({ amount: parsed }) as DirectUpiResponse;
+      if (!intentKeyRef.current) {
+        intentKeyRef.current = `dupi-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+      }
+      const response = await api.createDirectUpiIntent({ amount: parsed }, intentKeyRef.current) as DirectUpiResponse;
       if (!response.success || !response.intent || !response.transfer) {
         throw new Error(response.message || 'Could not create a direct UPI request.');
       }
+      // A definitive server response consumes this attempt key. Network failures keep
+      // the key so a retry can recover the same pending intent without duplicating it.
+      intentKeyRef.current = null;
       setCurrent({ intent: response.intent, transfer: response.transfer });
       setHistory((old) => [response.intent!, ...old.filter((item) => item.id !== response.intent!.id)].slice(0, 20));
     } catch (err: any) {
@@ -227,7 +234,7 @@ export function DirectUpiDepositModal({ isOpen, onClose, accountState, onOpenInr
                     <p className="mt-1">Sending the payment does not credit your VaultBank balance automatically. An authorized operator must match the actual bank statement amount and unique UTR first. A screenshot or SMS alone is not proof.</p>
                   </div>
                   <div className="flex gap-2">
-                    <button type="button" onClick={() => setCurrent(null)} className="flex-1 rounded-xl bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15">Create another intent</button>
+                    <button type="button" onClick={() => { setCurrent(null); intentKeyRef.current = null; }} className="flex-1 rounded-xl bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15">Create another intent</button>
                     <button type="button" onClick={() => void refresh()} className="rounded-xl bg-white/10 px-4 py-2.5 text-xs font-bold text-white hover:bg-white/15">Refresh status</button>
                   </div>
                 </div>
