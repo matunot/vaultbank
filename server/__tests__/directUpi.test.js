@@ -169,7 +169,7 @@ describe('VaultBank-owned Direct UPI rail', () => {
       if (query.includes('SELECT id FROM accounts')) return { rows: [] };
       return { rows: [] };
     });
-    const response = await call('/api/direct-upi/intents', { method: 'post', body: { amount: 100 } });
+    const response = await call('/api/direct-upi/intents', { method: 'post', headers: { 'idempotency-key': 'dupi-no-account-0001' }, body: { amount: 100 } });
     expect(response.code).toBe(409);
     expect(response.body.code).toBe('INR_ACCOUNT_REQUIRED');
     expect(CDB.db.query.mock.calls.some(([sql]) => String(sql).includes('INSERT INTO direct_upi_deposit_intents'))).toBe(false);
