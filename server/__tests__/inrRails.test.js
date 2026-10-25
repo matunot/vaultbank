@@ -484,6 +484,26 @@ describe('payouts rail: reservation-first through a real provider only', () => {
         expect(cashfreePayouts.requestTransfer).not.toHaveBeenCalled();
     });
 
+    test('missing real beneficiary address -> 400 before payout reservation', async () => {
+        const sqls = scriptDb();
+        const res = await request({ address1: '', city: '', state: '', pincode: '' });
+        expect(res.code).toBe(400);
+        expect(res.body.code).toBe('PAYOUTS_BENEFICIARY_ADDRESS_REQUIRED');
+        expect(sqls.some((s) => s.includes('balance = balance - $2'))).toBe(false);
+        expect(cashfreePayouts.ensureBeneficiary).not.toHaveBeenCalled();
+        expect(cashfreePayouts.requestTransfer).not.toHaveBeenCalled();
+    });
+
+    test('missing real profile phone -> 400 before payout reservation', async () => {
+        const sqls = scriptDb();
+        CDB.findUserById.mockResolvedValue({ id: 'u-1', full_name: 'Test User', email: 'test@example.com', phone: '' });
+        const res = await request();
+        expect(res.code).toBe(400);
+        expect(res.body.code).toBe('PAYOUTS_CUSTOMER_DETAILS_REQUIRED');
+        expect(sqls.some((s) => s.includes('balance = balance - $2'))).toBe(false);
+        expect(cashfreePayouts.requestTransfer).not.toHaveBeenCalled();
+    });
+
     test('happy path: atomic reservation + beneficiary + provider transfer', async () => {
         const sqls = payoutPooledClient();
         cashfreePayouts.ensureBeneficiary.mockResolvedValue({ beneId: 'VBU-U1', existed: false });
