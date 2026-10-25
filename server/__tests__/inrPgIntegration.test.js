@@ -232,7 +232,7 @@ describeIfDb('INR rails integration: real PostgreSQL + real routes + real HMAC',
             .set('Authorization', `Bearer ${authToken}`)
             .set('Idempotency-Key', key)
             .set('Content-Type', 'application/json')
-            .send(Object.assign({ amount: '100.00', bankAccount: '001111222333', ifsc: 'HDFC0000001' }, body));
+            .send(Object.assign({ amount: '100.00', bankAccount: '001111222333', ifsc: 'HDFC0000001', address1: '12 Test Road', city: 'Bhopal', state: 'Madhya Pradesh', pincode: '462001' }, body));
     }
 
     // ── Schema ──────────────────────────────────────────────────────────────
