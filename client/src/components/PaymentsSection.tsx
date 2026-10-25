@@ -273,7 +273,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       key: 'directupi', name: 'VaultBank Direct UPI', desc: 'Your configured UPI VPA + QR; statement verification, no payment processor',
       ready: inrRail ? inrRail.directUpi : null, icon: QrCode, color: '#10b981',
       hint: inrRail?.directUpi ? 'VaultBank-controlled · manual bank-statement verification' : 'Not configured — own bank-linked VPA required',
-      action: inrRail?.directUpi ? () => { setCurrency('INR'); setShowDirectUpi(true); } : undefined, actionLabel: 'Receive',
+      action: () => { setCurrency('INR'); setShowDirectUpi(true); }, actionLabel: 'Open',
     },
     {
       key: 'collections', name: 'INR Receiving Details', desc: 'Provider-issued per-user account + IFSC, auto-credited',
@@ -370,7 +370,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     if (currency === 'USD' && onOpenModal) onOpenModal('deposit');
-                    if (currency === 'INR') { if (inrState === 'none') openInrWallet(); else if (inrRail?.directUpi) setShowDirectUpi(true); else fetchMyDetails(); }
+                    if (currency === 'INR') setShowDirectUpi(true);
                   }}
                   className="px-5 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 glow-blue"
                 >
@@ -432,8 +432,8 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { icon: Send, label: 'Send Money', desc: `VaultBank user (${currency})`, color: '#3b82f6', action: () => setShowSend(true) },
-          { icon: QrCode, label: 'Receive', desc: 'Your INR receiving options', color: '#10b981', action: () => { setCurrency('INR'); if (inrRail?.directUpi) setShowDirectUpi(true); else fetchMyDetails(); } },
-          { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : 'INR deposit options', color: '#06b6d4', action: () => { if (currency === 'USD' && onOpenModal) onOpenModal('deposit'); else if (inrRail?.directUpi) setShowDirectUpi(true); else fetchMyDetails(); } },
+          { icon: QrCode, label: 'Receive', desc: 'VaultBank Direct UPI', color: '#10b981', action: () => { setCurrency('INR'); setShowDirectUpi(true); } },
+          { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : 'VaultBank Direct UPI', color: '#06b6d4', action: () => { if (currency === 'USD' && onOpenModal) onOpenModal('deposit'); else { setCurrency('INR'); setShowDirectUpi(true); } } },
           { icon: Banknote, label: 'Withdraw INR', desc: 'Cashfree payout only; no USD bank payout rail', color: '#f59e0b', action: () => { setCurrency('INR'); setShowWithdraw(true); } },
         ].map((a, i) => (
           <motion.button
@@ -603,7 +603,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
               <p className="font-bold text-white text-sm">{r.name}</p>
               <p className="text-xs text-white/40 flex-1">{r.desc}</p>
               {r.hint && <p className="text-[10px] text-white/30">{r.hint}</p>}
-              {r.ready && r.action && (
+              {((r.ready && r.action) || (r.key === 'directupi' && r.action)) && (
                 <button onClick={r.action} className="mt-1 px-3 py-2 rounded-lg bg-white/10 text-xs font-bold text-white hover:bg-white/15 flex items-center gap-1.5 w-fit">
                   {r.actionLabel === 'Send' && <Send className="w-3 h-3" />}
                   {r.actionLabel === 'Withdraw' && <Banknote className="w-3 h-3" />}
