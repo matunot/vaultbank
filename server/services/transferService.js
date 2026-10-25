@@ -14,10 +14,15 @@
  *   3. Success returns { transferId, senderBalance, newSenderBalance,
  *      recipientBalance }; expected failures return { error, code, message };
  *      Unexpected failures throw (ROLLBACK handled here).
- *   4. A lost COMMIT acknowledgement returns { ambiguous: true, code:
- *      'TRANSFER_OUTCOME_UNKNOWN' } after checking a FRESH pool connection.
- *      The transfer may have committed — callers must never report a
- *      definitive failure or retry with a different idempotency key.
+ *   4. A lost COMMIT acknowledgement never produces a definitive failure from
+ *      one read. With an idempotency key, a fresh-connection INSERT with the
+ *      SAME key waits on the unique constraint until the original transaction
+ *      resolves: our INSERT succeeding proves it aborted, a conflicting claim
+ *      plus the linked transfer proves it committed. Without a key, bounded
+ *      re-reads can prove a commit but never an abort. Anything else returns
+ *      { ambiguous: true, code: 'TRANSFER_OUTCOME_UNKNOWN' }.
+ *      Callers must never report a definitive failure or retry with a
+ *      different idempotency key.
  *   5. Idempotent replay compares the STORED transfer (amount, currency,
  *      sender, recipient), never the client's values. Same key + different
  *      material parameters returns IDEMPOTENCY_CONFLICT.
@@ -33,6 +38,10 @@
  */
 
 const { db, createNotification } = require('../config/database');
+
+const PROBE_LOCK_TIMEOUT = '5s';
+const UNKEYED_READ_ATTEMPTS = 3;
+const UNKEYED_READ_DELAY_MS = 200;
 
 /**
  * Why a guarded UPDATE matched no row. Diagnostic only — the guarded UPDATE
@@ -51,11 +60,19 @@ async function describeAccount(client, accountId, currency) {
 }
 
 /**
- * After a failed COMMIT the outcome is unknown. A FRESH pooled connection is
- * authoritative: the transfer row and its ledger rows commit atomically, so
- * their presence proves the commit landed.
+ * A SQLSTATE in the COMMIT response means the server processed the COMMIT and
+ * rejected/aborted the transaction — a definitive non-commit. Connection-class
+ * errors (08xxx) and server shutdown/crash (57P0x) carry no such proof.
  */
-async function verifyTransferOutcome(transferId) {
+function isDefinitiveCommitRejection(err) {
+    const code = err && typeof err.code === 'string' ? err.code : '';
+    if (!/^[0-9A-Z]{5}$/.test(code)) return false;
+    if (code.startsWith('08')) return false;
+    if (code === '57P01' || code === '57P02' || code === '57P03') return false;
+    return true;
+}
+
+async function readTransferOutcome(transferId) {
     try {
         const { rows } = await db.query(
             `SELECT t.id,
@@ -65,7 +82,7 @@ async function verifyTransferOutcome(transferId) {
              FROM transfers t WHERE t.id = $1`,
             [transferId]
         );
-        if (rows.length === 0) return { status: 'not_committed' };
+        if (rows.length === 0) return { status: 'not_visible' };
         const r = rows[0];
         return {
             status: 'committed',
@@ -75,6 +92,90 @@ async function verifyTransferOutcome(transferId) {
         };
     } catch (_) {
         return { status: 'unknown' };
+    }
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Resolve a lost COMMIT acknowledgement from authoritative records.
+ *
+ * Keyed transfer: the original transaction inserted the idempotency claim in
+ * the SAME transaction as the money. Re-inserting the SAME key on a fresh
+ * connection therefore SERIALIZES with the original:
+ *   - our INSERT succeeds  → the original ended without committing (proof)
+ *   - conflict + our transfer linked → committed (proof)
+ *   - lock timeout / error → still unknown (never a definitive failure)
+ *
+ * Unkeyed transfer: there is no row to wait on. Bounded re-reads can prove a
+ * commit; an absent row can never prove an abort, so it stays unknown.
+ */
+async function resolveTransferOutcome({ transferId, userId, currency, idempotencyKey }) {
+    if (!idempotencyKey) {
+        for (let attempt = 0; attempt < UNKEYED_READ_ATTEMPTS; attempt++) {
+            const outcome = await readTransferOutcome(transferId);
+            if (outcome.status === 'committed') return outcome;
+            if (attempt < UNKEYED_READ_ATTEMPTS - 1) await sleep(UNKEYED_READ_DELAY_MS);
+        }
+        return { status: 'unknown' };
+    }
+
+    let probe = null;
+    let open = false;
+    try {
+        probe = await db.getClient();
+        await probe.query('BEGIN');
+        open = true;
+        await probe.query(`SET LOCAL lock_timeout = '${PROBE_LOCK_TIMEOUT}'`);
+
+        // Waits for any in-flight transaction holding this exact claim.
+        const claim = await probe.query(
+            `INSERT INTO transfer_idempotency (user_id, currency, idempotency_key)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (user_id, currency, idempotency_key) DO NOTHING
+             RETURNING id`,
+            [userId, currency, idempotencyKey]
+        );
+        if (claim.rowCount > 0) {
+            // No conflicting claim survived: the original aborted.
+            await probe.query('ROLLBACK');
+            open = false;
+            return { status: 'not_committed' };
+        }
+
+        const { rows } = await probe.query(
+            `SELECT ti.transfer_id,
+                    t.id AS committed_transfer,
+                    (SELECT balance_before FROM transactions WHERE reference_id = t.id AND type = 'transfer_out' LIMIT 1) AS out_before,
+                    (SELECT balance_after  FROM transactions WHERE reference_id = t.id AND type = 'transfer_out' LIMIT 1) AS out_after,
+                    (SELECT balance_after  FROM transactions WHERE reference_id = t.id AND type = 'transfer_in'  LIMIT 1) AS in_after
+             FROM transfer_idempotency ti
+             LEFT JOIN transfers t ON t.id = ti.transfer_id
+             WHERE ti.user_id = $1 AND ti.currency = $2 AND ti.idempotency_key = $3
+             LIMIT 1`,
+            [userId, currency, idempotencyKey]
+        );
+        await probe.query('ROLLBACK');
+        open = false;
+
+        const row = rows[0];
+        // A claim exists but not for OUR transfer: never guess.
+        if (!row || row.transfer_id !== transferId || !row.committed_transfer) return { status: 'unknown' };
+        return {
+            status: 'committed',
+            senderBalance: row.out_before == null ? null : parseFloat(row.out_before),
+            newSenderBalance: row.out_after == null ? null : parseFloat(row.out_after),
+            recipientBalance: row.in_after == null ? null : parseFloat(row.in_after),
+        };
+    } catch (_) {
+        return { status: 'unknown' };
+    } finally {
+        if (probe) {
+            if (open) { try { await probe.query('ROLLBACK'); } catch (_) { /* destroy below */ } }
+            probe.release(true);
+        }
     }
 }
 
@@ -102,12 +203,15 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
 
         // ── Idempotency claim ──
         if (idempotencyKey) {
-            // One key may only ever mean ONE transfer across both routes. The
-            // claim table is unique per (user, currency, key), so reuse with a
-            // different currency is checked here.
-            // shortcut: two concurrent different-currency claims could both
-            // pass this SELECT; upgrade to UNIQUE(user_id, idempotency_key)
-            // if that race ever matters.
+            // One key may only ever mean ONE transfer across BOTH routes and
+            // currencies. This advisory lock serializes same-key claims on
+            // this user (needed on deployments where migration 012's global
+            // unique index is not applied yet; 009 alone is per-currency).
+            await client.query(
+                'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))',
+                [userId, idempotencyKey]
+            );
+
             const { rows: otherCurrency } = await client.query(
                 `SELECT currency FROM transfer_idempotency
                  WHERE user_id = $1 AND idempotency_key = $2 AND currency <> $3 LIMIT 1`,
@@ -119,10 +223,12 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
                          message: 'This idempotency key was already used for a different transfer.' };
             }
 
+            // No conflict target: handles BOTH the 009 constraint and the
+            // 012 global unique index, and never errors on an unmigrated DB.
             const claim = await client.query(
                 `INSERT INTO transfer_idempotency (user_id, currency, idempotency_key)
                  VALUES ($1, $2, $3)
-                 ON CONFLICT (user_id, currency, idempotency_key) DO NOTHING
+                 ON CONFLICT DO NOTHING
                  RETURNING id`,
                 [userId, currency, idempotencyKey]
             );
@@ -135,9 +241,9 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
                     `SELECT ti.transfer_id, t.amount, t.currency, t.from_account_id, t.to_account_id
                      FROM transfer_idempotency ti
                      LEFT JOIN transfers t ON t.id = ti.transfer_id
-                     WHERE ti.user_id = $1 AND ti.currency = $2 AND ti.idempotency_key = $3
+                     WHERE ti.user_id = $1 AND ti.idempotency_key = $2
                      LIMIT 1`,
-                    [userId, currency, idempotencyKey]
+                    [userId, idempotencyKey]
                 );
                 const prior = existing[0];
                 if (prior && prior.transfer_id) {
@@ -258,12 +364,16 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
         try {
             await client.query('COMMIT');
         } catch (commitErr) {
-            // The acknowledgement was lost — the transaction may have
-            // committed. The connection's protocol state is unknown: destroy
-            // it, and never report a definitive failure without evidence.
+            // The acknowledgement was lost — the transaction may still commit.
+            // The connection's protocol state is unknown: destroy it, and never
+            // report a definitive failure without proof.
             destroyClient = true;
-            console.warn('Transfer COMMIT acknowledgement failed; verifying outcome:', commitErr.message);
-            const outcome = await verifyTransferOutcome(transferId);
+            console.warn('Transfer COMMIT acknowledgement failed; resolving outcome:', commitErr.message);
+            if (isDefinitiveCommitRejection(commitErr)) {
+                return { error: 'commit_failed', code: 'COMMIT_FAILED',
+                         message: 'The transfer was not committed.' };
+            }
+            const outcome = await resolveTransferOutcome({ transferId, userId, currency, idempotencyKey });
             if (outcome.status === 'committed') {
                 return {
                     transferId,

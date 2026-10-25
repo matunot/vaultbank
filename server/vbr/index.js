@@ -77,6 +77,36 @@ async function ensureTables() {
     tablesReady = true;
 }
 
+/**
+ * Move an ambiguous intent to reconciliation_required WITHOUT ever touching a
+ * concurrently committed 'succeeded'. The WHERE guard is re-evaluated under
+ * the row lock: if the original transfer transaction is still resolving, this
+ * waits (bounded) and then sees its final state. Returns null on no match or
+ * timeout — the caller must re-read and decide.
+ */
+async function markReconciliationRequired(intentId, reason) {
+    let client = null;
+    try {
+        client = await db.getClient();
+        await client.query('BEGIN');
+        await client.query("SET LOCAL lock_timeout = '2s'");
+        const { rows } = await client.query(
+            `UPDATE payment_intents
+                SET state = 'reconciliation_required', failure_reason = $2, updated_at = NOW()
+              WHERE id = $1 AND state = 'created'
+              RETURNING *`,
+            [intentId, reason]
+        );
+        await client.query('COMMIT');
+        return rows[0] || null;
+    } catch (_) {
+        if (client) { try { await client.query('ROLLBACK'); } catch (_) { /* release below */ } }
+        return null;
+    } finally {
+        if (client) client.release(false);
+    }
+}
+
 // ── Availability: which VBR methods are genuinely ready? ──
 const { activeCollectionsProvider, collectionsAvailability } = require('../collections');
 const { activePayoutProvider, payoutAvailability } = require('../payouts');
@@ -329,73 +359,95 @@ router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
             }
             if (result.ambiguous) {
                 // The COMMIT acknowledgement was lost AND the service could not
-                // verify the outcome on a fresh connection. NEVER mark the
-                // intent failed here — the transfer may have committed. The
-                // intent row is authoritative evidence: its final state was
-                // written in the SAME transaction as the money.
+                // prove either outcome. A persisted 'created' intent is NOT
+                // proof of non-commit: the original transaction may still be
+                // resolving. Only 'succeeded' proves the money moved; only
+                // 'failed'/'cancelled' prove it did not.
                 let fresh = null;
                 try {
                     const { rows } = await db.query('SELECT * FROM payment_intents WHERE id = $1 LIMIT 1', [intent.id]);
                     fresh = rows[0] || null;
                 } catch (_) { fresh = null; }
 
-                if (fresh && fresh.state === 'succeeded') {
-                    // Committed with the transfer — money moved.
-                    return res.status(200).json({
-                        success: true,
-                        intent: fresh,
-                        transferId: fresh.transfer_id,
-                        message: 'Transfer committed (the commit acknowledgement was lost; outcome verified from the persisted intent).',
+                const committedResponse = (row) => res.status(200).json({
+                    success: true,
+                    intent: row,
+                    transferId: row.transfer_id,
+                    message: 'Transfer committed (the commit acknowledgement was lost; outcome verified from the persisted intent).',
+                });
+                const failedResponse = (row) => res.status(500).json({
+                    success: false, intent: row, code: 'COMMIT_FAILED',
+                    message: 'Transfer execution failed — no money moved.',
+                });
+
+                if (fresh && fresh.state === 'succeeded') return committedResponse(fresh);
+                if (fresh && (fresh.state === 'failed' || fresh.state === 'cancelled')) return failedResponse(fresh);
+
+                // Still 'created' (or unreadable). Race-safe: this UPDATE only
+                // matches 'created' and waits on the original transaction's row
+                // lock, so a concurrently committed 'succeeded' is never
+                // overwritten.
+                const marked = await markReconciliationRequired(
+                    intent.id,
+                    'Commit acknowledgement lost — transfer outcome unknown, operator review required'
+                );
+                if (marked) {
+                    return res.status(503).json({
+                        success: false,
+                        code: 'TRANSFER_OUTCOME_UNKNOWN',
+                        intent: marked,
+                        message: 'The transfer outcome could not be confirmed — money may have moved. Do not retry with a new idempotency key.',
                     });
                 }
-                if (fresh && fresh.state === 'created') {
-                    // Still 'created' proves the transaction did NOT commit —
-                    // the hook would have made it 'succeeded' atomically.
-                    const { rows: failed } = await db.query(
-                        `UPDATE payment_intents SET state = 'failed', failure_reason = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
-                        [intent.id, 'Commit did not land — transfer verified as not committed']
-                    );
-                    return res.status(500).json({
-                        success: false, intent: failed[0] || fresh, code: 'COMMIT_FAILED',
-                        message: 'Transfer execution failed — no money moved.',
-                    });
-                }
-                if (fresh && (fresh.state === 'failed' || fresh.state === 'cancelled')) {
-                    return res.status(500).json({
-                        success: false, intent: fresh, code: 'COMMIT_FAILED',
-                        message: 'Transfer execution failed — no money moved.',
-                    });
-                }
-                // Outcome genuinely unknown (the persisted intent is unreadable
-                // too). Retain / set reconciliation_required — never report a
-                // definitive result, never retry the money movement.
-                let marked = null;
+
+                // The guarded update matched nothing (a late commit landed
+                // while we waited) or timed out. Re-read once.
+                let after = null;
                 try {
-                    const { rows } = await db.query(
-                        `UPDATE payment_intents SET state = 'reconciliation_required', failure_reason = $2, updated_at = NOW()
-                         WHERE id = $1 AND state = 'created' RETURNING *`,
-                        [intent.id, 'Commit acknowledgement lost — transfer outcome unknown, operator review required']
-                    );
-                    marked = rows[0] || null;
-                } catch (_) { /* database unreachable — intent state stays as persisted */ }
+                    const { rows } = await db.query('SELECT * FROM payment_intents WHERE id = $1 LIMIT 1', [intent.id]);
+                    after = rows[0] || null;
+                } catch (_) { after = null; }
+                if (after && after.state === 'succeeded') return committedResponse(after);
+                if (after && (after.state === 'failed' || after.state === 'cancelled')) return failedResponse(after);
+
                 return res.status(503).json({
                     success: false,
                     code: 'TRANSFER_OUTCOME_UNKNOWN',
-                    intent: marked || fresh || intent,
+                    intent: after || fresh || intent,
                     message: 'The transfer outcome could not be confirmed — money may have moved. Do not retry with a new idempotency key.',
                 });
             }
             if (result.error) {
                 // Expected failure — ROLLBACK already ran; nothing moved.
-                const { rows: failed } = await db.query(
-                    `UPDATE payment_intents SET state = 'failed', failure_reason = $2, updated_at = NOW() WHERE id = $1 RETURNING *`,
+                // Guard 'succeeded': a definitive failure must never overwrite
+                // a state that proves the money moved.
+                const { rows: failedRows } = await db.query(
+                    `UPDATE payment_intents SET state = 'failed', failure_reason = $2, updated_at = NOW()
+                     WHERE id = $1 AND state <> 'succeeded' RETURNING *`,
                     [intent.id, result.message || result.code]
                 );
+                let failed = failedRows[0] || null;
+                if (!failed) {
+                    let current = null;
+                    try {
+                        const { rows } = await db.query('SELECT * FROM payment_intents WHERE id = $1 LIMIT 1', [intent.id]);
+                        current = rows[0] || null;
+                    } catch (_) { current = null; }
+                    if (current && current.state === 'succeeded') {
+                        return res.status(200).json({
+                            success: true,
+                            intent: current,
+                            transferId: current.transfer_id,
+                            message: 'Transfer already committed.',
+                        });
+                    }
+                    failed = current || intent;
+                }
                 const statusCode = result.code === 'TRANSFER_IN_PROGRESS' || result.code === 'IDEMPOTENCY_CONFLICT' ? 409
                     : result.code === 'COMMIT_FAILED' ? 500
                     : result.code === 'RECIPIENT_NOT_FOUND' || result.code === 'SENDER_ACCOUNT_NOT_FOUND' ? 404
                     : 400;
-                return res.status(statusCode).json({ success: false, code: result.code, intent: failed[0], message: result.message });
+                return res.status(statusCode).json({ success: false, code: result.code, intent: failed, message: result.message });
             }
 
             // Success: the hook already set state='succeeded' + transfer_id

@@ -73,6 +73,31 @@ describeIfDb('PostgreSQL integration: transfer concurrency safety', () => {
         await pool.query('DELETE FROM transfer_idempotency WHERE idempotency_key = $1', [key]);
     });
 
+    // ── 1b. Global uniqueness: the same key cannot span two currencies ──
+    test('global idempotency: same (user_id, key) cannot be claimed in two currencies', async () => {
+        if (!pool) return;
+        const { userIds } = testData;
+        const key = `itest-global-${Date.now()}`;
+        try {
+            await pool.query(
+                `INSERT INTO transfer_idempotency (user_id, currency, idempotency_key)
+                 VALUES ($1, 'USD', $2)`,
+                [userIds.alice, key]
+            );
+            await expect(
+                pool.query(
+                    `INSERT INTO transfer_idempotency (user_id, currency, idempotency_key)
+                     VALUES ($1, 'INR', $2)`,
+                    [userIds.alice, key]
+                )
+            ).rejects.toMatchObject({ code: '23505' });
+        } finally {
+            // Never leave a cross-currency duplicate behind: 012's preflight
+            // would (correctly) refuse to run on the next suite start.
+            await pool.query('DELETE FROM transfer_idempotency WHERE idempotency_key = $1', [key]);
+        }
+    });
+
     // ── 2. Available-balance: concurrent debits cannot overspend ──
     test('concurrent guarded debits: cannot spend more than available_balance', async () => {
         if (!pool) return;

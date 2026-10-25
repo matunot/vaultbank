@@ -168,8 +168,11 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
     // dangerous ambiguity), 'aborted' really rolls back first.
     function loseNextCommitAck(mode) {
         const original = CDB.db.getClient;
+        let armed = true;
         CDB.db.getClient = async () => {
             const inner = await original();
+            if (!armed) return inner; // resolution probes get a healthy connection
+            armed = false;
             return {
                 query: async (sql, params) => {
                     if (String(sql).trim().toUpperCase() === 'COMMIT') {
@@ -194,6 +197,82 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
             return original(sql, params);
         };
         return () => { CDB.db.query = original; };
+    }
+
+    // Make selected POOLED-CLIENT queries fail (the ambiguity probe runs on a
+    // dedicated client, not db.query).
+    function failClientQueriesOn(fragments) {
+        const original = CDB.db.getClient;
+        CDB.db.getClient = async () => {
+            const inner = await original();
+            return {
+                query: async (sql, params) => {
+                    if (fragments.some((f) => String(sql).includes(f))) throw new Error('connection lost');
+                    return inner.query(sql, params);
+                },
+                release: (destroy) => inner.release(destroy),
+            };
+        };
+        return () => { CDB.db.getClient = original; };
+    }
+
+    // Lose the COMMIT acknowledgement immediately, but delay the REAL
+    // COMMIT/ROLLBACK until the test opens the gate. This models a server
+    // still resolving the commit after the client lost the ack: another
+    // connection cannot see the transfer, and the persisted intent still
+    // reads 'created', while the commit may still land.
+    function deferNextCommitAck(mode) {
+        const originalGetClient = CDB.db.getClient;
+        const originalQuery = CDB.db.query;
+        let armed = true;
+        let deferred = null;
+        let clientCount = 0;
+        let openGate;
+        const gate = new Promise((resolve) => { openGate = resolve; });
+        let onVerificationStarted;
+        const verificationStarted = new Promise((resolve) => { onVerificationStarted = resolve; });
+        let onMarkerStarted;
+        const markerStarted = new Promise((resolve) => { onMarkerStarted = resolve; });
+
+        // Old-style verification used db.query — keep the signal working so
+        // this test fails fast (instead of hanging) against the pre-fix code.
+        CDB.db.query = async (sql, params) => {
+            if (String(sql).includes('FROM transfers t WHERE t.id = $1')) onVerificationStarted();
+            return originalQuery(sql, params);
+        };
+        CDB.db.getClient = async () => {
+            const inner = await originalGetClient();
+            clientCount += 1;
+            if (clientCount === 2) onVerificationStarted(); // the ambiguity probe
+            if (clientCount === 3) onMarkerStarted();        // the reconciliation update
+            if (!armed) return inner;
+            armed = false;
+            return {
+                query: async (sql, params) => {
+                    if (String(sql).trim().toUpperCase() === 'COMMIT') {
+                        deferred = (async () => {
+                            await gate;
+                            await inner.query(mode === 'committed' ? 'COMMIT' : 'ROLLBACK');
+                        })();
+                        const err = new Error('Connection terminated unexpectedly');
+                        err.code = 'ECONNRESET';
+                        throw err;
+                    }
+                    return inner.query(sql, params);
+                },
+                release: (destroy) => {
+                    // Keep the connection alive until the deferred commit/rollback
+                    // runs; resolution waits on the gate, so this is safe.
+                    Promise.resolve(deferred).catch(() => {}).finally(() => inner.release(destroy));
+                },
+            };
+        };
+        return {
+            verificationStarted,
+            markerStarted,
+            openGate,
+            restore: () => { CDB.db.getClient = originalGetClient; CDB.db.query = originalQuery; },
+        };
     }
 
     // ── Test 1: Successful USD internal transfer — full pipeline + intent linkage ──
@@ -675,7 +754,7 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
     });
 
     // ── Test 16: Lost COMMIT ack — the transaction did NOT commit ──
-    test('lost COMMIT acknowledgement with no commit: intent failed, no money moved', async () => {
+    test('lost COMMIT acknowledgement without a key: no proof of abort → 503 outcome-unknown, no money moved', async () => {
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
         const bob = testData.accounts.bob_usd;
@@ -692,24 +771,139 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
             restore();
         }
 
-        expect(response.status).toBe(500);
+        // No idempotency claim to wait on: an absent transfer row can never
+        // prove an abort, so the only honest answer is UNKNOWN.
+        expect(response.status).toBe(503);
         expect(response.body.success).toBe(false);
-        expect(response.body.intent.state).toBe('failed');
-        expect(response.body.intent.failure_reason).toContain('not committed');
+        expect(response.body.code).toBe('TRANSFER_OUTCOME_UNKNOWN');
+        expect(response.body.intent.state).toBe('reconciliation_required');
         expect(await transferCount(alice.id, bob.id)).toBe(0);
         expect(parseFloat((await getAccount(alice.id)).balance)).toBe(1000);
         expect(parseFloat((await getAccount(bob.id)).balance)).toBe(1000);
+
+        const intent = await getIntent(response.body.intent.id);
+        expect(intent.state).toBe('reconciliation_required');
+        expect(intent.failure_reason).toContain('outcome unknown');
     });
 
-    // ── Test 17: Ambiguous ack, verification unavailable — intent proves success ──
-    test('ambiguous commit with unreadable transfer record: persisted succeeded intent wins, never failed', async () => {
+    // ── Test 17: Delayed COMMIT — invisible row + 'created' intent, then the commit lands ──
+    test('delayed COMMIT: transfer invisible and intent still created, then the commit lands → verified success, never failure', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setBalances([alice.id, bob.id], 1000);
+        const key = `vbrit-delayed-commit-${Date.now()}`;
+
+        const ctl = deferNextCommitAck('committed');
+        let response;
+        try {
+            // Promise.resolve() starts the lazy supertest request immediately.
+            const pending = Promise.resolve(postIntent(
+                { direction: 'send', method: 'internal', amount: '250.00', currency: 'USD', counterparty: `${testPrefix}-bob@test.invalid` },
+                { 'idempotency-key': key }
+            ));
+            await ctl.verificationStarted;
+
+            // The dangerous state: the COMMIT has not landed yet, so another
+            // connection sees no transfer and a still-'created' intent.
+            // Neither observation proves the transaction aborted.
+            const { rows: visible } = await pool.query(
+                'SELECT COUNT(*)::int AS n FROM transfers WHERE from_account_id = $1 AND to_account_id = $2',
+                [alice.id, bob.id]
+            );
+            expect(visible[0].n).toBe(0);
+            const { rows: pendingIntent } = await pool.query(
+                'SELECT state FROM payment_intents WHERE user_id = $1 AND idempotency_key = $2',
+                [testData.userIds.alice, key]
+            );
+            expect(pendingIntent[0].state).toBe('created');
+
+            ctl.openGate(); // the original transaction COMMITs now
+            response = await pending;
+        } finally {
+            ctl.openGate();
+            ctl.restore();
+        }
+        await new Promise((resolve) => setImmediate(resolve));
+
+        // No definitive failure while the outcome was still resolving.
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.intent.state).toBe('succeeded');
+        expect(response.body.transferId).toBeTruthy();
+
+        expect(await transferCount(alice.id, bob.id)).toBe(1);
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(750);
+        expect(parseFloat((await getAccount(bob.id)).balance)).toBe(1250);
+        const intent = await getIntent(response.body.intent.id);
+        expect(intent.state).toBe('succeeded'); // never overwritten by a failure
+        expect(intent.failure_reason).toBeNull();
+        expect(intent.transfer_id).toBe(response.body.transferId);
+
+        await cleanupTransfer(response.body.transferId);
+    });
+
+    // ── Test 18: Delayed COMMIT, then a real abort — the probe proves no commit ──
+    test('delayed COMMIT then abort: invisible row + created intent, probe proves no commit → 500 failed, no money', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setBalances([alice.id, bob.id], 1000);
+        const key = `vbrit-delayed-abort-${Date.now()}`;
+
+        const ctl = deferNextCommitAck('aborted');
+        let response;
+        try {
+            const pending = Promise.resolve(postIntent(
+                { direction: 'send', method: 'internal', amount: '250.00', currency: 'USD', counterparty: `${testPrefix}-bob@test.invalid` },
+                { 'idempotency-key': key }
+            ));
+            await ctl.verificationStarted;
+
+            const { rows: visible } = await pool.query(
+                'SELECT COUNT(*)::int AS n FROM transfers WHERE from_account_id = $1 AND to_account_id = $2',
+                [alice.id, bob.id]
+            );
+            expect(visible[0].n).toBe(0);
+            const { rows: pendingIntent } = await pool.query(
+                'SELECT state FROM payment_intents WHERE user_id = $1 AND idempotency_key = $2',
+                [testData.userIds.alice, key]
+            );
+            expect(pendingIntent[0].state).toBe('created');
+
+            ctl.openGate(); // the original transaction ROLLBACKs now
+            response = await pending;
+        } finally {
+            ctl.openGate();
+            ctl.restore();
+        }
+        await new Promise((resolve) => setImmediate(resolve));
+
+        // The serialized probe waited for the transaction to end without
+        // committing: now a definitive failure is honest.
+        expect(response.status).toBe(500);
+        expect(response.body.success).toBe(false);
+        expect(response.body.code).toBe('COMMIT_FAILED');
+        expect(response.body.intent.state).toBe('failed');
+        expect(response.body.intent.failure_reason).toContain('not committed');
+
+        expect(await transferCount(alice.id, bob.id)).toBe(0);
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(1000);
+        expect(parseFloat((await getAccount(bob.id)).balance)).toBe(1000);
+        const intent = await getIntent(response.body.intent.id);
+        expect(intent.state).toBe('failed');
+        expect(intent.transfer_id).toBeNull();
+    });
+
+    // ── Test 19: Ambiguous ack, probe unavailable — the persisted intent proves success ──
+    test('ambiguous commit with unreadable probe: persisted succeeded intent wins, never failed', async () => {
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
         const bob = testData.accounts.bob_usd;
         await setBalances([alice.id, bob.id], 1000);
 
         const restoreClient = loseNextCommitAck('committed');
-        const restoreQuery = failQueriesOn(['FROM transfers t WHERE t.id = $1']);
+        const restoreProbe = failClientQueriesOn(['FROM transfer_idempotency ti']);
         let response;
         try {
             response = await postIntent({
@@ -717,7 +911,7 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
                 counterparty: `${testPrefix}-bob@test.invalid`,
             });
         } finally {
-            restoreQuery();
+            restoreProbe();
             restoreClient();
         }
 
@@ -733,37 +927,50 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
         await cleanupTransfer(response.body.transferId);
     });
 
-    // ── Test 18: Ambiguous ack, verification unavailable — intent proves NOT committed ──
-    test('ambiguous commit with a still-created intent: confirmed failure, no money moved', async () => {
+    // ── Test 20: The marker update waits for a late commit and never overwrites it ──
+    test('delayed COMMIT with an unavailable probe: the reconciliation update waits and never overwrites the committed succeeded', async () => {
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
         const bob = testData.accounts.bob_usd;
         await setBalances([alice.id, bob.id], 1000);
+        const key = `vbrit-marker-race-${Date.now()}`;
 
-        const restoreClient = loseNextCommitAck('aborted');
-        const restoreQuery = failQueriesOn(['FROM transfers t WHERE t.id = $1']);
+        const ctl = deferNextCommitAck('committed');
+        const restoreProbe = failClientQueriesOn(['FROM transfer_idempotency ti']);
         let response;
         try {
-            response = await postIntent({
-                direction: 'send', method: 'internal', amount: '300.00', currency: 'USD',
-                counterparty: `${testPrefix}-bob@test.invalid`,
-            });
+            const pending = Promise.resolve(postIntent(
+                { direction: 'send', method: 'internal', amount: '250.00', currency: 'USD', counterparty: `${testPrefix}-bob@test.invalid` },
+                { 'idempotency-key': key }
+            ));
+            // The probe failed; the handler saw 'created' and now waits on the
+            // original transaction's row lock to mark reconciliation_required.
+            await ctl.markerStarted;
+            ctl.openGate(); // the original COMMITs while the marker UPDATE waits
+            response = await pending;
         } finally {
-            restoreQuery();
-            restoreClient();
+            ctl.openGate();
+            restoreProbe();
+            ctl.restore();
         }
+        await new Promise((resolve) => setImmediate(resolve));
 
-        // 'created' proves the transaction did not commit — safe to fail.
-        expect(response.status).toBe(500);
-        expect(response.body.success).toBe(false);
-        expect(response.body.code).toBe('COMMIT_FAILED');
-        expect(response.body.intent.state).toBe('failed');
-        expect(await transferCount(alice.id, bob.id)).toBe(0);
-        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(1000);
-        expect(parseFloat((await getAccount(bob.id)).balance)).toBe(1000);
+        // The guarded UPDATE matched nothing after the commit landed: the
+        // handler re-read and reported success, never reconciliation/failure.
+        expect(response.status).toBe(200);
+        expect(response.body.success).toBe(true);
+        expect(response.body.intent.state).toBe('succeeded');
+        const intent = await getIntent(response.body.intent.id);
+        expect(intent.state).toBe('succeeded');
+        expect(intent.failure_reason).toBeNull();
+        expect(intent.transfer_id).toBe(response.body.transferId);
+        expect(await transferCount(alice.id, bob.id)).toBe(1);
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(750);
+
+        await cleanupTransfer(response.body.transferId);
     });
 
-    // ── Test 19: Genuinely unknown outcome → reconciliation_required, never failure ──
+    // ── Test 21: Genuinely unknown outcome → reconciliation_required, never failure ──
     test('unreadable outcome and unreadable intent: reconciliation_required, 503, no definitive failure', async () => {
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
@@ -771,7 +978,8 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
         await setBalances([alice.id, bob.id], 1000);
 
         const restoreClient = loseNextCommitAck('aborted');
-        const restoreQuery = failQueriesOn(['FROM transfers t WHERE t.id = $1', 'FROM payment_intents WHERE id = $1']);
+        const restoreProbe = failClientQueriesOn(['INSERT INTO transfer_idempotency']);
+        const restoreIntent = failQueriesOn(['SELECT * FROM payment_intents WHERE id = $1']);
         let response;
         try {
             response = await postIntent({
@@ -779,7 +987,8 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
                 counterparty: `${testPrefix}-bob@test.invalid`,
             });
         } finally {
-            restoreQuery();
+            restoreIntent();
+            restoreProbe();
             restoreClient();
         }
 
@@ -796,7 +1005,7 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
         expect(parseFloat((await getAccount(alice.id)).balance)).toBe(1000);
     });
 
-    // ── Test 20: Direct route ambiguity → 409, retry with the SAME key replays ──
+    // ── Test 21: Direct route ambiguity → 409, retry with the SAME key replays ──
     test('direct route ambiguous commit: 409 outcome-unknown, same-key retry replays without a second debit', async () => {
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
@@ -807,12 +1016,12 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
         const body = { recipientEmail: bobEmail, amount: 100, currency: 'USD' };
 
         const restoreClient = loseNextCommitAck('committed');
-        const restoreQuery = failQueriesOn(['FROM transfers t WHERE t.id = $1']);
+        const restoreProbe = failClientQueriesOn(['FROM transfer_idempotency ti']);
         let first;
         try {
             first = await postDirectTransfer(body, { 'idempotency-key': key });
         } finally {
-            restoreQuery();
+            restoreProbe();
             restoreClient();
         }
 

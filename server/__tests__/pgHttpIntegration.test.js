@@ -455,7 +455,82 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         await pool.query('DELETE FROM transfer_idempotency WHERE transfer_id = $1', [transferId]);
     });
 
-    // ── Test 11: Inactive recipient is rejected INSIDE the transaction ──
+    // ── Test 11: Cross-currency idempotency — one key, at most one commit ──
+    test('concurrent USD and INR transfers sharing one idempotency key: at most one transfer commits', async () => {
+        if (!pool) return;
+        const aliceUsd = testData.accounts.alice_usd;
+        const aliceInr = testData.accounts.alice_inr;
+        const bobUsd = testData.accounts.bob_usd;
+        const bobInr = testData.accounts.bob_inr;
+        await pool.query(
+            'UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = ANY($1)',
+            [[aliceUsd.id, aliceInr.id, bobUsd.id, bobInr.id]]
+        );
+        const key = `http-it-crosscurrency-${Date.now()}`;
+        try {
+            // Same user, same key, different currencies, fired concurrently.
+            const [usd, inr] = await Promise.all([
+                postTransfer(
+                    { recipientAccountNumber: bobUsd.account_number, amount: 100, currency: 'USD' },
+                    { 'idempotency-key': key }
+                ),
+                postTransfer(
+                    { recipientAccountNumber: bobInr.account_number, amount: 1000, currency: 'INR' },
+                    { 'idempotency-key': key }
+                ),
+            ]);
+
+            const results = [usd, inr];
+            const wins = results.filter((r) => r.status === 200 && r.body.success && !r.body.replay);
+            const conflicts = results.filter((r) => r.status === 409 && r.body.code === 'IDEMPOTENCY_CONFLICT');
+            expect(wins).toHaveLength(1);
+            expect(conflicts).toHaveLength(1);
+
+            // Exactly ONE transfer row exists across both currencies.
+            const { rows } = await pool.query(
+                `SELECT id, currency FROM transfers
+                 WHERE from_account_id = ANY($1) AND to_account_id = ANY($2)`,
+                [[aliceUsd.id, aliceInr.id], [bobUsd.id, bobInr.id]]
+            );
+            expect(rows).toHaveLength(1);
+            const winner = rows[0];
+
+            // Only the winning currency moved — the loser never touched balances.
+            if (winner.currency === 'USD') {
+                expect(parseFloat((await getAccount(aliceUsd.id)).balance)).toBe(900);
+                expect(parseFloat((await getAccount(bobUsd.id)).balance)).toBe(1100);
+                expect(parseFloat((await getAccount(aliceInr.id)).balance)).toBe(1000);
+                expect(parseFloat((await getAccount(bobInr.id)).balance)).toBe(1000);
+            } else {
+                expect(parseFloat((await getAccount(aliceInr.id)).balance)).toBe(0);
+                expect(parseFloat((await getAccount(bobInr.id)).balance)).toBe(2000);
+                expect(parseFloat((await getAccount(aliceUsd.id)).balance)).toBe(1000);
+                expect(parseFloat((await getAccount(bobUsd.id)).balance)).toBe(1000);
+            }
+        } finally {
+            // Clean up even if the race regressed: a cross-currency duplicate
+            // claim would make 012's preflight refuse to run next time.
+            await pool.query(
+                `DELETE FROM transactions WHERE reference_id IN (
+                    SELECT id FROM transfers WHERE from_account_id = ANY($1) AND to_account_id = ANY($2))`,
+                [[aliceUsd.id, aliceInr.id], [bobUsd.id, bobInr.id]]
+            );
+            await pool.query(
+                'DELETE FROM transfers WHERE from_account_id = ANY($1) AND to_account_id = ANY($2)',
+                [[aliceUsd.id, aliceInr.id], [bobUsd.id, bobInr.id]]
+            );
+            await pool.query(
+                'DELETE FROM transfer_idempotency WHERE user_id = $1 AND idempotency_key = $2',
+                [testData.userIds.alice, key]
+            );
+            await pool.query(
+                'UPDATE accounts SET balance = 1000, available_balance = 1000 WHERE id = ANY($1)',
+                [[aliceUsd.id, aliceInr.id, bobUsd.id, bobInr.id]]
+            );
+        }
+    });
+
+    // ── Test 12: Inactive recipient is rejected INSIDE the transaction ──
     test('inactive recipient: rejected by the in-transaction guard, balances and ledger unchanged', async () => {
         if (!pool) return;
         const alice = testData.accounts.alice_usd;

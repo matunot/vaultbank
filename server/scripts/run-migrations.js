@@ -40,6 +40,7 @@ async function runMigrations() {
         // Get already executed migrations
         const executed = await client.query('SELECT filename FROM _migrations');
         const executedFiles = new Set(executed.rows.map(r => r.filename));
+        let failed = 0;
 
         for (const file of files) {
             if (executedFiles.has(file)) {
@@ -58,12 +59,20 @@ async function runMigrations() {
                 console.log(`âœ… ${file} - Success`);
             } catch (err) {
                 await client.query('ROLLBACK');
+                failed += 1;
                 console.error(`âŒ ${file} - Failed:`, err.message);
                 // Continue with next migration
             }
         }
 
-        console.log('\nâœ… All migrations completed!');
+        if (failed > 0) {
+            // A failed migration (e.g. the 012 duplicate preflight) must never
+            // look like success to a deploy script.
+            console.error(`\n${failed} migration(s) failed - fix the error above and re-run.`);
+            process.exitCode = 1;
+        } else {
+            console.log('\nAll migrations completed!');
+        }
 
         // Verify tables exist
         const tables = await client.query(`

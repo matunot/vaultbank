@@ -16,6 +16,7 @@ name: Integration Tests (PostgreSQL)
       - 'server/__tests__/vbrHttpIntegration.test.js'
       - 'server/__tests__/vbr.test.js'
       - 'server/__tests__/helpers/pgTestSetup.js'
+      - 'server/scripts/run-migrations.js'
       - '.github/workflows/integration-tests.yml'
 
 jobs:

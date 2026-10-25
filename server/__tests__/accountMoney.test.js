@@ -125,6 +125,37 @@ describe('atomic account money (real-database mode)', () => {
         expect(CDB.createTransfer).not.toHaveBeenCalled();
     });
 
+    test('COMMIT rejected with a SQLSTATE is definitively not committed: no probe, 500', async () => {
+        const client = { queries: [], release: jest.fn() };
+        client.query = jest.fn(async (sql) => {
+            client.queries.push(sql);
+            const s = String(sql).trim();
+            if (s === 'BEGIN') return { rows: [], rowCount: 0 };
+            if (s === 'COMMIT') {
+                const err = new Error('could not serialize access due to concurrent update');
+                err.code = '40001';
+                throw err;
+            }
+            if (s === 'ROLLBACK') return { rows: [], rowCount: 0 };
+            if (s.includes('INSERT INTO transfer_idempotency')) return { rows: [{ id: 'idem-1' }], rowCount: 1 };
+            if (s.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }], rowCount: 1 };
+            if (s.includes('available_balance = available_balance - $2')) return { rows: [{ balance_before: '100.00', balance_after: '95.00' }] };
+            if (s.includes('available_balance = available_balance + $2')) return { rows: [{ balance_before: '50.00', balance_after: '55.00' }] };
+            if (s.includes('INSERT INTO transactions')) return { rows: [{ id: 'txn-1' }], rowCount: 1 };
+            return { rows: [] };
+        });
+        CDB.db.getClient.mockResolvedValue(client);
+        CDB.db.query.mockResolvedValue({ rows: [] });
+
+        const res = await call('/api/account/transfer', { amount: 5, recipientAccountNumber: 'VB-2222' });
+
+        expect(res.code).toBe(500);
+        expect(res.body.code).toBe('COMMIT_FAILED');
+        // The server rejected the COMMIT: no fresh-connection probe is needed.
+        expect(CDB.db.getClient).toHaveBeenCalledTimes(1);
+        expect(client.release).toHaveBeenCalledWith(true);
+    });
+
     test('transfer debits atomically: no debit row -> ROLLBACK, no COMMIT, no ledger, 400', async () => {
         const client = { queries: [], release: jest.fn() };
         client.query = jest.fn(async (sql) => {

@@ -655,9 +655,10 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
             return res.json({ success: true, replay: true, transferId: result.transferId, message: 'Transfer already processed — replayed result.' });
         }
         if (result.ambiguous) {
-            // The COMMIT acknowledgement was lost and a fresh-connection check
-            // could not determine the outcome. Money may have moved: never
-            // report a definitive failure, and never advise a new key.
+            // The COMMIT acknowledgement was lost and the serialized
+            // idempotency probe could not determine the outcome. Money may
+            // have moved: never report a definitive failure, and never advise
+            // a new key.
             return res.status(409).json({
                 success: false,
                 code: 'TRANSFER_OUTCOME_UNKNOWN',
