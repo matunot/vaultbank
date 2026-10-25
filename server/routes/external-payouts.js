@@ -285,13 +285,13 @@ router.post('/api/payouts/requests', authenticateToken, async (req, res) => {
         // No placeholder personal data is sent to the payout provider.
         const beneficiaryName = String(user.full_name || '').trim();
         const beneficiaryEmail = String(user.email || '').trim();
-        const beneficiaryPhoneDigits = String(user.phone || '').replace(/\\D/g, '');
+        const beneficiaryPhoneDigits = String(user.phone || '').replace(/\D/g, '');
         const address1 = String(body.address1 || '').trim();
         const city = String(body.city || '').trim();
         const state = String(body.state || '').trim();
         const pincode = String(body.pincode || '').trim();
         if (beneficiaryName.length < 2 ||
-            !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(beneficiaryEmail) ||
+            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(beneficiaryEmail) ||
             beneficiaryPhoneDigits.length < 10 || beneficiaryPhoneDigits.length > 15) {
             return res.status(400).json({
                 success: false,
@@ -299,7 +299,7 @@ router.post('/api/payouts/requests', authenticateToken, async (req, res) => {
                 message: 'Complete your real full name, valid email and phone number before requesting an INR payout.',
             });
         }
-        if (address1.length < 3 || !city || !state || !/^\\d{6}$/.test(pincode)) {
+        if (address1.length < 3 || !city || !state || !/^\d{6}$/.test(pincode)) {
             return res.status(400).json({
                 success: false,
                 code: 'PAYOUTS_BENEFICIARY_ADDRESS_REQUIRED',
