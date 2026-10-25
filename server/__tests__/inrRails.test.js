@@ -470,7 +470,7 @@ describe('payouts rail: reservation-first through a real provider only', () => {
 
     const request = (body, headers) => call(payoutsRouter, '/api/payouts/requests', {
         method: 'post',
-        body: Object.assign({ amount: 100, bankAccount: '001111222333', ifsc: 'HDFC0000001' }, body || {}),
+        body: Object.assign({ amount: 100, bankAccount: '001111222333', ifsc: 'HDFC0000001', address1: '12 Test Road', city: 'Bhopal', state: 'Madhya Pradesh', pincode: '462001' }, body || {}),
         headers: Object.assign({ 'idempotency-key': 'test-payout-key-1' }, headers || {}),
     });
 
