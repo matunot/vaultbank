@@ -746,7 +746,7 @@ export function WithdrawModal({ isOpen, onClose }: ModalProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amountText = amount.trim();
-    if (!/^\\d+(\\.\\d{1,2})?$/.test(amountText) || !Number.isFinite(Number(amountText)) || Number(amountText) < 10 || Number(amountText) > 500000) {
+    if (!/^\d+(\.\d{1,2})?$/.test(amountText) || !Number.isFinite(Number(amountText)) || Number(amountText) < 10 || Number(amountText) > 500000) {
       setStatus('error');
       setErrorMsg('Enter a valid INR payout amount between ₹10 and ₹5,00,000 with at most two decimal places.');
       return;
@@ -848,11 +848,11 @@ export function WithdrawModal({ isOpen, onClose }: ModalProps) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="payout-bank-account" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">BANK ACCOUNT</label>
-            <input id="payout-bank-account" autoComplete="off" inputMode="numeric" required value={bankAccount} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setBankAccount(e.target.value.replace(/\\s/g, ''))} placeholder="Account number" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
+            <input id="payout-bank-account" autoComplete="off" inputMode="numeric" required value={bankAccount} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setBankAccount(e.target.value.replace(/\s/g, ''))} placeholder="Account number" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
           </div>
           <div>
             <label htmlFor="payout-ifsc" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">IFSC</label>
-            <input id="payout-ifsc" autoComplete="off" required value={ifsc} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setIfsc(e.target.value.toUpperCase().replace(/\\s/g, ''))} placeholder="HDFC0000001" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm font-mono text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
+            <input id="payout-ifsc" autoComplete="off" required value={ifsc} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setIfsc(e.target.value.toUpperCase().replace(/\s/g, ''))} placeholder="HDFC0000001" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm font-mono text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
           </div>
         </div>
 
@@ -872,7 +872,7 @@ export function WithdrawModal({ isOpen, onClose }: ModalProps) {
         </div>
         <div>
           <label htmlFor="payout-pincode" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">PIN CODE</label>
-          <input id="payout-pincode" autoComplete="postal-code" inputMode="numeric" required pattern="[0-9]{6}" maxLength={6} value={pincode} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setPincode(e.target.value.replace(/\\D/g, '').slice(0, 6))} placeholder="6-digit PIN code" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
+          <input id="payout-pincode" autoComplete="postal-code" inputMode="numeric" required pattern="[0-9]{6}" maxLength={6} value={pincode} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit PIN code" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
         </div>
 
         <p className="text-[10px] text-white/35 leading-relaxed">
