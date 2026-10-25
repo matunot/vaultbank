@@ -61,7 +61,16 @@ export function DirectBankPayoutModal({ isOpen, onClose, accountState, onOpenInr
         api.directBankPayoutAvailability() as Promise<Response>,
         api.directBankPayoutRequests() as Promise<Response>,
       ]);
-      setAvailability(a as Availability);
+      setAvailability({
+        available: Boolean(a.available),
+        enabled: Boolean(a.enabled ?? a.available),
+        provider: a.provider,
+        mode: a.mode,
+        autoTransfer: a.autoTransfer,
+        reason: a.reason,
+        minAmount: a.minAmount,
+        maxAmount: a.maxAmount,
+      });
       setRequests(Array.isArray(r.requests) ? r.requests : []);
     } catch (err: any) {
       setError(err?.message || 'Could not load VaultBank manual payout status.');
