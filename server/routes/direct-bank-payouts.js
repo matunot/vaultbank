@@ -412,10 +412,15 @@ router.post('/api/direct-bank-payouts/admin/requests/:id/confirm', authenticateT
       await client.query('ROLLBACK');
       return res.status(409).json({ success: false, code: 'DIRECT_PAYOUT_NOT_PENDING', message: 'Payout was concurrently resolved.' });
     }
-    await client.query(
-      "UPDATE transactions SET status = 'completed' WHERE external_reference = $1 AND type = 'withdrawal'",
+    const ledgerCompletion = await client.query(
+      "UPDATE transactions SET status = 'completed' WHERE external_reference = $1 AND type = 'withdrawal' RETURNING id",
       [payout.request_reference]
     );
+    if (!ledgerCompletion.rows.length) {
+      const error = new Error('Reserved payout ledger row is missing; completion was rolled back.');
+      error.code = 'DIRECT_PAYOUT_LEDGER_ROW_MISSING';
+      throw error;
+    }
     await client.query('COMMIT');
     try {
       await createNotification(payout.user_id, {
@@ -456,6 +461,14 @@ router.post('/api/direct-bank-payouts/admin/requests/:id/refund', authenticateTo
       await client.query('ROLLBACK');
       return res.status(409).json({ success: false, code: 'DIRECT_PAYOUT_NOT_PENDING', message: 'Only an unresolved reserved payout can be refunded.' });
     }
+    const originalDebit = await client.query(
+      "SELECT id FROM transactions WHERE external_reference = $1 AND type = 'withdrawal' FOR UPDATE",
+      [payout.request_reference]
+    );
+    if (!originalDebit.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, code: 'DIRECT_PAYOUT_LEDGER_ROW_MISSING', message: 'The payout reservation ledger row is missing; no refund was made.' });
+    }
     const claimed = await client.query(
       "UPDATE direct_bank_payout_requests SET status = 'failed_refunded', evidence_note = $2, verified_by_admin_id = $3, updated_at = NOW() WHERE id = $1 AND status = 'reserved' RETURNING id",
       [payout.id, note, req.user.id]
@@ -482,10 +495,15 @@ router.post('/api/direct-bank-payouts/admin/requests/:id/refund', authenticateTo
         [payout.account_id, payout.user_id, Number(payout.amount), Number(refund.rows[0].balance_before), Number(refund.rows[0].balance_after), 'Manual bank payout ' + payout.request_reference + ' refunded after bank review', refundExternalRef, JSON.stringify({ rail: 'vaultbank-manual-bank-payout', requestReference: payout.request_reference, evidenceNote: note })]
       );
     }
-    await client.query(
-      "UPDATE transactions SET status = 'failed_refunded' WHERE external_reference = $1 AND type = 'withdrawal'",
+    const withdrawalUpdate = await client.query(
+      "UPDATE transactions SET status = 'failed_refunded' WHERE external_reference = $1 AND type = 'withdrawal' RETURNING id",
       [payout.request_reference]
     );
+    if (!withdrawalUpdate.rows.length) {
+      const error = new Error('Reserved payout ledger row disappeared; refund was rolled back.');
+      error.code = 'DIRECT_PAYOUT_LEDGER_ROW_MISSING';
+      throw error;
+    }
     await client.query('COMMIT');
     try {
       await createNotification(payout.user_id, {
