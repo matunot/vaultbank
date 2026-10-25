@@ -10,6 +10,7 @@ import { api } from '../api';
 import Avatar from './Avatar';
 import { WithdrawModal } from './Modals';
 import { DirectUpiDepositModal } from './DirectUpiDepositModal';
+import { DirectUpiAdminReview } from './DirectUpiAdminReview';
 
 /** A real registered VaultBank user (from the backend directory). */
 interface Recipient {
@@ -800,6 +801,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
         accountState={inrState}
         onOpenInrAccount={openInrWallet}
       />
+      {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectUpiAdminReview />}
     </div>
   );
 }
