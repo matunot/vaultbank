@@ -1,11 +1,9 @@
-const mockDb = {
-  query: jest.fn(),
-  ensureConnection: jest.fn(),
-  getClient: jest.fn(),
-};
-
 jest.mock('../config/database', () => ({
-  db: mockDb,
+  db: {
+    query: jest.fn(),
+    ensureConnection: jest.fn(),
+    getClient: jest.fn(),
+  },
   createNotification: jest.fn(),
   createAuditLog: jest.fn(),
 }));
