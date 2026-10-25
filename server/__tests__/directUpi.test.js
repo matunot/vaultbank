@@ -196,6 +196,65 @@ describe('VaultBank-owned Direct UPI rail', () => {
     expect(CDB.db.getClient).not.toHaveBeenCalled();
   });
 
+  test('verified bank-statement credit updates INR balance and ledger atomically', async () => {
+    const client = { query: jest.fn(), release: jest.fn() };
+    CDB.db.getClient.mockResolvedValue(client);
+    client.query.mockImplementation(async (sql) => {
+      const query = String(sql);
+      if (query.startsWith('SELECT * FROM direct_upi_deposit_intents')) return { rows: [INTENT] };
+      if (query.includes('UPDATE accounts SET balance = balance + $2')) {
+        return { rows: [{ balance_before: '200.00', balance_after: '325.00' }] };
+      }
+      return { rows: [] };
+    });
+    const response = await call('/api/direct-upi/admin/intents/intent-1/verify', {
+      method: 'post',
+      user: { id: 'admin-1', role: 'admin' },
+      body: {
+        settlementAmount: '125.00',
+        bankUtr: '123456789012',
+        evidenceNote: 'Matched incoming UPI credit in the official bank statement',
+      },
+    });
+    expect(response.code).toBe(200);
+    expect(response.body.credited).toBe(true);
+    expect(response.body.amount).toBe(125);
+    expect(client.query.mock.calls.some(([sql]) => String(sql).includes("INSERT INTO transactions"))).toBe(true);
+    expect(client.query.mock.calls.some(([sql]) => String(sql).includes("SET status = 'settled'"))).toBe(true);
+    expect(client.query.mock.calls.some(([sql]) => String(sql) === 'COMMIT')).toBe(true);
+    expect(CDB.createAuditLog).toHaveBeenCalled();
+    expect(client.release).toHaveBeenCalled();
+  });
+
+  test('duplicate bank UTR is rejected before any account balance update', async () => {
+    const client = { query: jest.fn(), release: jest.fn() };
+    CDB.db.getClient.mockResolvedValue(client);
+    client.query.mockImplementation(async (sql) => {
+      const query = String(sql);
+      if (query.startsWith('SELECT * FROM direct_upi_deposit_intents')) return { rows: [INTENT] };
+      if (query.includes("SET status = 'settling'")) {
+        const error = new Error('duplicate key');
+        error.code = '23505';
+        throw error;
+      }
+      return { rows: [] };
+    });
+    const response = await call('/api/direct-upi/admin/intents/intent-1/verify', {
+      method: 'post',
+      user: { id: 'admin-1', role: 'admin' },
+      body: {
+        settlementAmount: '125.00',
+        bankUtr: '123456789012',
+        evidenceNote: 'Matched incoming UPI credit in the official bank statement',
+      },
+    });
+    expect(response.code).toBe(409);
+    expect(response.body.code).toBe('DIRECT_UPI_UTR_ALREADY_USED');
+    expect(client.query.mock.calls.some(([sql]) => String(sql).includes('UPDATE accounts'))).toBe(false);
+    expect(client.query.mock.calls.some(([sql]) => String(sql).startsWith('ROLLBACK'))).toBe(true);
+    expect(client.release).toHaveBeenCalled();
+  });
+
   test('amount mismatch never obtains a ledger connection or credits funds', async () => {
     const client = { query: jest.fn(), release: jest.fn() };
     CDB.db.getClient.mockResolvedValue(client);
