@@ -9,6 +9,7 @@ import { useAccountData } from '../hooks/useAccountData';
 import { api } from '../api';
 import Avatar from './Avatar';
 import { WithdrawModal } from './Modals';
+import { DirectUpiDepositModal } from './DirectUpiDepositModal';
 
 /** A real registered VaultBank user (from the backend directory). */
 interface Recipient {
@@ -22,7 +23,7 @@ type Currency = 'USD' | 'INR';
 
 interface RailsReadiness {
   usd: { cardStripe: boolean; paypal: boolean; bankTransferInstructions: boolean; internalTransfers: boolean; externalWithdrawals: boolean };
-  inr: { collections: boolean; collectionsProvider: string | null; internalTransfers: boolean; payouts: boolean; payoutsProvider: string | null };
+  inr: { directUpi: boolean; directUpiProvider?: string; directUpiVerification?: string; directUpiAutoCredit?: boolean; collections: boolean; collectionsProvider: string | null; internalTransfers: boolean; payouts: boolean; payoutsProvider: string | null };
 }
 
 interface InrTransaction {
@@ -148,6 +149,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
 
   // One idempotent INR payout form is shared by all Withdraw buttons.
   const [showWithdraw, setShowWithdraw] = useState(false);
+  const [showDirectUpi, setShowDirectUpi] = useState(false);
 
   // ── REAL send-money flow (live user search + real transfer) ──
   const [showSend, setShowSend] = useState(false);
@@ -268,6 +270,12 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       hint: usdRail?.bankTransferInstructions ? 'Instructions available in Deposits' : 'Not configured — receiving account env required',
     },
     {
+      key: 'directupi', name: 'VaultBank Direct UPI', desc: 'Your configured UPI VPA + QR; statement verification, no payment processor',
+      ready: inrRail ? inrRail.directUpi : null, icon: QrCode, color: '#10b981',
+      hint: inrRail?.directUpi ? 'VaultBank-controlled · manual bank-statement verification' : 'Not configured — own bank-linked VPA required',
+      action: inrRail?.directUpi ? () => { setCurrency('INR'); setShowDirectUpi(true); } : undefined, actionLabel: 'Receive',
+    },
+    {
       key: 'collections', name: 'INR Receiving Details', desc: 'Provider-issued per-user account + IFSC, auto-credited',
       ready: inrRail ? inrRail.collections : null, icon: IndianRupee, color: '#10b981',
       hint: inrRail?.collections ? `Provider: ${inrRail.collectionsProvider}` : 'Not configured — collection provider required',
@@ -362,7 +370,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     if (currency === 'USD' && onOpenModal) onOpenModal('deposit');
-                    if (currency === 'INR') { if (inrState === 'none') openInrWallet(); else fetchMyDetails(); }
+                    if (currency === 'INR') { if (inrState === 'none') openInrWallet(); else if (inrRail?.directUpi) setShowDirectUpi(true); else fetchMyDetails(); }
                   }}
                   className="px-5 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 glow-blue"
                 >
@@ -424,8 +432,8 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { icon: Send, label: 'Send Money', desc: `VaultBank user (${currency})`, color: '#3b82f6', action: () => setShowSend(true) },
-          { icon: QrCode, label: 'Receive', desc: 'Your account details', color: '#10b981', action: () => {} },
-          { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : 'INR receiving details', color: '#06b6d4', action: () => { if (currency === 'USD' && onOpenModal) onOpenModal('deposit'); else fetchMyDetails(); } },
+          { icon: QrCode, label: 'Receive', desc: 'Your INR receiving options', color: '#10b981', action: () => { setCurrency('INR'); if (inrRail?.directUpi) setShowDirectUpi(true); else fetchMyDetails(); } },
+          { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : 'INR deposit options', color: '#06b6d4', action: () => { if (currency === 'USD' && onOpenModal) onOpenModal('deposit'); else if (inrRail?.directUpi) setShowDirectUpi(true); else fetchMyDetails(); } },
           { icon: Banknote, label: 'Withdraw INR', desc: 'Cashfree payout only; no USD bank payout rail', color: '#f59e0b', action: () => { setCurrency('INR'); setShowWithdraw(true); } },
         ].map((a, i) => (
           <motion.button
@@ -786,6 +794,12 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
 
       {/* Keep the payout modal mounted while hidden so ambiguous outcomes retain the same idempotency key. */}
       <WithdrawModal isOpen={showWithdraw} onClose={() => setShowWithdraw(false)} />
+      <DirectUpiDepositModal
+        isOpen={showDirectUpi}
+        onClose={() => setShowDirectUpi(false)}
+        accountState={inrState}
+        onOpenInrAccount={openInrWallet}
+      />
     </div>
   );
 }
