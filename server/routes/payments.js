@@ -38,6 +38,7 @@ const bankDeposits = require('./bank-deposits');
 const collectionsRegistry = require('../collections');
 const payoutsRegistry = require('../payouts');
 const directUpiRoutes = require('./direct-upi');
+const directBankPayoutRoutes = require('./direct-bank-payouts');
 
 const router = express.Router();
 
@@ -65,6 +66,7 @@ router.get('/api/payments/readiness', (req, res) => {
         const collections = collectionsRegistry.collectionsAvailability();
         const payouts = payoutsRegistry.payoutAvailability();
         const directUpi = directUpiRoutes.readiness();
+        const directBankPayout = directBankPayoutRoutes.readiness();
         return res.status(200).json({
             success: true,
             rails: {
@@ -82,6 +84,11 @@ router.get('/api/payments/readiness', (req, res) => {
                     directUpiVerification: directUpi.verification,
                     directUpiAutoCredit: directUpi.autoCredit,
                     directUpiReason: directUpi.reason,
+                    directBankPayouts: directBankPayout.available,
+                    directBankPayoutsProvider: directBankPayout.provider,
+                    directBankPayoutsAutoTransfer: directBankPayout.autoTransfer,
+                    directBankPayoutsEncryptionKeyReady: directBankPayout.encryptionKeyReady,
+                    directBankPayoutsReason: directBankPayout.reason,
                     collections: collections.available,
                     collectionsProvider: collections.available ? collections.provider : null,
                     collectionsConfigured: collections.configured,
