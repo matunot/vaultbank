@@ -10,9 +10,13 @@ name: Integration Tests (PostgreSQL)
       - 'server/routes/accounts.js'
       - 'server/routes/external-payouts.js'
       - 'server/routes/direct-upi.js'
+      - 'server/routes/direct-bank-payouts.js'
       - 'server/__tests__/directUpi.test.js'
+      - 'server/__tests__/directBankPayouts.test.js'
       - 'client/src/components/DirectUpiDepositModal.tsx'
       - 'client/src/components/DirectUpiAdminReview.tsx'
+      - 'client/src/components/DirectBankPayoutModal.tsx'
+      - 'client/src/components/DirectBankPayoutAdminReview.tsx'
       - 'client/src/components/PaymentsSection.tsx'
       - 'client/src/api.ts'
       - 'server/routes/collections.js'
@@ -100,6 +104,12 @@ jobs:
       - name: Run direct UPI safety tests
         run: |
           npx --yes jest@30.5.2 __tests__/directUpi.test.js \
+            --testPathIgnorePatterns /node_modules/ \
+            --runInBand --testTimeout=60000 --verbose --forceExit
+
+      - name: Run manual bank payout safety tests
+        run: |
+          npx --yes jest@30.5.2 __tests__/directBankPayouts.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --runInBand --testTimeout=60000 --verbose --forceExit
 
