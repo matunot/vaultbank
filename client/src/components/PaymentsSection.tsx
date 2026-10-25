@@ -11,6 +11,7 @@ import Avatar from './Avatar';
 import { WithdrawModal } from './Modals';
 import { DirectUpiDepositModal } from './DirectUpiDepositModal';
 import { DirectUpiAdminReview } from './DirectUpiAdminReview';
+import { DirectBankPayoutModal } from './DirectBankPayoutModal';
 
 /** A real registered VaultBank user (from the backend directory). */
 interface Recipient {
@@ -24,7 +25,7 @@ type Currency = 'USD' | 'INR';
 
 interface RailsReadiness {
   usd: { cardStripe: boolean; paypal: boolean; bankTransferInstructions: boolean; internalTransfers: boolean; externalWithdrawals: boolean };
-  inr: { directUpi: boolean; directUpiProvider?: string; directUpiVerification?: string; directUpiAutoCredit?: boolean; collections: boolean; collectionsProvider: string | null; internalTransfers: boolean; payouts: boolean; payoutsProvider: string | null };
+  inr: { directUpi: boolean; directUpiProvider?: string; directUpiVerification?: string; directUpiAutoCredit?: boolean; directBankPayouts: boolean; directBankPayoutsProvider?: string; directBankPayoutsAutoTransfer?: boolean; directBankPayoutsReason?: string; collections: boolean; collectionsProvider: string | null; internalTransfers: boolean; payouts: boolean; payoutsProvider: string | null };
 }
 
 interface InrTransaction {
@@ -151,6 +152,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
   // One idempotent INR payout form is shared by all Withdraw buttons.
   const [showWithdraw, setShowWithdraw] = useState(false);
   const [showDirectUpi, setShowDirectUpi] = useState(false);
+  const [showDirectBankPayout, setShowDirectBankPayout] = useState(false);
 
   // ── REAL send-money flow (live user search + real transfer) ──
   const [showSend, setShowSend] = useState(false);
@@ -283,6 +285,12 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       action: inrRail?.collections ? () => { setCurrency('INR'); fetchMyDetails(); } : undefined, actionLabel: 'Get details',
     },
     {
+      key: 'directbankpayout', name: 'VaultBank Manual Bank Payout', desc: 'Encrypted beneficiary details + operator sends from bank; no payout processor',
+      ready: inrRail ? inrRail.directBankPayouts : null, icon: Banknote, color: '#d97706',
+      hint: inrRail?.directBankPayouts ? 'VaultBank-controlled · manual transfer + bank statement UTR' : 'Not configured — encryption key and manual rail flag required',
+      action: () => { setCurrency('INR'); setShowDirectBankPayout(true); }, actionLabel: 'Open',
+    },
+    {
       key: 'payouts', name: 'INR Bank Withdrawals', desc: 'Reserved funds, provider status, exactly-once refunds',
       ready: inrRail ? inrRail.payouts : null, icon: Banknote, color: '#d97706',
       hint: inrRail?.payouts ? `Provider: ${inrRail.payoutsProvider}` : 'Not configured — payout provider required',
@@ -379,7 +387,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  onClick={() => { setCurrency('INR'); setShowWithdraw(true); }}
+                  onClick={() => { setCurrency('INR'); setShowDirectBankPayout(true); }}
                   className="px-4 py-3 rounded-xl glass-btn text-sm font-bold text-white/80 flex items-center gap-2"
                   title="Switch to INR; external USD bank payouts are not available"
                 >
@@ -534,17 +542,17 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
               <h3 className="font-display text-xl text-white flex items-center gap-2">
                 <Banknote className="w-5 h-5 text-amber-400" /> Withdraw INR to Bank
               </h3>
-              <button onClick={() => setShowWithdraw(true)} className="px-4 py-2 rounded-xl bg-white/10 border border-white/10 text-xs font-bold text-white hover:bg-white/15">
-                Open secure form
+              <button onClick={() => setShowDirectBankPayout(true)} className="px-4 py-2 rounded-xl bg-white/10 border border-white/10 text-xs font-bold text-white hover:bg-white/15">
+                Open VaultBank manual form
               </button>
             </div>
-            {!inrRail?.payouts ? (
+            {!inrRail?.directBankPayouts ? (
               <p className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
-                External INR payouts are not currently available. The form checks live credentials before it submits anything; no balance will be debited while the rail is unready.
+                VaultBank manual payouts are disabled or the destination encryption key is missing. No funds will be reserved until the operator explicitly enables the rail.
               </p>
             ) : (
               <p className="text-sm text-white/50">
-                Payout requests require your real profile contact details, recipient bank details, and a real postal address. An admin must verify Cashfree live credentials before the form will submit.
+                This VaultBank-owned path reserves funds atomically. The operator sends the transfer from the bank and confirms its official statement UTR; no processor API sends the money.
               </p>
             )}
             {payoutRecords.length > 0 && (
@@ -604,7 +612,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
               <p className="font-bold text-white text-sm">{r.name}</p>
               <p className="text-xs text-white/40 flex-1">{r.desc}</p>
               {r.hint && <p className="text-[10px] text-white/30">{r.hint}</p>}
-              {((r.ready && r.action) || (r.key === 'directupi' && r.action)) && (
+              {((r.ready && r.action) || ((r.key === 'directupi' || r.key === 'directbankpayout') && r.action)) && (
                 <button onClick={r.action} className="mt-1 px-3 py-2 rounded-lg bg-white/10 text-xs font-bold text-white hover:bg-white/15 flex items-center gap-1.5 w-fit">
                   {r.actionLabel === 'Send' && <Send className="w-3 h-3" />}
                   {r.actionLabel === 'Withdraw' && <Banknote className="w-3 h-3" />}
@@ -801,7 +809,14 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
         accountState={inrState}
         onOpenInrAccount={openInrWallet}
       />
+      <DirectBankPayoutModal
+        isOpen={showDirectBankPayout}
+        onClose={() => setShowDirectBankPayout(false)}
+        accountState={inrState}
+        onOpenInrAccount={openInrWallet}
+      />
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectUpiAdminReview />}
+      {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectBankPayoutAdminReview />
     </div>
   );
 }
