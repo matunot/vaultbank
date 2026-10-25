@@ -12,6 +12,7 @@ name: Integration Tests (PostgreSQL)
       - 'server/routes/direct-upi.js'
       - 'server/__tests__/directUpi.test.js'
       - 'client/src/components/DirectUpiDepositModal.tsx'
+      - 'client/src/components/DirectUpiAdminReview.tsx'
       - 'client/src/components/PaymentsSection.tsx'
       - 'client/src/api.ts'
       - 'server/routes/collections.js'
