@@ -122,9 +122,9 @@ async function seedTestData(pool, prefix) {
     for (const name of ['alice', 'bob', 'carol']) {
         const email = `${prefix}-${name}@test.invalid`;
         const { rows } = await pool.query(
-            `INSERT INTO users (email, password_hash, full_name, role, subscription, kyc_status, status)
-             VALUES ($1, 'test-hash', $2, 'user', 'free', 'verified', 'active')
-             ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name
+            `INSERT INTO users (email, password_hash, full_name, phone, role, subscription, kyc_status, status)
+             VALUES ($1, 'test-hash', $2, '9999999999', 'user', 'free', 'verified', 'active')
+             ON CONFLICT (email) DO UPDATE SET full_name = EXCLUDED.full_name, phone = EXCLUDED.phone
              RETURNING id`,
             [email, name.charAt(0).toUpperCase() + name.slice(1)]
         );
