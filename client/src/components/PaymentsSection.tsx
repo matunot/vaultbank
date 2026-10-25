@@ -370,11 +370,11 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  onClick={() => setShowWithdraw(true)}
+                  onClick={() => { setCurrency('INR'); setShowWithdraw(true); }}
                   className="px-4 py-3 rounded-xl glass-btn text-sm font-bold text-white/80 flex items-center gap-2"
-                  title="Open the verified INR payout form"
+                  title="Switch to INR; external USD bank payouts are not available"
                 >
-                  <Download className="w-4 h-4" /> Withdraw
+                  <Download className="w-4 h-4" /> Withdraw INR
                 </motion.button>
               </div>
             </div>
@@ -426,7 +426,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
           { icon: Send, label: 'Send Money', desc: `VaultBank user (${currency})`, color: '#3b82f6', action: () => setShowSend(true) },
           { icon: QrCode, label: 'Receive', desc: 'Your account details', color: '#10b981', action: () => {} },
           { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : 'INR receiving details', color: '#06b6d4', action: () => { if (currency === 'USD' && onOpenModal) onOpenModal('deposit'); else fetchMyDetails(); } },
-          { icon: Banknote, label: 'Withdraw INR', desc: 'Cashfree payout with live readiness gate', color: '#f59e0b', action: () => setShowWithdraw(true) },
+          { icon: Banknote, label: 'Withdraw INR', desc: 'Cashfree payout only; no USD bank payout rail', color: '#f59e0b', action: () => { setCurrency('INR'); setShowWithdraw(true); } },
         ].map((a, i) => (
           <motion.button
             key={a.label}
