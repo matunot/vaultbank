@@ -27,6 +27,7 @@ const vbPayRoutes = require('./routes/vbpay');
 const usdcWithdrawalRoutes = require('./routes/usdc-withdrawals');
 const anomaliesRoutes = require('./routes/anomalies');
 const directUpiRoutes = require('./routes/direct-upi');
+const directBankPayoutRoutes = require('./routes/direct-bank-payouts');
 
 // Import middleware
 const { generalLimiter } = require('./middleware/rateLimiter');
@@ -169,6 +170,7 @@ app.use('/', require('./routes/bank-deposits'));
 app.use('/', require('./routes/collections'));
 app.use('/', require('./routes/external-payouts'));
 app.use('/', directUpiRoutes);
+app.use('/', directBankPayoutRoutes);
 app.use('/', require('./vbr'));
 app.use('/', require('./routes/usdc-deposits'));
 
