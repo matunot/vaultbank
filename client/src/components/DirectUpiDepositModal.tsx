@@ -67,7 +67,16 @@ export function DirectUpiDepositModal({ isOpen, onClose, accountState, onOpenInr
         api.directUpiConfig() as Promise<DirectUpiResponse>,
         api.directUpiIntents() as Promise<DirectUpiResponse>,
       ]);
-      setConfig(results[0]);
+      setConfig({
+        enabled: Boolean(results[0].enabled),
+        vpa: results[0].vpa || null,
+        payeeName: results[0].payeeName || null,
+        minAmount: results[0].minAmount,
+        maxAmount: results[0].maxAmount,
+        expiryMinutes: results[0].expiryMinutes,
+        verification: results[0].verification,
+        reason: results[0].reason,
+      });
       setHistory(Array.isArray(results[1].intents) ? results[1].intents : []);
     } catch (err: any) {
       setError(err?.message || 'Could not load direct UPI status.');
