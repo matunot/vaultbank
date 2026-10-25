@@ -26,6 +26,8 @@ const creditRoutes = require('./routes/credit');
 const vbPayRoutes = require('./routes/vbpay');
 const usdcWithdrawalRoutes = require('./routes/usdc-withdrawals');
 const anomaliesRoutes = require('./routes/anomalies');
+const directUpiRoutes = require('./routes/direct-upi');
+const directBankPayoutRoutes = require('./routes/direct-bank-payouts');
 
 // Import middleware
 const { generalLimiter } = require('./middleware/rateLimiter');
@@ -63,7 +65,7 @@ app.use(cors({
     origin: true, // Reflect any origin (safe for public API with JWT auth)
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-Requested-With', 'Idempotency-Key']
 }));
 
 // ─── Body Parsing ────────────────────────────────────────────────────────────
@@ -167,6 +169,8 @@ app.use('/', require('./routes/paypal-deposits'));
 app.use('/', require('./routes/bank-deposits'));
 app.use('/', require('./routes/collections'));
 app.use('/', require('./routes/external-payouts'));
+app.use('/', directUpiRoutes);
+app.use('/', directBankPayoutRoutes);
 app.use('/', require('./vbr'));
 app.use('/', require('./routes/usdc-deposits'));
 
