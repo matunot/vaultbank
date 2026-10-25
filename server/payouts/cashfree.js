@@ -175,15 +175,15 @@ async function ensureBeneficiary({ beneId, name, email, phone, bankAccount, ifsc
         // Validate before any provider request, including beneficiary lookup.
         const actualName = String(name || '').trim();
         const actualEmail = String(email || '').trim();
-        const phoneDigits = String(phone || '').replace(/\\D/g, '');
+        const phoneDigits = String(phone || '').replace(/\D/g, '');
         const actualAddress = String(address1 || '').trim();
         const actualCity = String(city || '').trim();
         const actualState = String(state || '').trim();
         const actualPincode = String(pincode || '').trim();
         if (actualName.length < 2 ||
-            !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(actualEmail) ||
+            !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(actualEmail) ||
             phoneDigits.length < 10 || phoneDigits.length > 15 ||
-            actualAddress.length < 3 || !actualCity || !actualState || !/^\\d{6}$/.test(actualPincode)) {
+            actualAddress.length < 3 || !actualCity || !actualState || !/^\d{6}$/.test(actualPincode)) {
             const err = new Error('Real beneficiary name, email, phone, street address, city, state and six-digit PIN code are required.');
             err.code = 'PAYOUTS_BENEFICIARY_DETAILS_REQUIRED';
             err.safe = true;
