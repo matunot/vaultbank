@@ -181,6 +181,16 @@ a rerun.
   5,00,000; IFSC and 6–20 digit account are validated. The full bank account is
   sent to Cashfree but only a masked form is stored. `beneId` is
   `VBU-` + SHA-256(user + account + IFSC), first 32 hex uppercase.
+- Before funds are reserved, the user profile must contain a real full name,
+  valid email and phone, and the payout request must include the user's real
+  street address, city, state and six-digit PIN code. Missing values return
+  `400` before any debit; the adapter independently validates them before
+  contacting Cashfree. No placeholder phone, email or address is sent.
+- The Withdraw INR UI stays disabled until the public readiness response reports
+  `payoutsMode:"live"` and `payoutsProviderLive:true`. An admin must first run
+  the safe `GET /api/payments/admin/readiness?probe=1` credential probe.
+  The Deposit UI shows only Cashfree INR receiving and explicitly configured
+  manual bank-transfer options; Stripe, PayPal and crypto are not offered there.
 - Reservation is atomic: claim + debit + `withdrawal` ledger row in one DB
   transaction, provider call after commit. A safe provider rejection refunds
   atomically. An ambiguous outcome holds the debit in
