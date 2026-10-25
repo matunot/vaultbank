@@ -80,7 +80,7 @@ async function call(path, options = {}) {
     method: method.toUpperCase(),
     user: options.user,
     ip: '127.0.0.1',
-    headers: {},
+    headers: options.headers || {},
     body: options.body || {},
     params: pattern.includes(':id') ? { id: 'intent-1' } : {},
     query: options.query || {},
@@ -153,7 +153,7 @@ describe('VaultBank-owned Direct UPI rail', () => {
       }
       return { rows: [] };
     });
-    const response = await call('/api/direct-upi/intents', { method: 'post', body: { amount: '125.00' } });
+    const response = await call('/api/direct-upi/intents', { method: 'post', headers: { 'idempotency-key': 'dupi-attempt-0001' }, body: { amount: '125.00' } });
     expect(response.code).toBe(201);
     expect(response.body.intent.status).toBe('pending');
     expect(response.body.transfer.upiUri).toContain('upi://pay?');
