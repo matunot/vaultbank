@@ -373,6 +373,19 @@ export const api = {
     return request<ApiResponse>(`api/bank-deposits/instructions/${id}`);
   },
 
+  // VaultBank-owned Direct UPI rail (QR is generated locally by the server; settlement is statement-verified).
+  async directUpiConfig(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/direct-upi/config');
+  },
+
+  async createDirectUpiIntent(data: { amount: number }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/direct-upi/intents', { method: 'POST', body: JSON.stringify(data) });
+  },
+
+  async directUpiIntents(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/direct-upi/intents');
+  },
+
   async usdcAddress(network?: string, token?: string): Promise<ApiResponse> {
     const params = new URLSearchParams();
     if (network) params.set('network', network);
