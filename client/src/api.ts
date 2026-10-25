@@ -378,8 +378,12 @@ export const api = {
     return request<ApiResponse>('api/direct-upi/config');
   },
 
-  async createDirectUpiIntent(data: { amount: number }): Promise<ApiResponse> {
-    return request<ApiResponse>('api/direct-upi/intents', { method: 'POST', body: JSON.stringify(data) });
+  async createDirectUpiIntent(data: { amount: number }, idempotencyKey: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/direct-upi/intents', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(data),
+    });
   },
 
   async directUpiIntents(): Promise<ApiResponse> {
