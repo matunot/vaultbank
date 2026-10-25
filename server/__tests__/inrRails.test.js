@@ -470,7 +470,7 @@ describe('payouts rail: reservation-first through a real provider only', () => {
 
     const request = (body, headers) => call(payoutsRouter, '/api/payouts/requests', {
         method: 'post',
-        body: Object.assign({ amount: 100, bankAccount: '001111222333', ifsc: 'HDFC0000001' }, body || {}),
+        body: Object.assign({ amount: 100, bankAccount: '001111222333', ifsc: 'HDFC0000001', address1: '12 Test Road', city: 'Bhopal', state: 'Madhya Pradesh', pincode: '462001' }, body || {}),
         headers: Object.assign({ 'idempotency-key': 'test-payout-key-1' }, headers || {}),
     });
 
@@ -481,6 +481,26 @@ describe('payouts rail: reservation-first through a real provider only', () => {
         expect(res.code).toBe(503);
         expect(res.body.code).toBe('PAYOUTS_NOT_CONFIGURED');
         expect(sqls.filter((s) => s.includes('balance = balance - $2'))).toHaveLength(0);
+        expect(cashfreePayouts.requestTransfer).not.toHaveBeenCalled();
+    });
+
+    test('missing real beneficiary address -> 400 before payout reservation', async () => {
+        const sqls = scriptDb();
+        const res = await request({ address1: '', city: '', state: '', pincode: '' });
+        expect(res.code).toBe(400);
+        expect(res.body.code).toBe('PAYOUTS_BENEFICIARY_ADDRESS_REQUIRED');
+        expect(sqls.some((s) => s.includes('balance = balance - $2'))).toBe(false);
+        expect(cashfreePayouts.ensureBeneficiary).not.toHaveBeenCalled();
+        expect(cashfreePayouts.requestTransfer).not.toHaveBeenCalled();
+    });
+
+    test('missing real profile phone -> 400 before payout reservation', async () => {
+        const sqls = scriptDb();
+        CDB.findUserById.mockResolvedValue({ id: 'u-1', full_name: 'Test User', email: 'test@example.com', phone: '' });
+        const res = await request();
+        expect(res.code).toBe(400);
+        expect(res.body.code).toBe('PAYOUTS_CUSTOMER_DETAILS_REQUIRED');
+        expect(sqls.some((s) => s.includes('balance = balance - $2'))).toBe(false);
         expect(cashfreePayouts.requestTransfer).not.toHaveBeenCalled();
     });
 

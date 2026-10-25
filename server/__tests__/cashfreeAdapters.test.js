@@ -240,6 +240,16 @@ describe('registry safety', () => {
 });
 
 describe('payouts adapter', () => {
+    const TEST_BENEFICIARY = {
+        name: 'Test User',
+        email: 'test@example.com',
+        phone: '9999999999',
+        address1: '12 Test Road',
+        city: 'Bhopal',
+        state: 'Madhya Pradesh',
+        pincode: '462001',
+    };
+
     function authThen(status, body) {
         global.fetch.mockImplementation(async (url) => {
             if (String(url).includes('/payout/v1/authorize')) return response(200, { data: { token: 'tok', expiry: Math.floor(Date.now() / 1000) + 600 } });
@@ -314,6 +324,14 @@ describe('payouts adapter', () => {
             .rejects.toMatchObject({ code: 'PAYOUTS_PROVIDER_UNREACHABLE', safe: true, stage: 'auth' });
     });
 
+    test('beneficiary: missing real identity/address fails before provider network calls', async () => {
+        const adapter = loadPayouts();
+        await expect(adapter.ensureBeneficiary({
+            beneId: 'b', name: 'Test User', bankAccount: '0011', ifsc: 'HDFC0000001',
+        })).rejects.toMatchObject({ code: 'PAYOUTS_BENEFICIARY_DETAILS_REQUIRED', safe: true });
+        expect(global.fetch).not.toHaveBeenCalled();
+    });
+
     test('beneficiary: 404 adds; non-404 failure never adds and is safe; mismatch rejected', async () => {
         const adapter = loadPayouts();
         const seen = [];
@@ -324,7 +342,7 @@ describe('payouts adapter', () => {
             if (String(url).includes('/payout/v1/addBeneficiary')) return response(200, { data: { beneId: 'b' } });
             return response(500, {});
         });
-        const added = await adapter.ensureBeneficiary({ beneId: 'b', name: 'A', bankAccount: '0011', ifsc: 'HDFC0000001' });
+        const added = await adapter.ensureBeneficiary({ ...TEST_BENEFICIARY, beneId: 'b', bankAccount: '0011', ifsc: 'HDFC0000001' });
         expect(added.existed).toBe(false);
         expect(seen.some((u) => u.includes('/addBeneficiary'))).toBe(true);
 
@@ -337,7 +355,7 @@ describe('payouts adapter', () => {
             if (String(url).includes('/payout/v1/getBeneficiary/')) return response(500, { message: 'boom' });
             return response(200, {});
         });
-        await expect(adapter2.ensureBeneficiary({ beneId: 'b', name: 'A', bankAccount: '0011', ifsc: 'HDFC0000001' }))
+        await expect(adapter2.ensureBeneficiary({ ...TEST_BENEFICIARY, beneId: 'b', bankAccount: '0011', ifsc: 'HDFC0000001' }))
             .rejects.toMatchObject({ code: 'PAYOUTS_BENEFICIARY_ERROR', safe: true });
         expect(seen2.some((u) => u.includes('/addBeneficiary'))).toBe(false);
 
@@ -348,7 +366,7 @@ describe('payouts adapter', () => {
             if (String(url).includes('/payout/v1/getBeneficiary/')) return response(200, { data: { bankAccount: '9999', ifsc: 'HDFC0000001' } });
             return response(200, {});
         });
-        await expect(adapter3.ensureBeneficiary({ beneId: 'b', name: 'A', bankAccount: '0011', ifsc: 'HDFC0000001' }))
+        await expect(adapter3.ensureBeneficiary({ ...TEST_BENEFICIARY, beneId: 'b', bankAccount: '0011', ifsc: 'HDFC0000001' }))
             .rejects.toMatchObject({ code: 'PAYOUTS_BENEFICIARY_MISMATCH', safe: true });
     });
 

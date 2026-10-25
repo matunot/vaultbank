@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Plus, Receipt, ArrowRightLeft, Globe, Smartphone, CheckCircle2, Loader2, TrendingUp, UserSearch, CreditCard, Zap, Banknote, Building2 } from 'lucide-react';
+import { X, Send, Plus, Receipt, ArrowRightLeft, Globe, Smartphone, CheckCircle2, Loader2, TrendingUp, UserSearch, Banknote, Building2 } from 'lucide-react';
 import RichIcon from './RichIcon';
 import Avatar from './Avatar';
 import { api } from '../api';
@@ -288,7 +288,7 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
 }
 
 export function DepositModal({ isOpen, onClose }: ModalProps) {
-  const [mode, setMode] = useState<'card' | 'instant' | 'paypal' | 'usdc' | 'bank'>('card');
+  const [mode, setMode] = useState<'inr' | 'bank' | 'card' | 'instant' | 'paypal' | 'usdc'>('inr');
   const [usdc, setUsdc] = useState<{ address: string; network: string; qr: string | null } | null>(null);
   const [usdcTestnet, setUsdcTestnet] = useState(false);
   const [usdcChecking, setUsdcChecking] = useState(false);
@@ -296,7 +296,8 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const [stripeMode, setStripeMode] = useState<'live' | 'demo' | null>(null);
+  const [inrReadiness, setInrReadiness] = useState<any>(null);
+  const [inrDetails, setInrDetails] = useState<any>(null);
   const [bankCfg, setBankCfg] = useState<any>(null);
   const [bankInstr, setBankInstr] = useState<any>(null);
 
@@ -309,13 +310,15 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
       .catch(() => setBankCfg({ enabled: false }));
   }, [isOpen, mode, bankCfg]);
 
-  // Detect whether real Stripe keys are configured (LIVE vs SANDBOX)
+  // INR readiness is read from the server; environment variables alone do not mean settlement is live.
   useEffect(() => {
-    if (!isOpen) return;
-    api.stripeBalance()
-      .then(r => setStripeMode(r.mode === 'live' ? 'live' : 'demo'))
-      .catch(() => setStripeMode('demo'));
-  }, [isOpen]);
+    if (!isOpen || mode !== 'inr') return;
+    let cancelled = false;
+    api.paymentsReadiness()
+      .then((r) => { if (!cancelled) setInrReadiness(r?.rails?.inr || null); })
+      .catch(() => { if (!cancelled) setInrReadiness(null); });
+    return () => { cancelled = true; };
+  }, [isOpen, mode]);
 
   // Fetch your personal USDC address when the USDC rail opens (no signup needed).
   useEffect(() => {
@@ -356,6 +359,43 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === 'usdc') return; // USDC flow uses the address panel + check button.
+    if (mode === 'inr') {
+      setStatus('loading');
+      setErrorMsg('');
+      try {
+        let readiness = inrReadiness;
+        if (!readiness) {
+          const r = await api.paymentsReadiness();
+          readiness = r?.rails?.inr || null;
+          setInrReadiness(readiness);
+        }
+        if (!readiness?.collections || readiness.collectionsMode !== 'live') {
+          const reason = readiness?.collectionsReason || 'readiness-unavailable';
+          throw new Error(`Cashfree INR receiving is not live-ready yet (${reason}). Do not send funds until VaultBank displays provider-issued bank details.`);
+        }
+        try {
+          await api.getInrAccount();
+        } catch (accountError: any) {
+          if (accountError?.status !== 404) throw accountError;
+          try {
+            await api.openInrAccount();
+          } catch (openError: any) {
+            if (openError?.status !== 409) throw openError;
+            await api.getInrAccount();
+          }
+        }
+        const result = await api.collectionsMyDetails();
+        if (!result?.success || !result?.details?.accountNumber || !result?.details?.ifsc) {
+          throw new Error(result?.message || 'Cashfree did not return an active receiving account.');
+        }
+        setInrDetails(result);
+        setStatus('success');
+      } catch (err: any) {
+        setErrorMsg(err?.message || 'Could not load Cashfree INR receiving details.');
+        setStatus('error');
+      }
+      return;
+    }
     if (mode === 'bank') {
       if (bankInstr) return; // Instructions already issued — use the panel.
       const amt = parseFloat(amount);
@@ -449,58 +489,30 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
         {/* LIVE / SANDBOX badge */}
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-white/40 tracking-wider font-semibold">PAYMENT RAIL</span>
-          {stripeMode && (
+          {mode === 'inr' && (
             <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold border ${
-              stripeMode === 'live'
+              inrReadiness?.collections && inrReadiness?.collectionsMode === 'live'
                 ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
                 : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
             }`}>
-              {stripeMode === 'live' ? '● LIVE — REAL MONEY' : '○ SANDBOX — TEST MODE'}
+              {inrReadiness?.collections && inrReadiness?.collectionsMode === 'live'
+                ? '● LIVE RAIL CONFIGURED · SETTLEMENT UNVERIFIED'
+                : '○ INR RECEIVING NOT READY'}
             </span>
           )}
         </div>
 
-        {/* Mode toggle */}
+        {/* Only the supported fiat receive choices are shown. Card providers and crypto remain paused. */}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => setMode('card')}
+            onClick={() => { setMode('inr'); setInrDetails(null); setStatus('idle'); setErrorMsg(''); }}
             className={`p-3 rounded-xl border text-left transition-colors ${
-              mode === 'card' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
+              mode === 'inr' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
             }`}
           >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5"><CreditCard className="w-3.5 h-3.5" /> Card via Stripe</p>
-            <p className="text-[9px] text-white/40 mt-1">Real card payment · secure checkout</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('instant')}
-            className={`p-3 rounded-xl border text-left transition-colors ${
-              mode === 'instant' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
-            }`}
-          >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" /> Instant</p>
-            <p className="text-[9px] text-white/40 mt-1">Internal credit · no card needed</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('paypal')}
-            className={`p-3 rounded-xl border text-left transition-colors ${
-              mode === 'paypal' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
-            }`}
-          >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5">🅿️ PayPal</p>
-            <p className="text-[9px] text-white/40 mt-1">Real PayPal checkout</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('usdc')}
-            className={`p-3 rounded-xl border text-left transition-colors ${
-              mode === 'usdc' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
-            }`}
-          >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5">🪙 USDC / USDT</p>
-            <p className="text-[9px] text-white/40 mt-1">No signup · your address</p>
+            <p className="text-xs font-bold text-white flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> INR bank account</p>
+            <p className="text-[9px] text-white/40 mt-1">Cashfree-issued receiving details</p>
           </button>
           <button
             type="button"
@@ -509,12 +521,40 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
               mode === 'bank' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
             }`}
           >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> Bank Transfer</p>
-            <p className="text-[9px] text-white/40 mt-1">Wire/SEPA · verified on statement</p>
+            <p className="text-xs font-bold text-white flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> Manual bank transfer</p>
+            <p className="text-[9px] text-white/40 mt-1">Only if a verified receiving account is configured</p>
           </button>
         </div>
 
-        {mode === 'bank' ? (
+        {mode === 'inr' ? (
+          <div className="space-y-3">
+            <p className="text-[11px] text-white/50 leading-relaxed">
+              VaultBank will show only bank details issued by Cashfree. Funds are not credited until a valid, signed provider payment event is reconciled.
+            </p>
+            {!inrReadiness && (
+              <p className="text-xs text-white/40 text-center py-3">Checking INR receiving readiness…</p>
+            )}
+            {inrReadiness && (!inrReadiness.collections || inrReadiness.collectionsMode !== 'live') && (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[11px] text-amber-300 font-bold text-center leading-relaxed">
+                INR receiving is not ready yet. Current reason: {inrReadiness.collectionsReason || 'provider-not-configured'}. Do not transfer money until provider-issued account details appear here.
+              </div>
+            )}
+            {inrReadiness?.collections && inrReadiness?.collectionsMode === 'live' && !inrDetails && (
+              <p className="text-[11px] text-white/50 text-center">Your receiving account will be provisioned by Cashfree. No bank account number or IFSC is generated by VaultBank.</p>
+            )}
+            {inrDetails && (
+              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 space-y-2">
+                <p className="text-[9px] text-emerald-300 tracking-wider font-bold">PROVIDER-ISSUED INR RECEIVING ACCOUNT</p>
+                <p className="text-xs text-white/70">Bank: <span className="font-bold text-white">{inrDetails.details.bankCode || 'Cashfree partner bank'}</span></p>
+                <p className="text-xs text-white/70">Account number</p>
+                <button type="button" onClick={() => { navigator.clipboard.writeText(String(inrDetails.details.accountNumber)); }} className="w-full font-mono text-sm text-emerald-200 bg-black/20 rounded-lg p-2.5 break-all">{inrDetails.details.accountNumber}</button>
+                <p className="text-xs text-white/70">IFSC</p>
+                <button type="button" onClick={() => { navigator.clipboard.writeText(String(inrDetails.details.ifsc)); }} className="w-full font-mono text-sm text-emerald-200 bg-black/20 rounded-lg p-2.5 break-all">{inrDetails.details.ifsc}</button>
+                <p className="text-[10px] text-amber-200 leading-relaxed">Settlement is not yet verified. Confirm Cashfree approval and settlement terms before receiving customer funds.</p>
+              </div>
+            )}
+          </div>
+        ) : mode === 'bank' ? (
           <div className="space-y-3">
             {!bankCfg && <p className="text-xs text-white/40 text-center py-4">Checking bank transfer availability…</p>}
             {bankCfg && !bankCfg.enabled && (
@@ -637,8 +677,8 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
           <p className="text-xs text-emerald-300 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">{cryptoToken} deposit confirmed — balance updated.</p>
         )}
 
-        {mode !== 'usdc' && !(mode === 'bank' && bankInstr) && (
-        <SubmitButton status={status} idleText={mode === 'card' ? 'Pay with Card — Real Money' : mode === 'paypal' ? 'Pay with PayPal — Real Money' : mode === 'bank' ? 'Get Bank Transfer Instructions' : 'Deposit Instantly'} color="emerald" />
+        {mode !== 'usdc' && !(mode === 'bank' && bankInstr) && !(mode === 'inr' && inrDetails) && (
+        <SubmitButton status={status} idleText={mode === 'inr' ? 'Get INR Receiving Details' : 'Get Bank Transfer Instructions'} color="emerald" />
         )}
       </form>
     </BaseModal>
@@ -647,98 +687,217 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
 
 export function WithdrawModal({ isOpen, onClose }: ModalProps) {
   const [amount, setAmount] = useState('');
+  const [bankAccount, setBankAccount] = useState('');
+  const [ifsc, setIfsc] = useState('');
+  const [address1, setAddress1] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [pincode, setPincode] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [successMsg, setSuccessMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-  const [stripeMode, setStripeMode] = useState<'live' | 'demo' | null>(null);
+  const [readiness, setReadiness] = useState<any>(null);
+  const [payoutId, setPayoutId] = useState('');
+  const [transferId, setTransferId] = useState('');
+  const [unknownOutcome, setUnknownOutcome] = useState(false);
+  const [needsReconcile, setNeedsReconcile] = useState(false);
+  const [idempotencyKey, setIdempotencyKey] = useState(() => `vbpo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
 
-  // Detect whether real Stripe keys are configured (LIVE vs SANDBOX)
   useEffect(() => {
     if (!isOpen) return;
-    api.stripeBalance()
-      .then(r => setStripeMode(r.mode === 'live' ? 'live' : 'demo'))
-      .catch(() => setStripeMode('demo'));
+    let cancelled = false;
+    api.paymentsReadiness()
+      .then((r) => { if (!cancelled) setReadiness(r?.rails?.inr || null); })
+      .catch(() => { if (!cancelled) setReadiness(null); });
+    return () => { cancelled = true; };
   }, [isOpen]);
+
+  // Require a successful read-only Cashfree payout credential probe before
+  // offering the live payout form; configured environment variables alone are not enough.
+  const payoutReady = readiness?.payouts === true &&
+    readiness?.payoutsMode === 'live' &&
+    readiness?.payoutsProviderLive === true;
+
+  const clearForm = () => {
+    setAmount('');
+    setBankAccount('');
+    setIfsc('');
+    setAddress1('');
+    setCity('');
+    setState('');
+    setPincode('');
+    setStatus('idle');
+    setSuccessMsg('');
+    setErrorMsg('');
+    setPayoutId('');
+    setTransferId('');
+    setUnknownOutcome(false);
+    setNeedsReconcile(false);
+    setIdempotencyKey(`vbpo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+  };
+
+  const handleClose = () => {
+    // Preserve the exact request/key when submission may be ambiguous or funds
+    // are held for reconciliation. A close/reopen must not create a new payout.
+    if (!unknownOutcome && !needsReconcile) clearForm();
+    onClose();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const amt = parseFloat(amount);
-    if (!amt || amt <= 0) return;
+    const amountText = amount.trim();
+    if (!/^\d+(\.\d{1,2})?$/.test(amountText) || !Number.isFinite(Number(amountText)) || Number(amountText) < 10 || Number(amountText) > 500000) {
+      setStatus('error');
+      setErrorMsg('Enter a valid INR payout amount between ₹10 and ₹5,00,000 with at most two decimal places.');
+      return;
+    }
+    if (!/^[0-9]{6,20}$/.test(bankAccount.trim()) || !/^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.trim().toUpperCase())) {
+      setStatus('error');
+      setErrorMsg('Enter a valid bank account number and IFSC.');
+      return;
+    }
+    if (address1.trim().length < 3 || !city.trim() || !state.trim() || !/^[0-9]{6}$/.test(pincode.trim())) {
+      setStatus('error');
+      setErrorMsg('A real street address, city, state and six-digit PIN code are required.');
+      return;
+    }
+    if (!payoutReady) {
+      setStatus('error');
+      setErrorMsg(readiness?.payoutsReason
+        ? `Cashfree payouts are not live-ready (${readiness.payoutsReason}). No payout was requested. An admin must configure live credentials and run the read-only credential probe.`
+        : 'Cashfree payout readiness could not be verified. No payout was requested.');
+      return;
+    }
+
     setStatus('loading');
     setErrorMsg('');
+    setSuccessMsg('');
     try {
-      // REAL payout — Stripe sends the money to the user's linked bank
-      const res = await api.stripeWithdraw({ amount: amt });
-      if (!res.success) throw new Error(res.message || 'Withdrawal failed.');
-      setSuccessMsg(res.message || `Withdrawal of $${amt.toFixed(2)} initiated.`);
+      const result = await api.createPayoutRequest({
+        amount: Number(amountText),
+        bankAccount: bankAccount.trim(),
+        ifsc: ifsc.trim().toUpperCase(),
+        address1: address1.trim(),
+        city: city.trim(),
+        state: state.trim(),
+        pincode: pincode.trim(),
+      }, idempotencyKey);
+      if (!result?.success) throw new Error(result?.message || 'Cashfree did not accept the payout request.');
+      setPayoutId(String(result.payoutId || ''));
+      setTransferId(String(result.transferId || ''));
+      if (result.status === 'reconciliation_required') {
+        setNeedsReconcile(true);
+        setUnknownOutcome(true);
+        setSuccessMsg(`Payout outcome needs reconciliation. Your funds remain reserved; do not start another payout until this one is resolved. Reference: ${result.transferId || result.payoutId || 'check payout history'}.`);
+        setStatus('success');
+        return;
+      }
+      setSuccessMsg(`INR payout submitted to Cashfree. Status: ${result.status || 'submitted'}; this is not confirmation that the beneficiary bank has received the funds. Reference: ${result.transferId || result.payoutId || 'saved in payout history'}.`);
+      setUnknownOutcome(false);
       setStatus('success');
-      setTimeout(() => { setStatus('idle'); setAmount(''); onClose(); }, 2400);
     } catch (err: any) {
-      setErrorMsg(err?.message || 'Withdrawal failed.');
+      const httpStatus = Number(err?.status || 0);
+      if (httpStatus === 0 || httpStatus >= 500) {
+        // The reservation or provider request may already exist. Lock the
+        // inputs and preserve the exact same idempotency key for safe retry.
+        setUnknownOutcome(true);
+        setErrorMsg('We could not verify the payout outcome. Do not change these details or create another payout. Retry this exact request with the same idempotency key, or ask an admin to check the payout queue.');
+      } else {
+        // A definitive client error is returned. A payout record may have
+        // been safely rejected/refunded; use a fresh key only for a new attempt.
+        setUnknownOutcome(false);
+        setIdempotencyKey(`vbpo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+        setErrorMsg(err?.message || 'Payout request was rejected.');
+      }
       setStatus('error');
     }
   };
 
   return (
-    <BaseModal isOpen={isOpen} onClose={onClose} icon={Banknote} title="Withdraw Funds" subtitle="REAL PAYOUT TO YOUR BANK">
+    <BaseModal isOpen={isOpen} onClose={handleClose} icon={Banknote} title="Withdraw INR" subtitle="CASHFREE BANK PAYOUT">
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* LIVE / SANDBOX badge */}
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-white/40 tracking-wider font-semibold">PAYOUT RAIL</span>
-          {stripeMode && (
-            <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold border ${
-              stripeMode === 'live'
-                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
-            }`}>
-              {stripeMode === 'live' ? '● LIVE — REAL PAYOUT' : '○ SANDBOX — TEST MODE'}
-            </span>
-          )}
+          <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold border ${
+            payoutReady
+              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+              : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
+          }`}>
+            {payoutReady ? '● LIVE CREDENTIALS VERIFIED' : '○ PAYOUT NOT READY'}
+          </span>
+        </div>
+
+        {!payoutReady && (
+          <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[11px] text-amber-300 leading-relaxed">
+            {readiness
+              ? `Payouts are disabled: ${readiness.payoutsReason || 'live credentials have not passed the read-only probe'}.`
+              : 'Checking Cashfree payout readiness…'}
+            {' '}No money will be sent from this form until live credentials have been verified.
+          </div>
+        )}
+
+        <div>
+          <label htmlFor="withdraw-inr-amount" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT (INR)</label>
+          <div className="relative">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-400 font-display text-2xl">₹</span>
+            <input id="withdraw-inr-amount" name="withdrawInrAmount" aria-label="INR payout amount" type="number" min="10" max="500000" step="0.01" required value={amount} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="w-full bg-white/5 border border-white/10 rounded-xl p-4 pl-10 text-2xl font-display text-white focus:outline-none focus:border-rose-500/40 transition-colors disabled:opacity-50" />
+          </div>
+          <p className="mt-1 text-[10px] text-white/30">Allowed range: ₹10–₹5,00,000 per payout.</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="payout-bank-account" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">BANK ACCOUNT</label>
+            <input id="payout-bank-account" autoComplete="off" inputMode="numeric" required value={bankAccount} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setBankAccount(e.target.value.replace(/\s/g, ''))} placeholder="Account number" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
+          </div>
+          <div>
+            <label htmlFor="payout-ifsc" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">IFSC</label>
+            <input id="payout-ifsc" autoComplete="off" required value={ifsc} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setIfsc(e.target.value.toUpperCase().replace(/\s/g, ''))} placeholder="HDFC0000001" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm font-mono text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
+          </div>
         </div>
 
         <div>
-          <label htmlFor="withdraw-amount" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">AMOUNT</label>
-          <div className="relative">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-400 font-display text-2xl">$</span>
-            <input
-              id="withdraw-amount"
-              name="withdrawAmount"
-              aria-label="Withdrawal amount in dollars"
-              type="number"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0.00"
-              className="w-full bg-white/5 border border-white/10 rounded-xl p-4 pl-10 text-2xl font-display text-white focus:outline-none focus:border-rose-500/40 transition-colors"
-            />
+          <label htmlFor="payout-address1" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">STREET ADDRESS</label>
+          <input id="payout-address1" autoComplete="street-address" required value={address1} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setAddress1(e.target.value)} placeholder="Your real residential address" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="payout-city" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">CITY</label>
+            <input id="payout-city" autoComplete="address-level2" required value={city} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setCity(e.target.value)} placeholder="City" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
+          </div>
+          <div>
+            <label htmlFor="payout-state" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">STATE</label>
+            <input id="payout-state" autoComplete="address-level1" required value={state} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setState(e.target.value)} placeholder="State" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          {['50', '100', '250', '500', '1000', '2500'].map(v => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setAmount(v)}
-              className="py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white/60 hover:text-white hover:border-rose-500/30 transition-colors"
-            >
-              ${v}
-            </button>
-          ))}
+        <div>
+          <label htmlFor="payout-pincode" className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">PIN CODE</label>
+          <input id="payout-pincode" autoComplete="postal-code" inputMode="numeric" required pattern="[0-9]{6}" maxLength={6} value={pincode} disabled={unknownOutcome || status === 'loading'} onChange={(e) => setPincode(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="6-digit PIN code" className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-sm text-white focus:outline-none focus:border-rose-500/40 disabled:opacity-50" />
         </div>
 
-        <p className="text-[10px] text-white/30 leading-relaxed">
-          Payouts are sent to your linked bank account via Stripe. Processing time: 1–2 business days.
+        <p className="text-[10px] text-white/35 leading-relaxed">
+          Your VaultBank profile must contain your real full name, email and phone. Funds are reserved before submission and remain held if the provider outcome is ambiguous. A submitted status is not proof of bank settlement.
         </p>
 
         {status === 'error' && (
           <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">{errorMsg}</p>
         )}
         {status === 'success' && (
-          <p className="text-xs text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 flex items-center gap-1.5">
-            <CheckCircle2 className="w-3.5 h-3.5" /> {successMsg}
-          </p>
+          <div className="text-xs text-emerald-300 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 space-y-2">
+            <p className="flex items-start gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 mt-0.5 shrink-0" />{successMsg}</p>
+            {payoutId && <p className="font-mono text-[10px] break-all">Payout ID: {payoutId}</p>}
+            {transferId && <p className="font-mono text-[10px] break-all">Reference: {transferId}</p>}
+          </div>
         )}
 
-        <SubmitButton status={status} idleText="Withdraw — Real Payout" color="rose" />
+        {status === 'success' ? (
+          <button type="button" onClick={handleClose} className="w-full py-3 rounded-xl bg-white/10 border border-white/10 text-white font-bold text-sm">Close</button>
+        ) : (
+          <SubmitButton status={status} idleText={unknownOutcome ? 'Retry Same Payout Request' : 'Submit INR Payout'} color="rose" />
+        )}
+        {needsReconcile && (
+          <p className="text-[10px] text-amber-200 leading-relaxed">This payout is held for reconciliation. Do not retry with a new key or submit another payout. Ask an admin to check the payout queue and provider status.</p>
+        )}
       </form>
     </BaseModal>
   );

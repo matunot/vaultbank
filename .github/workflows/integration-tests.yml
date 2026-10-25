@@ -2,6 +2,8 @@ name: Integration Tests (PostgreSQL)
 
 "on":
   workflow_dispatch: # Allow manual triggering
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
     paths:
@@ -29,6 +31,31 @@ name: Integration Tests (PostgreSQL)
       - '.github/workflows/integration-tests.yml'
 
 jobs:
+
+  frontend-verify:
+    name: Frontend - TypeScript and Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: TypeScript check
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build
+
   integration:
     name: PostgreSQL Integration Tests
     runs-on: ubuntu-latest

@@ -299,7 +299,7 @@ export const api = {
     return request<ApiResponse>('api/collections/my-details');
   },
 
-  async createPayoutRequest(data: { amount: number; bankAccount: string; ifsc: string }, idempotencyKey?: string): Promise<ApiResponse> {
+  async createPayoutRequest(data: { amount: number; bankAccount: string; ifsc: string; address1: string; city: string; state: string; pincode: string }, idempotencyKey?: string): Promise<ApiResponse> {
     return request<ApiResponse>('api/payouts/requests', {
       method: 'POST',
       body: JSON.stringify(data),
