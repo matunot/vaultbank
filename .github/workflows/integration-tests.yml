@@ -9,6 +9,11 @@ name: Integration Tests (PostgreSQL)
     paths:
       - 'server/routes/accounts.js'
       - 'server/routes/external-payouts.js'
+      - 'server/routes/direct-upi.js'
+      - 'server/__tests__/directUpi.test.js'
+      - 'client/src/components/DirectUpiDepositModal.tsx'
+      - 'client/src/components/PaymentsSection.tsx'
+      - 'client/src/api.ts'
       - 'server/routes/collections.js'
       - 'server/collections/**'
       - 'server/payouts/**'
@@ -90,6 +95,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run direct UPI safety tests
+        run: |
+          npx --yes jest@30.5.2 __tests__/directUpi.test.js \
+            --testPathIgnorePatterns /node_modules/ \
+            --runInBand --testTimeout=60000 --verbose --forceExit
 
       - name: Create test database
         run: |
