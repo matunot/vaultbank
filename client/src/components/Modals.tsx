@@ -288,7 +288,7 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
 }
 
 export function DepositModal({ isOpen, onClose }: ModalProps) {
-  const [mode, setMode] = useState<'card' | 'instant' | 'paypal' | 'usdc' | 'bank'>('card');
+  const [mode, setMode] = useState<'inr' | 'bank' | 'card' | 'instant' | 'paypal' | 'usdc'>('inr');
   const [usdc, setUsdc] = useState<{ address: string; network: string; qr: string | null } | null>(null);
   const [usdcTestnet, setUsdcTestnet] = useState(false);
   const [usdcChecking, setUsdcChecking] = useState(false);
@@ -296,7 +296,8 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
   const [amount, setAmount] = useState('');
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
-  const [stripeMode, setStripeMode] = useState<'live' | 'demo' | null>(null);
+  const [inrReadiness, setInrReadiness] = useState<any>(null);
+  const [inrDetails, setInrDetails] = useState<any>(null);
   const [bankCfg, setBankCfg] = useState<any>(null);
   const [bankInstr, setBankInstr] = useState<any>(null);
 
@@ -309,13 +310,15 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
       .catch(() => setBankCfg({ enabled: false }));
   }, [isOpen, mode, bankCfg]);
 
-  // Detect whether real Stripe keys are configured (LIVE vs SANDBOX)
+  // INR readiness is read from the server; environment variables alone do not mean settlement is live.
   useEffect(() => {
-    if (!isOpen) return;
-    api.stripeBalance()
-      .then(r => setStripeMode(r.mode === 'live' ? 'live' : 'demo'))
-      .catch(() => setStripeMode('demo'));
-  }, [isOpen]);
+    if (!isOpen || mode !== 'inr') return;
+    let cancelled = false;
+    api.paymentsReadiness()
+      .then((r) => { if (!cancelled) setInrReadiness(r?.rails?.inr || null); })
+      .catch(() => { if (!cancelled) setInrReadiness(null); });
+    return () => { cancelled = true; };
+  }, [isOpen, mode]);
 
   // Fetch your personal USDC address when the USDC rail opens (no signup needed).
   useEffect(() => {
@@ -356,6 +359,43 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (mode === 'usdc') return; // USDC flow uses the address panel + check button.
+    if (mode === 'inr') {
+      setStatus('loading');
+      setErrorMsg('');
+      try {
+        let readiness = inrReadiness;
+        if (!readiness) {
+          const r = await api.paymentsReadiness();
+          readiness = r?.rails?.inr || null;
+          setInrReadiness(readiness);
+        }
+        if (!readiness?.collections || readiness.collectionsMode !== 'live') {
+          const reason = readiness?.collectionsReason || 'readiness-unavailable';
+          throw new Error(`Cashfree INR receiving is not live-ready yet (${reason}). Do not send funds until VaultBank displays provider-issued bank details.`);
+        }
+        try {
+          await api.getInrAccount();
+        } catch (accountError: any) {
+          if (accountError?.status !== 404) throw accountError;
+          try {
+            await api.openInrAccount();
+          } catch (openError: any) {
+            if (openError?.status !== 409) throw openError;
+            await api.getInrAccount();
+          }
+        }
+        const result = await api.collectionsMyDetails();
+        if (!result?.success || !result?.details?.accountNumber || !result?.details?.ifsc) {
+          throw new Error(result?.message || 'Cashfree did not return an active receiving account.');
+        }
+        setInrDetails(result);
+        setStatus('success');
+      } catch (err: any) {
+        setErrorMsg(err?.message || 'Could not load Cashfree INR receiving details.');
+        setStatus('error');
+      }
+      return;
+    }
     if (mode === 'bank') {
       if (bankInstr) return; // Instructions already issued — use the panel.
       const amt = parseFloat(amount);
@@ -449,58 +489,30 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
         {/* LIVE / SANDBOX badge */}
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-white/40 tracking-wider font-semibold">PAYMENT RAIL</span>
-          {stripeMode && (
+          {mode === 'inr' && (
             <span className={`px-2.5 py-1 rounded-full text-[9px] font-bold border ${
-              stripeMode === 'live'
+              inrReadiness?.collections && inrReadiness?.collectionsMode === 'live'
                 ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
                 : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
             }`}>
-              {stripeMode === 'live' ? '● LIVE — REAL MONEY' : '○ SANDBOX — TEST MODE'}
+              {inrReadiness?.collections && inrReadiness?.collectionsMode === 'live'
+                ? '● LIVE RAIL CONFIGURED · SETTLEMENT UNVERIFIED'
+                : '○ INR RECEIVING NOT READY'}
             </span>
           )}
         </div>
 
-        {/* Mode toggle */}
+        {/* Only the supported fiat receive choices are shown. Card providers and crypto remain paused. */}
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => setMode('card')}
+            onClick={() => { setMode('inr'); setInrDetails(null); setStatus('idle'); setErrorMsg(''); }}
             className={`p-3 rounded-xl border text-left transition-colors ${
-              mode === 'card' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
+              mode === 'inr' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
             }`}
           >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5"><CreditCard className="w-3.5 h-3.5" /> Card via Stripe</p>
-            <p className="text-[9px] text-white/40 mt-1">Real card payment · secure checkout</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('instant')}
-            className={`p-3 rounded-xl border text-left transition-colors ${
-              mode === 'instant' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
-            }`}
-          >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" /> Instant</p>
-            <p className="text-[9px] text-white/40 mt-1">Internal credit · no card needed</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('paypal')}
-            className={`p-3 rounded-xl border text-left transition-colors ${
-              mode === 'paypal' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
-            }`}
-          >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5">🅿️ PayPal</p>
-            <p className="text-[9px] text-white/40 mt-1">Real PayPal checkout</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('usdc')}
-            className={`p-3 rounded-xl border text-left transition-colors ${
-              mode === 'usdc' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
-            }`}
-          >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5">🪙 USDC / USDT</p>
-            <p className="text-[9px] text-white/40 mt-1">No signup · your address</p>
+            <p className="text-xs font-bold text-white flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> INR bank account</p>
+            <p className="text-[9px] text-white/40 mt-1">Cashfree-issued receiving details</p>
           </button>
           <button
             type="button"
@@ -509,12 +521,40 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
               mode === 'bank' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
             }`}
           >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> Bank Transfer</p>
-            <p className="text-[9px] text-white/40 mt-1">Wire/SEPA · verified on statement</p>
+            <p className="text-xs font-bold text-white flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> Manual bank transfer</p>
+            <p className="text-[9px] text-white/40 mt-1">Only if a verified receiving account is configured</p>
           </button>
         </div>
 
-        {mode === 'bank' ? (
+        {mode === 'inr' ? (
+          <div className="space-y-3">
+            <p className="text-[11px] text-white/50 leading-relaxed">
+              VaultBank will show only bank details issued by Cashfree. Funds are not credited until a valid, signed provider payment event is reconciled.
+            </p>
+            {!inrReadiness && (
+              <p className="text-xs text-white/40 text-center py-3">Checking INR receiving readiness…</p>
+            )}
+            {inrReadiness && (!inrReadiness.collections || inrReadiness.collectionsMode !== 'live') && (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[11px] text-amber-300 font-bold text-center leading-relaxed">
+                INR receiving is not ready yet. Current reason: {inrReadiness.collectionsReason || 'provider-not-configured'}. Do not transfer money until provider-issued account details appear here.
+              </div>
+            )}
+            {inrReadiness?.collections && inrReadiness?.collectionsMode === 'live' && !inrDetails && (
+              <p className="text-[11px] text-white/50 text-center">Your receiving account will be provisioned by Cashfree. No bank account number or IFSC is generated by VaultBank.</p>
+            )}
+            {inrDetails && (
+              <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 space-y-2">
+                <p className="text-[9px] text-emerald-300 tracking-wider font-bold">PROVIDER-ISSUED INR RECEIVING ACCOUNT</p>
+                <p className="text-xs text-white/70">Bank: <span className="font-bold text-white">{inrDetails.details.bankCode || 'Cashfree partner bank'}</span></p>
+                <p className="text-xs text-white/70">Account number</p>
+                <button type="button" onClick={() => { navigator.clipboard.writeText(String(inrDetails.details.accountNumber)); }} className="w-full font-mono text-sm text-emerald-200 bg-black/20 rounded-lg p-2.5 break-all">{inrDetails.details.accountNumber}</button>
+                <p className="text-xs text-white/70">IFSC</p>
+                <button type="button" onClick={() => { navigator.clipboard.writeText(String(inrDetails.details.ifsc)); }} className="w-full font-mono text-sm text-emerald-200 bg-black/20 rounded-lg p-2.5 break-all">{inrDetails.details.ifsc}</button>
+                <p className="text-[10px] text-amber-200 leading-relaxed">Settlement is not yet verified. Confirm Cashfree approval and settlement terms before receiving customer funds.</p>
+              </div>
+            )}
+          </div>
+        ) : mode === 'bank' ? (
           <div className="space-y-3">
             {!bankCfg && <p className="text-xs text-white/40 text-center py-4">Checking bank transfer availability…</p>}
             {bankCfg && !bankCfg.enabled && (
@@ -637,8 +677,8 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
           <p className="text-xs text-emerald-300 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3">{cryptoToken} deposit confirmed — balance updated.</p>
         )}
 
-        {mode !== 'usdc' && !(mode === 'bank' && bankInstr) && (
-        <SubmitButton status={status} idleText={mode === 'card' ? 'Pay with Card — Real Money' : mode === 'paypal' ? 'Pay with PayPal — Real Money' : mode === 'bank' ? 'Get Bank Transfer Instructions' : 'Deposit Instantly'} color="emerald" />
+        {mode !== 'usdc' && !(mode === 'bank' && bankInstr) && !(mode === 'inr' && inrDetails) && (
+        <SubmitButton status={status} idleText={mode === 'inr' ? 'Get INR Receiving Details' : 'Get Bank Transfer Instructions'} color="emerald" />
         )}
       </form>
     </BaseModal>
