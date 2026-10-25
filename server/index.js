@@ -64,7 +64,7 @@ app.use(cors({
     origin: true, // Reflect any origin (safe for public API with JWT auth)
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-Requested-With']
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-Requested-With', 'Idempotency-Key']
 }));
 
 // ─── Body Parsing ────────────────────────────────────────────────────────────
