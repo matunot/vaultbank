@@ -279,7 +279,7 @@ describe('VaultBank-owned manual bank payouts', () => {
     client.query.mockImplementation(async (sql) => {
       const query = String(sql);
       if (query.startsWith('SELECT * FROM direct_bank_payout_requests WHERE id = $1 FOR UPDATE')) return { rows: [REQUEST] };
-      if (query.startsWith('SELECT id FROM transactions WHERE external_reference = $1 AND type = \\'withdrawal\\' FOR UPDATE')) return { rows: [{ id: 'withdrawal-1' }] };
+      if (query.startsWith("SELECT id FROM transactions WHERE external_reference = $1 AND type = 'withdrawal' FOR UPDATE")) return { rows: [{ id: 'withdrawal-1' }] };
       if (query.startsWith("UPDATE direct_bank_payout_requests SET status = 'failed_refunded'")) return { rows: [{ id: 'payout-1' }] };
       if (query.startsWith('SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1')) return { rows: [] };
       if (query.startsWith('UPDATE accounts SET balance = balance + $2')) return { rows: [{ balance_before: '400.00', balance_after: '500.00' }] };
