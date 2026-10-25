@@ -390,6 +390,24 @@ export const api = {
     return request<ApiResponse>('api/direct-upi/intents');
   },
 
+  async directUpiAdminIntents(status = 'pending'): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/direct-upi/admin/intents?status=${encodeURIComponent(status)}`);
+  },
+
+  async verifyDirectUpiIntent(id: string, data: { settlementAmount: string; bankUtr: string; evidenceNote: string }): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/direct-upi/admin/intents/${encodeURIComponent(id)}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async failDirectUpiIntent(id: string, note: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/direct-upi/admin/intents/${encodeURIComponent(id)}/fail`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+  },
+
   async usdcAddress(network?: string, token?: string): Promise<ApiResponse> {
     const params = new URLSearchParams();
     if (network) params.set('network', network);
