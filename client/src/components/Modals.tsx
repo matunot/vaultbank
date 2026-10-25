@@ -718,7 +718,7 @@ export function WithdrawModal({ isOpen, onClose }: ModalProps) {
     readiness?.payoutsMode === 'live' &&
     readiness?.payoutsProviderLive === true;
 
-  const resetAndClose = () => {
+  const clearForm = () => {
     setAmount('');
     setBankAccount('');
     setIfsc('');
@@ -734,6 +734,12 @@ export function WithdrawModal({ isOpen, onClose }: ModalProps) {
     setUnknownOutcome(false);
     setNeedsReconcile(false);
     setIdempotencyKey(`vbpo-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+  };
+
+  const handleClose = () => {
+    // Preserve the exact request/key when submission may be ambiguous or funds
+    // are held for reconciliation. A close/reopen must not create a new payout.
+    if (!unknownOutcome && !needsReconcile) clearForm();
     onClose();
   };
 
@@ -808,7 +814,7 @@ export function WithdrawModal({ isOpen, onClose }: ModalProps) {
   };
 
   return (
-    <BaseModal isOpen={isOpen} onClose={resetAndClose} icon={Banknote} title="Withdraw INR" subtitle="CASHFREE BANK PAYOUT">
+    <BaseModal isOpen={isOpen} onClose={handleClose} icon={Banknote} title="Withdraw INR" subtitle="CASHFREE BANK PAYOUT">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="flex items-center justify-between">
           <span className="text-[10px] text-white/40 tracking-wider font-semibold">PAYOUT RAIL</span>
@@ -885,7 +891,7 @@ export function WithdrawModal({ isOpen, onClose }: ModalProps) {
         )}
 
         {status === 'success' ? (
-          <button type="button" onClick={resetAndClose} className="w-full py-3 rounded-xl bg-white/10 border border-white/10 text-white font-bold text-sm">Close</button>
+          <button type="button" onClick={handleClose} className="w-full py-3 rounded-xl bg-white/10 border border-white/10 text-white font-bold text-sm">Close</button>
         ) : (
           <SubmitButton status={status} idleText={unknownOutcome ? 'Retry Same Payout Request' : 'Submit INR Payout'} color="rose" />
         )}
