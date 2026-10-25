@@ -281,6 +281,32 @@ router.post('/api/payouts/requests', authenticateToken, async (req, res) => {
         const user = await findUserById(req.user.id);
         if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
 
+        // Collect real beneficiary identity/address BEFORE reserving or debiting funds.
+        // No placeholder personal data is sent to the payout provider.
+        const beneficiaryName = String(user.full_name || '').trim();
+        const beneficiaryEmail = String(user.email || '').trim();
+        const beneficiaryPhoneDigits = String(user.phone || '').replace(/\\D/g, '');
+        const address1 = String(body.address1 || '').trim();
+        const city = String(body.city || '').trim();
+        const state = String(body.state || '').trim();
+        const pincode = String(body.pincode || '').trim();
+        if (beneficiaryName.length < 2 ||
+            !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(beneficiaryEmail) ||
+            beneficiaryPhoneDigits.length < 10 || beneficiaryPhoneDigits.length > 15) {
+            return res.status(400).json({
+                success: false,
+                code: 'PAYOUTS_CUSTOMER_DETAILS_REQUIRED',
+                message: 'Complete your real full name, valid email and phone number before requesting an INR payout.',
+            });
+        }
+        if (address1.length < 3 || !city || !state || !/^\\d{6}$/.test(pincode)) {
+            return res.status(400).json({
+                success: false,
+                code: 'PAYOUTS_BENEFICIARY_ADDRESS_REQUIRED',
+                message: 'A real street address, city, state and six-digit PIN code are required for an INR payout.',
+            });
+        }
+
         const { rows: inrRows } = await db.query(
             "SELECT * FROM accounts WHERE user_id = $1 AND currency = $2 AND status = 'active' ORDER BY created_at ASC LIMIT 1",
             [req.user.id, CURRENCY]
@@ -385,11 +411,17 @@ router.post('/api/payouts/requests', authenticateToken, async (req, res) => {
             try {
                 await active.adapter.ensureBeneficiary({
                     beneId,
-                    name: user.full_name || 'VaultBank Customer',
-                    email: user.email,
-                    phone: user.phone,
+                    name: beneficiaryName,
+                    email: beneficiaryEmail,
+                    phone: beneficiaryPhoneDigits.length === 12 && beneficiaryPhoneDigits.startsWith('91')
+                        ? beneficiaryPhoneDigits.slice(2)
+                        : beneficiaryPhoneDigits,
                     bankAccount,
                     ifsc,
+                    address1,
+                    city,
+                    state,
+                    pincode,
                 });
             } catch (beneficiaryErr) {
                 // No transfer request has been sent yet — refunding is safe
