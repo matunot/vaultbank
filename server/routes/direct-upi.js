@@ -58,7 +58,7 @@ async function ensureSchema() {
     "id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), " +
     "user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, " +
     "account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE, " +
-    "reference TEXT NOT NULL UNIQUE, " +
+    "reference TEXT NOT NULL UNIQUE, idempotency_key TEXT NOT NULL, " +
     "amount NUMERIC(15,2) NOT NULL CHECK (amount > 0), " +
     "currency TEXT NOT NULL DEFAULT 'INR' CHECK (currency = 'INR'), " +
     "status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','settling','settled','failed','cancelled','expired')), " +
@@ -68,6 +68,10 @@ async function ensureSchema() {
   await db.query(
     "CREATE UNIQUE INDEX IF NOT EXISTS direct_upi_deposit_utr_uq " +
     "ON direct_upi_deposit_intents (bank_utr) WHERE bank_utr IS NOT NULL"
+  );
+  await db.query(
+    "CREATE UNIQUE INDEX IF NOT EXISTS direct_upi_deposit_user_idempotency_uq " +
+    "ON direct_upi_deposit_intents (user_id, idempotency_key)"
   );
   await db.query(
     "CREATE INDEX IF NOT EXISTS direct_upi_deposit_user_created_idx " +
@@ -108,6 +112,27 @@ function makeUpiUri(cfg, amount, reference) {
     tn: reference,
   });
   return 'upi://pay?' + params.toString();
+}
+
+async function paymentPayload(intent, cfg) {
+  const amount = Number(intent.amount).toFixed(2);
+  const upiUri = makeUpiUri(cfg, amount, intent.reference);
+  const qrDataUrl = await QRCode.toDataURL(upiUri, { errorCorrectionLevel: 'M', margin: 1, width: 320, type: 'image/png' });
+  return {
+    intent: serializeIntent(intent),
+    transfer: {
+      provider: cfg.provider,
+      vpa: cfg.vpa,
+      payeeName: cfg.payeeName,
+      amount,
+      currency: CURRENCY,
+      reference: intent.reference,
+      upiUri,
+      qrDataUrl,
+      note: 'Payment goes directly to the VaultBank operator-configured bank-linked UPI ID. This request does not credit your balance. Your balance changes only after an authorized administrator verifies the incoming credit on the receiving bank statement.',
+      verification: 'manual-bank-statement',
+    },
+  };
 }
 
 function serializeIntent(row) {
@@ -181,8 +206,11 @@ router.get('/api/direct-upi/config', authenticateToken, (req, res) => {
 });
 
 router.post('/api/direct-upi/intents', authenticateToken, async (req, res) => {
+  let idempotencyKey = '';
+  let requestAmountPaise = null;
+  let cfg = null;
   try {
-    const cfg = readiness();
+    cfg = readiness();
     if (!cfg.available) {
       return res.status(503).json({
         success: false,
@@ -199,8 +227,29 @@ router.post('/api/direct-upi/intents', authenticateToken, async (req, res) => {
         message: 'Amount must be INR 1.00 to INR 10,000.00 with at most two decimal places.',
       });
     }
+    requestAmountPaise = amountPaise;
+    idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
+    if (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 100 || !/^[A-Za-z0-9._:-]+$/.test(idempotencyKey)) {
+      return res.status(400).json({ success: false, code: 'IDEMPOTENCY_KEY_REQUIRED', message: 'An Idempotency-Key header with 8-100 safe characters is required.' });
+    }
     await ensureSchema();
     await sweepExpired();
+
+    const existingResult = await db.query(
+      'SELECT * FROM direct_upi_deposit_intents WHERE user_id = $1 AND idempotency_key = $2 LIMIT 1',
+      [req.user.id, idempotencyKey]
+    );
+    if (existingResult.rows.length > 0) {
+      const existing = existingResult.rows[0];
+      if (parseAmountToPaise(existing.amount) !== amountPaise) {
+        return res.status(409).json({ success: false, code: 'DIRECT_UPI_IDEMPOTENCY_MISMATCH', message: 'This request key was already used with a different amount. Generate a new intent key.' });
+      }
+      if (existing.status !== 'pending' || new Date(existing.expires_at).getTime() <= Date.now()) {
+        return res.status(409).json({ success: false, code: 'DIRECT_UPI_INTENT_NOT_PENDING', message: 'This idempotent request already exists but is no longer pending. Create a new intent with a new key.' });
+      }
+      const payload = await paymentPayload(existing, cfg);
+      return res.status(200).json({ success: true, idempotentReplay: true, ...payload });
+    }
 
     const accountResult = await db.query(
       "SELECT id FROM accounts WHERE user_id = $1 AND currency = 'INR' AND status = 'active' ORDER BY created_at ASC LIMIT 1",
@@ -227,37 +276,32 @@ router.post('/api/direct-upi/intents', authenticateToken, async (req, res) => {
 
     const amount = toRupees(amountPaise);
     const reference = makeReference();
-    const upiUri = makeUpiUri(cfg, amount, reference);
-    const qrDataUrl = await QRCode.toDataURL(upiUri, {
-      errorCorrectionLevel: 'M',
-      margin: 1,
-      width: 320,
-      type: 'image/png',
-    });
     const inserted = await db.query(
-      "INSERT INTO direct_upi_deposit_intents (user_id, account_id, reference, amount, currency, expires_at) " +
-      "VALUES ($1, $2, $3, $4, 'INR', NOW() + ($5 || ' minutes')::interval) RETURNING *",
-      [req.user.id, accountResult.rows[0].id, reference, amount, String(EXPIRY_MINUTES)]
+      "INSERT INTO direct_upi_deposit_intents (user_id, account_id, reference, idempotency_key, amount, currency, expires_at) " +
+      "VALUES ($1, $2, $3, $4, $5, 'INR', NOW() + ($6 || ' minutes')::interval) RETURNING *",
+      [req.user.id, accountResult.rows[0].id, reference, idempotencyKey, amount, String(EXPIRY_MINUTES)]
     );
     const intent = inserted.rows[0];
     await audit(req.user.id, 'direct_upi_intent_created', intent.id, { reference, amount, currency: CURRENCY }, req);
-    return res.status(201).json({
-      success: true,
-      intent: serializeIntent(intent),
-      transfer: {
-        provider: cfg.provider,
-        vpa: cfg.vpa,
-        payeeName: cfg.payeeName,
-        amount,
-        currency: CURRENCY,
-        reference,
-        upiUri,
-        qrDataUrl,
-        note: 'Payment goes directly to the VaultBank operator-configured bank-linked UPI ID. This request does not credit your balance. Your balance changes only after an authorized administrator verifies the incoming credit on the receiving bank statement.',
-        verification: 'manual-bank-statement',
-      },
-    });
+    const payload = await paymentPayload(intent, cfg);
+    return res.status(201).json({ success: true, ...payload });
   } catch (error) {
+    if (error && error.code === '23505' && idempotencyKey) {
+      try {
+        const existingResult = await db.query(
+          'SELECT * FROM direct_upi_deposit_intents WHERE user_id = $1 AND idempotency_key = $2 LIMIT 1',
+          [req.user.id, idempotencyKey]
+        );
+        const existing = existingResult.rows[0];
+        if (existing && requestAmountPaise != null && parseAmountToPaise(existing.amount) === requestAmountPaise && existing.status === 'pending' && new Date(existing.expires_at).getTime() > Date.now()) {
+          const payload = await paymentPayload(existing, cfg);
+          return res.status(200).json({ success: true, idempotentReplay: true, ...payload });
+        }
+        if (existing) return res.status(409).json({ success: false, code: 'DIRECT_UPI_IDEMPOTENCY_MISMATCH', message: 'This request key has already been used; no second intent was created.' });
+      } catch (recoveryError) {
+        console.error('Direct UPI idempotency recovery error:', recoveryError.message);
+      }
+    }
     console.error('Direct UPI intent error:', error.message);
     return res.status(500).json({ success: false, message: 'Could not create a direct UPI deposit intent.' });
   }
