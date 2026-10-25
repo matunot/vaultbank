@@ -66,7 +66,9 @@ async function ensureTables() {
             ON payment_intents (user_id, idempotency_key)
             WHERE idempotency_key IS NOT NULL
         `);
-    } catch (_) { /* duplicates would need operator resolution */ }
+    } catch (idxErr) {
+        console.error('payment_intent_idempotency_key index not ready:', idxErr.message);
+    }
     try {
         await db.query(`
             CREATE INDEX IF NOT EXISTS ix_payment_intents_state
@@ -74,6 +76,17 @@ async function ensureTables() {
             WHERE state NOT IN ('succeeded', 'failed', 'cancelled')
         `);
     } catch (_) { /* index may already exist */ }
+    // Never fail open: without the unique index, concurrent intents with the
+    // same key would both insert and could replay the wrong payment.
+    const { rows } = await db.query(`
+        SELECT COALESCE((SELECT indisunique FROM pg_index
+                          WHERE indexrelid = to_regclass('public.payment_intent_idempotency_key')), false) AS ready
+    `);
+    if (!rows[0] || !rows[0].ready) {
+        const err = new Error('VBR schema is not ready: payment_intent_idempotency_key is missing or not unique. Resolve duplicate idempotency keys before creating intents.');
+        err.code = 'VBR_SCHEMA_NOT_READY';
+        throw err;
+    }
     tablesReady = true;
 }
 
@@ -115,9 +128,32 @@ function vbrAvailability() {
     const collections = collectionsAvailability();
     const payouts = payoutAvailability();
     return {
-        internal: { available: true, reason: 'always available (VaultBank-to-VaultBank)' },
-        collections: { available: collections.available, reason: collections.reason || (collections.available ? 'provider configured' : 'no collection provider configured'), provider: collections.provider || null },
-        payouts: { available: payouts.available, reason: payouts.reason || (payouts.available ? 'provider configured' : 'no payout provider configured'), provider: payouts.provider || null },
+        internal: { available: true, reason: 'always available (VaultBank-to-VaultBank)', execution: 'executes-transfer' },
+        collections: {
+            available: collections.available,
+            reason: collections.reason || (collections.available ? 'provider configured' : 'no collection provider configured'),
+            provider: collections.provider || null,
+            configured: collections.configured,
+            mode: collections.mode,
+            credentialValid: collections.credentialValid,
+            webhookReady: collections.webhookReady,
+            providerLive: collections.providerLive,
+            liveSettlementVerified: collections.liveSettlementVerified,
+            execution: 'tracking-only', // use GET /api/collections/my-details for the provider VBA
+        },
+        payouts: {
+            available: payouts.available,
+            reason: payouts.reason || (payouts.available ? 'provider configured' : 'no payout provider configured'),
+            provider: payouts.provider || null,
+            configured: payouts.configured,
+            mode: payouts.mode,
+            credentialValid: payouts.credentialValid,
+            webhookReady: payouts.webhookReady,
+            providerLive: payouts.providerLive,
+            liveSettlementVerified: payouts.liveSettlementVerified,
+            reconciliation: payouts.reconciliation,
+            execution: 'tracking-only', // use POST /api/payouts/requests to move money
+        },
         usd_external: { available: false, reason: 'no authorized USD settlement rail exists today — explicitly unavailable' },
     };
 }
@@ -178,7 +214,11 @@ router.get('/api/vbr/intents/:id', authenticateToken, async (req, res) => {
 // ============================================================
 router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
     const { direction, method, amount, currency, counterparty, description, metadata } = req.body;
-    const idempotencyKey = req.headers['idempotency-key'] ? String(req.headers['idempotency-key']).slice(0, 100) : null;
+    const rawIdempotencyKey = req.headers['idempotency-key'];
+    const idempotencyKey = rawIdempotencyKey == null ? null : (String(rawIdempotencyKey).trim() || null);
+    if (idempotencyKey && idempotencyKey.length > 100) {
+        return res.status(400).json({ success: false, code: 'IDEMPOTENCY_KEY_INVALID', message: 'Idempotency-Key must be at most 100 characters.' });
+    }
 
     // Material-params match for idempotency: same key + same params = replay,
     // same key + different params = clear conflict (never a silent wrong
@@ -525,6 +565,9 @@ router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
             message: `Method "${method}" with direction "${direction}" is not supported yet.`,
         });
     } catch (error) {
+        if (error.code === 'VBR_SCHEMA_NOT_READY') {
+            return res.status(503).json({ success: false, code: error.code, message: error.message });
+        }
         // DB-enforced idempotency: unique violation means a concurrent request
         // with the same key won the INSERT race. Same params → replay the
         // original; different params → clear conflict.

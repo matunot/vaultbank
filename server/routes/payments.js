@@ -23,7 +23,7 @@
 
 const express = require('express');
 const { v4: uuidv4 } = require('uuid');
-const { authenticateToken } = require('../middleware/auth');
+const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { demoStore, isDemo, findAccountByUserId } = require('../config/database');
 const { logAudit } = require('../utils/audit');
 const paymentProviders = require('../payments');
@@ -43,9 +43,10 @@ const router = express.Router();
 const IDEMPOTENCY_HEADER = 'idempotency-key';
 
 // ============================================================================
-// GET /api/payments/readiness — PUBLIC per-rail readiness booleans.
-// Booleans only: never secret values, never user data. Lets the UI and ops
-// probes show each rail's REAL availability instead of guessing.
+// GET /api/payments/readiness — PUBLIC per-rail readiness.
+// Non-secret states only: never secret values, never user data. These are
+// deliberately NOT all booleans: "configured" is not "credential-valid", and
+// "credential-valid" is not "a real settlement succeeded".
 // ============================================================================
 router.get('/api/payments/readiness', (req, res) => {
     try {
@@ -76,16 +77,71 @@ router.get('/api/payments/readiness', (req, res) => {
                 inr: {
                     collections: collections.available,
                     collectionsProvider: collections.available ? collections.provider : null,
+                    collectionsConfigured: collections.configured,
+                    collectionsMode: collections.mode,
+                    collectionsCredentialValid: collections.credentialValid,
+                    collectionsWebhookReady: collections.webhookReady,
+                    collectionsProviderLive: collections.providerLive,
+                    collectionsLiveSettlementVerified: collections.liveSettlementVerified,
+                    collectionsReason: collections.reason || null,
+                    collectionsWebhookPath: '/api/collections/webhook/cashfree',
                     internalTransfers: true,
                     payouts: payouts.available,
                     payoutsProvider: payouts.available ? payouts.provider : null,
+                    payoutsConfigured: payouts.configured,
+                    payoutsMode: payouts.mode,
+                    payoutsCredentialValid: payouts.credentialValid,
+                    payoutsWebhookReady: payouts.webhookReady,
+                    payoutsProviderLive: payouts.providerLive,
+                    payoutsLiveSettlementVerified: payouts.liveSettlementVerified,
+                    payoutsReason: payouts.reason || null,
+                    payoutsReconciliation: payouts.reconciliation,
                 },
             },
             currencies: ['USD', 'INR'],
+            readinessDefinitions: {
+                configured: 'provider selected and credentials present — NOT proof they are valid',
+                credentialValid: 'credentials accepted by a safe provider probe; the collections adapter has no probe, so it stays unverified in this integration',
+                webhookReady: 'a signature-verified inbound webhook route is mounted and the provider is configured; payouts are reconciled by the pull status API (no payout webhook is implemented in this integration)',
+                providerLive: 'production host + credentials accepted by a probe; never inferred from environment variables alone',
+                liveSettlementVerified: 'a real settled transaction has been observed; false until then',
+            },
         });
     } catch (error) {
         console.error('Readiness error:', error);
         return res.status(200).json({ success: true, rails: null, error: 'readiness-unavailable' }); // never fail-closed-crash the UI on diagnostics
+    }
+});
+
+// ============================================================================
+// GET /api/payments/admin/readiness?probe=1 — admin diagnostics.
+// The payout probe calls POST /payout/v1/authorize only; it never moves money.
+// Collections intentionally has no safe credential probe.
+// ============================================================================
+router.get('/api/payments/admin/readiness', authenticateToken, requireAdmin, async (req, res) => {
+    try {
+        const collections = collectionsRegistry.collectionsAvailability();
+        const payoutsBefore = payoutsRegistry.payoutAvailability();
+        let payoutProbe = null;
+        if (String(req.query.probe || '') === '1' && payoutsBefore.available && payoutsBefore.provider) {
+            const adapter = payoutsRegistry.providers[payoutsBefore.provider];
+            if (adapter && typeof adapter.probeCredentials === 'function') {
+                payoutProbe = await adapter.probeCredentials();
+            } else {
+                payoutProbe = { ok: false, code: 'NO_SAFE_PROBE' };
+            }
+        }
+        const payouts = payoutProbe ? payoutsRegistry.payoutAvailability() : payoutsBefore;
+        return res.status(200).json({
+            success: true,
+            collections,
+            payouts,
+            payoutProbe,
+            note: 'Payout probe: POST /payout/v1/authorize (read-only, no money). Collections: no safe credential probe; credentialValid stays unverified.',
+        });
+    } catch (error) {
+        console.error('Admin readiness probe error:', error.message);
+        return res.status(502).json({ success: false, message: 'Readiness probe failed.' });
     }
 });
 

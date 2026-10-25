@@ -91,7 +91,10 @@ async function call(path, { method = 'get', body, headers = {} } = {}) {
 beforeEach(() => {
     jest.clearAllMocks();
     CDB.findAccountByUserIdAndCurrency.mockResolvedValue({ id: 'acc-1', user_id: 'u-1', currency: 'USD', balance: '1000.00', available_balance: '1000.00', status: 'active' });
-    CDB.db.query.mockResolvedValue({ rows: [] });
+    CDB.db.query.mockImplementation(async (sql) => {
+        if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
+        return { rows: [] };
+    });
 });
 
 // ── State machine ──
@@ -223,6 +226,7 @@ describe('VBR API routes', () => {
 
     function setupIntentMocks({ intentRow, freshRow, recipient }) {
         CDB.db.query.mockImplementation(async (sql) => {
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes('INSERT INTO payment_intents')) return { rows: [intentRow] };
             if (sql.includes('UPDATE payment_intents') && sql.includes('RETURNING *')) return { rows: [freshRow] };
             if (sql.includes('SELECT * FROM payment_intents WHERE id = $1')) return { rows: [freshRow] };
@@ -364,6 +368,7 @@ describe('VBR API routes', () => {
 
     test('POST /api/vbr/intents: idempotency-key replay with same params returns original', async () => {
         CDB.db.query.mockImplementation(async (sql) => {
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes('FROM payment_intents WHERE user_id = $1 AND idempotency_key')) {
                 return { rows: [{ id: 'pi-existing', state: 'succeeded', direction: 'send', method: 'internal', amount: '100.00', currency: 'USD', counterparty: null }] };
             }
@@ -381,6 +386,7 @@ describe('VBR API routes', () => {
 
     test('POST /api/vbr/intents: same idempotency key with DIFFERENT params → 409 conflict, nothing executed', async () => {
         CDB.db.query.mockImplementation(async (sql) => {
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes('FROM payment_intents WHERE user_id = $1 AND idempotency_key')) {
                 return { rows: [{ id: 'pi-existing', state: 'succeeded', direction: 'send', method: 'internal', amount: '100.00', currency: 'USD', counterparty: null }] };
             }
@@ -399,6 +405,7 @@ describe('VBR API routes', () => {
 
     test('GET /api/vbr/intents/:id returns owner-scoped intent', async () => {
         CDB.db.query.mockImplementation(async (sql) => {
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes('FROM payment_intents WHERE id')) {
                 return { rows: [{ id: 'pi-1', user_id: 'u-1', state: 'succeeded', amount: '100.00' }] };
             }
@@ -411,6 +418,7 @@ describe('VBR API routes', () => {
 
     test('POST /api/vbr/intents/:id/cancel: non-terminal intent is cancelled', async () => {
         CDB.db.query.mockImplementation(async (sql) => {
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes('FROM payment_intents WHERE id')) {
                 return { rows: [{ id: 'pi-1', user_id: 'u-1', state: 'pending' }] };
             }
@@ -426,6 +434,7 @@ describe('VBR API routes', () => {
 
     test('POST /api/vbr/intents/:id/cancel: terminal intent returns 409', async () => {
         CDB.db.query.mockImplementation(async (sql) => {
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes('FROM payment_intents WHERE id')) {
                 return { rows: [{ id: 'pi-1', user_id: 'u-1', state: 'succeeded' }] };
             }
@@ -438,6 +447,7 @@ describe('VBR API routes', () => {
 
     test('POST /api/vbr/intents/:id/reconcile: internal transfers need no reconciliation', async () => {
         CDB.db.query.mockImplementation(async (sql) => {
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes('FROM payment_intents WHERE id')) {
                 return { rows: [{ id: 'pi-1', user_id: 'u-1', state: 'succeeded', method: 'internal' }] };
             }

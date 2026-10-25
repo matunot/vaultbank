@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const requestLogger = require('./middleware/logger');
+const { captureRawBody } = require('./middleware/rawBody');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -66,7 +67,7 @@ app.use(cors({
 }));
 
 // ─── Body Parsing ────────────────────────────────────────────────────────────
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '10mb', verify: captureRawBody }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // ─── Logging ─────────────────────────────────────────────────────────────────

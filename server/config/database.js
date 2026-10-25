@@ -538,7 +538,7 @@ const updateAccountBalance = async (accountId, newBalance, availableBalance) => 
 // TRANSACTION QUERIES
 // ============================================================
 
-const createTransaction = async (txData) => {
+const createTransaction = async (txData, client = null) => {
     if (isDemo) {
         const tx = {
             id: 'txn-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5),
@@ -547,6 +547,32 @@ const createTransaction = async (txData) => {
         };
         demoStore.transactions.push(tx);
         return tx;
+    }
+    // Callers that already hold a BEGIN..COMMIT client pass it here so the
+    // ledger row commits atomically with the balance change (INR collections).
+    if (client) {
+        const { rows } = await client.query(`
+            INSERT INTO transactions (account_id, user_id, type, status, amount, currency, balance_before, balance_after, description, category, reference_id, external_reference, counterparty_name, counterparty_account, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+            RETURNING *
+        `, [
+            txData.account_id,
+            txData.user_id,
+            txData.type,
+            txData.status || 'completed',
+            txData.amount,
+            txData.currency || 'USD',
+            txData.balance_before || 0,
+            txData.balance_after || 0,
+            txData.description || null,
+            txData.category || null,
+            txData.reference_id || null,
+            txData.external_reference || null,
+            txData.counterparty_name || null,
+            txData.counterparty_account || null,
+            JSON.stringify(txData.metadata || {}),
+        ]);
+        return rows[0];
     }
     await db.ensureConnection();
     const tx = await db.Transaction.create({

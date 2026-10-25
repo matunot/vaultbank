@@ -27,21 +27,47 @@ const ENV_KIND = ['CASHFREE', 'ENV'].join('_');
 
 let cachedToken = null;
 let cachedTokenExpiry = 0;
+let lastProbe = { at: 0, ok: false, attempted: false };
+
+// Only "live"/"production" and "sandbox"/"test" are valid. An unknown value
+// must never silently fall back to the test host while readiness claims live.
+function envKind() {
+    const raw = String(process['env'][ENV_KIND] || '').trim().toLowerCase();
+    if (!raw || raw === 'sandbox' || raw === 'test') return 'sandbox';
+    if (raw === 'live' || raw === 'production') return 'live';
+    return 'invalid';
+}
+
+function fetchTimeoutMs() {
+    const raw = Number(process['env'][['CASHFREE', 'HTTP_TIMEOUT_MS'].join('_')]);
+    return Number.isFinite(raw) && raw >= 1000 && raw <= 60000 ? raw : 15000;
+}
 
 function baseUrl() {
-    const kind = String(process['env'][ENV_KIND] || '').toLowerCase();
+    const kind = envKind();
+    if (kind === 'invalid') {
+        const err = new Error('CASHFREE_ENV must be either "live" or "sandbox".');
+        err.code = 'PAYOUTS_PROVIDER_MISCONFIGURED';
+        throw err;
+    }
     return kind === 'live' ? 'https://payout-api.cashfree.com' : 'https://payout-gamma.cashfree.com';
 }
 
 function credentials() {
     const id = process['env'][ENV_PID];
     const secret = process['env'][ENV_PSEC];
-    if (!id || !secret || String(id).startsWith('your_') || String(secret).startsWith('your_')) return null;
+    if (!id || !secret || /^(your_|placeholder)/i.test(String(id)) || /^(your_|placeholder)/i.test(String(secret))) return null;
     return { id, secret };
 }
 
 function configured() {
-    return credentials() !== null;
+    return credentials() !== null && envKind() !== 'invalid';
+}
+
+function credentialValid() {
+    // A failed probe is a real signal, not the same as "never probed".
+    if (!lastProbe.attempted || Date.now() - lastProbe.at >= 10 * 60 * 1000) return 'unverified';
+    return lastProbe.ok ? true : 'invalid';
 }
 
 function providerInfo() {
@@ -49,16 +75,19 @@ function providerInfo() {
     return {
         provider: 'cashfree',
         product: 'payouts',
-        configured: !!creds,
-        mode: String(process['env'][ENV_KIND] || 'test').toLowerCase(),
+        configured: !!creds && envKind() !== 'invalid',
+        mode: envKind(),
+        credentialValid: credentialValid(),
+        webhookReady: false,
+        reconciliation: 'pull-status-api',
         currency: 'INR',
     };
 }
 
 async function authorize(force = false) {
     const creds = credentials();
-    if (!creds) {
-        const err = new Error('Cashfree Payouts is not configured — set the payout client ID and secret in the environment.');
+    if (!creds || envKind() === 'invalid') {
+        const err = new Error('Cashfree Payouts is not configured — set the payout client ID and secret in the environment, and CASHFREE_ENV to live or sandbox.');
         err.code = 'PAYOUTS_PROVIDER_MISCONFIGURED';
         throw err;
     }
@@ -67,6 +96,7 @@ async function authorize(force = false) {
     try {
         res = await fetch(baseUrl() + '/payout/v1/authorize', {
             method: 'POST',
+            signal: AbortSignal.timeout(fetchTimeoutMs()),
             headers: {
                 'Content-Type': 'application/json',
                 'X-Client-Id': creds.id,
@@ -74,6 +104,7 @@ async function authorize(force = false) {
             },
         });
     } catch (e) {
+        if (e.code) throw e;
         const err = new Error('Cashfree Payouts authorize unreachable: ' + e.message);
         err.code = 'PAYOUTS_PROVIDER_UNREACHABLE';
         throw err;
@@ -81,7 +112,9 @@ async function authorize(force = false) {
     const data = await res.json().catch(() => ({}));
     const token = data && data.data && data.data.token;
     if (!res.ok || !token) {
-        const err = new Error('Cashfree Payouts authorize failed (HTTP ' + res.status + '): ' + (data.message || data.subCode || 'no token'));
+        // Codes only: provider free text can echo request data.
+        const providerCode = data && data.subCode ? ' (' + data.subCode + ')' : '';
+        const err = new Error('Cashfree Payouts authorize failed (HTTP ' + res.status + ')' + providerCode);
         err.code = 'PAYOUTS_PROVIDER_AUTH_FAILED';
         throw err;
     }
@@ -93,11 +126,20 @@ async function authorize(force = false) {
 }
 
 async function authedFetch(path, { method = 'GET', body, retriedAuth = false } = {}) {
-    const token = await authorize(retriedAuth);
+    let token;
+    try {
+        token = await authorize(retriedAuth);
+    } catch (e) {
+        // No transfer request has been sent yet — a failed auth is safe to refund.
+        e.safe = true;
+        e.stage = 'auth';
+        throw e;
+    }
     let res;
     try {
         res = await fetch(baseUrl() + path, {
             method,
+            signal: AbortSignal.timeout(fetchTimeoutMs()),
             headers: {
                 'Content-Type': 'application/json',
                 Authorization: 'Bearer ' + token,
@@ -108,6 +150,7 @@ async function authedFetch(path, { method = 'GET', body, retriedAuth = false } =
         const err = new Error('Cashfree Payouts call unreachable: ' + e.message);
         err.code = 'PAYOUTS_PROVIDER_UNREACHABLE';
         err.safe = false; // network ambiguity — caller must treat as AMBIGUOUS
+        err.stage = 'request';
         throw err;
     }
     // Stale token: refresh once and retry (house pattern from providers/nium.js).
@@ -121,42 +164,57 @@ async function authedFetch(path, { method = 'GET', body, retriedAuth = false } =
 /**
  * Add (or reuse) a beneficiary. Cashfree keys beneficiaries by beneId, so a
  * duplicate add for the same beneId is treated as idempotent success.
+ *
+ * Every failure in this stage is SAFE for the caller to refund: the transfer
+ * request has not been sent yet. Even a timeout after addBeneficiary only
+ * means the beneficiary may exist — no money has moved.
  */
 async function ensureBeneficiary({ beneId, name, email, phone, bankAccount, ifsc }) {
-    const existing = await authedFetch('/payout/v1/getBeneficiary/' + encodeURIComponent(beneId));
-    if (existing.ok && existing.data && existing.data.data) {
-        const b = existing.data.data;
-        // Ownership check: the stored beneficiary must match THIS user's details.
-        if (String(b.bankAccount || '') !== String(bankAccount) || String(b.ifsc || '').toUpperCase() !== String(ifsc).toUpperCase()) {
-            const err = new Error('This beneficiary ID already exists with different bank details.');
-            err.code = 'PAYOUTS_BENEFICIARY_MISMATCH';
+    try {
+        const existing = await authedFetch('/payout/v1/getBeneficiary/' + encodeURIComponent(beneId));
+        if (existing.ok && existing.data && existing.data.data) {
+            const b = existing.data.data;
+            // Ownership check: the stored beneficiary must match THIS user's details.
+            if (String(b.bankAccount || '') !== String(bankAccount) || String(b.ifsc || '').toUpperCase() !== String(ifsc).toUpperCase()) {
+                const err = new Error('This beneficiary ID already exists with different bank details.');
+                err.code = 'PAYOUTS_BENEFICIARY_MISMATCH';
+                throw err;
+            }
+            return { beneId, existed: true };
+        }
+        // 404 is the only status that means "not found, go ahead and add".
+        if (!existing.ok && existing.status !== 404) {
+            const providerCode = existing.data && existing.data.subCode ? ' (' + existing.data.subCode + ')' : '';
+            const err = new Error('Cashfree getBeneficiary failed (HTTP ' + existing.status + ')' + providerCode);
+            err.code = 'PAYOUTS_BENEFICIARY_ERROR';
             throw err;
         }
-        return { beneId, existed: true };
+        const added = await authedFetch('/payout/v1/addBeneficiary', {
+            method: 'POST',
+            body: {
+                beneId,
+                name,
+                email: email || 'customers@vaultbank.example',
+                phone: phone || '9999999999',
+                bankAccount,
+                ifsc,
+                address1: 'VaultBank payout',
+                city: 'Mumbai',
+                state: 'Maharashtra',
+                pincode: '400001',
+            },
+        });
+        if (!added.ok) {
+            const providerCode = added.data && added.data.subCode ? ' (' + added.data.subCode + ')' : '';
+            const err = new Error('Cashfree addBeneficiary failed (HTTP ' + added.status + ')' + providerCode);
+            err.code = 'PAYOUTS_BENEFICIARY_ERROR';
+            throw err;
+        }
+        return { beneId, existed: false };
+    } catch (e) {
+        e.safe = true; // no transfer was attempted in this stage
+        throw e;
     }
-    const added = await authedFetch('/payout/v1/addBeneficiary', {
-        method: 'POST',
-        body: {
-            beneId,
-            name,
-            email: email || 'customers@vaultbank.example',
-            phone: phone || '9999999999',
-            bankAccount,
-            ifsc,
-            address1: 'VaultBank payout',
-            city: 'Mumbai',
-            state: 'Maharashtra',
-            pincode: '400001',
-        },
-    });
-    if (!added.ok) {
-        const sub = added.data && (added.data.subCode || added.data.message);
-        const err = new Error('Cashfree addBeneficiary failed (HTTP ' + added.status + '): ' + (sub || 'unknown'));
-        err.code = 'PAYOUTS_BENEFICIARY_ERROR';
-        err.safe = true; // no transfer was attempted — refund of a reservation is safe
-        throw err;
-    }
-    return { beneId, existed: false };
 }
 
 /**
@@ -166,16 +224,34 @@ async function ensureBeneficiary({ beneId, name, email, phone, bankAccount, ifsc
  * terminal state comes only from getTransferStatus / webhooks.
  */
 async function requestTransfer({ transferId, beneId, amount }) {
+    const amountStr = typeof amount === 'number' ? String(amount) : String(amount == null ? '' : amount).trim();
+    if (!/^\d+(\.\d{1,2})?$/.test(amountStr) || !(Number(amountStr) > 0)) {
+        const err = new Error('Payout amount must be a positive INR value with at most two decimals.');
+        err.code = 'PAYOUTS_AMOUNT_INVALID';
+        err.safe = true;
+        throw err;
+    }
+    // Normalize to two decimals as the provider expects, without float math.
+    const [whole, fraction = ''] = amountStr.split('.');
+    const amountBody = whole + '.' + (fraction + '00').slice(0, 2);
     const res = await authedFetch('/payout/v1/requestTransfer', {
         method: 'POST',
-        body: { transferId: String(transferId), beneId: String(beneId), amount: Number(amount).toFixed(2) },
+        body: { transferId: String(transferId), beneId: String(beneId), amount: amountBody },
     });
     const d = res.data && res.data.data;
     if (!res.ok || !d) {
-        const sub = res.data && (res.data.subCode || res.data.message);
-        const err = new Error('Cashfree requestTransfer failed (HTTP ' + res.status + '): ' + (sub || 'unknown'));
+        const providerCode = res.data && res.data.subCode ? ' (' + res.data.subCode + ')' : '';
+        const err = new Error('Cashfree requestTransfer failed (HTTP ' + res.status + ')' + providerCode);
         err.code = 'PAYOUTS_TRANSFER_ERROR';
-        err.safe = true; // explicit provider rejection — the transfer was not accepted
+        err.status = res.status;
+        // 2xx without the expected transfer body is just as ambiguous as a
+        // network failure: the provider may have accepted the transfer.
+        // 408/409/425/429/5xx are also ambiguous. Never auto-refund these.
+        const ambiguous = res.ok
+            ? true
+            : (res.status === 408 || res.status === 409 || res.status === 425 || res.status === 429 || res.status >= 500);
+        err.safe = !ambiguous;
+        err.ambiguous = ambiguous;
         throw err;
     }
     return {
@@ -187,11 +263,12 @@ async function requestTransfer({ transferId, beneId, amount }) {
 }
 
 /**
- * Terminal-status query. Returns the raw transfer object or null when the
- * provider has no record (which itself is a reconciliation signal).
+ * Terminal-status query. Returns null when the provider has no record (404)
+ * so reconciliation can distinguish "not created yet" from a provider error.
  */
 async function getTransferStatus({ transferId }) {
     const res = await authedFetch('/payout/v1.1/getTransferStatus?transferId=' + encodeURIComponent(transferId));
+    if (res.status === 404) return null;
     if (!res.ok) {
         const err = new Error('Cashfree getTransferStatus failed (HTTP ' + res.status + ').');
         err.code = 'PAYOUTS_STATUS_ERROR';
@@ -200,13 +277,31 @@ async function getTransferStatus({ transferId }) {
     const transfer = res.data && res.data.data && res.data.data.transfer;
     if (!transfer) return null;
     return {
-        status: String(transfer.status || '').toUpperCase(), // SUCCESS | ERROR | PENDING...
+        // SUCCESS | PENDING | FAILED | REJECTED | REVERSED | ERROR
+        status: String(transfer.status || '').toUpperCase(),
         referenceId: transfer.referenceId ? String(transfer.referenceId) : null,
         utr: transfer.utr ? String(transfer.utr) : null,
         amount: parseFloat(transfer.amount),
+        currency: transfer.currency ? String(transfer.currency).toUpperCase() : null,
         processedOn: transfer.processedOn || null,
         raw: transfer,
     };
+}
+
+/**
+ * Admin-only, read-only credential probe. POST /payout/v1/authorize returns a
+ * token; it never moves money. Success is cached for 10 minutes so the public
+ * readiness endpoint can distinguish "configured" from "credentials accepted".
+ */
+async function probeCredentials() {
+    try {
+        await authorize(true);
+        lastProbe = { at: Date.now(), ok: true, attempted: true };
+        return { ok: true, mode: envKind() };
+    } catch (e) {
+        lastProbe = { at: Date.now(), ok: false, attempted: true };
+        return { ok: false, mode: envKind(), code: e.code || 'PAYOUTS_PROBE_FAILED' };
+    }
 }
 
 module.exports = {
@@ -215,4 +310,5 @@ module.exports = {
     ensureBeneficiary,
     requestTransfer,
     getTransferStatus,
+    probeCredentials,
 };

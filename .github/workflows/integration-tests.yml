@@ -7,14 +7,23 @@ name: Integration Tests (PostgreSQL)
     paths:
       - 'server/routes/accounts.js'
       - 'server/routes/external-payouts.js'
+      - 'server/routes/collections.js'
+      - 'server/collections/**'
+      - 'server/payouts/**'
       - 'server/services/**'
       - 'server/vbr/**'
       - 'server/config/**'
       - 'server/migrations/**'
+      - 'server/utils/schemaReadiness.js'
+      - 'server/scripts/check-inr-schema.js'
       - 'server/__tests__/pgIntegration.test.js'
       - 'server/__tests__/pgHttpIntegration.test.js'
       - 'server/__tests__/vbrHttpIntegration.test.js'
+      - 'server/__tests__/inrPgIntegration.test.js'
       - 'server/__tests__/vbr.test.js'
+      - 'server/__tests__/inrRails.test.js'
+      - 'server/__tests__/cashfreeAdapters.test.js'
+      - 'server/__tests__/inrSchemaFailClosed.test.js'
       - 'server/__tests__/helpers/pgTestSetup.js'
       - 'server/scripts/run-migrations.js'
       - '.github/workflows/integration-tests.yml'
@@ -82,6 +91,15 @@ jobs:
           npx --yes jest@30.5.2 __tests__/vbrHttpIntegration.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --testTimeout=120000 \
+            --verbose --forceExit
+        env:
+          TEST_DATABASE_URL: postgres://vaultbank:vaultbank_test_pw@localhost:5432/vaultbank_test
+
+      - name: Run INR collections/payouts integration tests (real routes + real PostgreSQL)
+        run: |
+          npx --yes jest@30.5.2 __tests__/inrPgIntegration.test.js \
+            --testPathIgnorePatterns /node_modules/ \
+            --testTimeout=180000 \
             --verbose --forceExit
         env:
           TEST_DATABASE_URL: postgres://vaultbank:vaultbank_test_pw@localhost:5432/vaultbank_test

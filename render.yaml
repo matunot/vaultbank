@@ -34,6 +34,26 @@ services:
       # passwords at boot).
       - key: ADMIN_PASSWORD
         sync: false
+      # ── INR rails: Cashfree Auto Collect (inbound) + Payouts (outbound) ──
+      # Fail-closed: with no client credentials the routes answer 503.
+      # CASHFREE_ENV is intentionally sync:false so a Blueprint sync cannot
+      # flip a live service back to sandbox. Set it to `sandbox` on a staging
+      # service and `live` on production; an unset value defaults to sandbox,
+      # which a NODE_ENV=production service refuses.
+      - key: VB_COLLECTIONS_PROVIDER
+        value: cashfree
+      - key: VB_PAYOUT_PROVIDER
+        value: cashfree
+      - key: CASHFREE_ENV
+        sync: false
+      - key: CASHFREE_CLIENT_ID
+        sync: false
+      - key: CASHFREE_CLIENT_SECRET
+        sync: false
+      - key: CASHFREE_PAYOUTS_CLIENT_ID
+        sync: false
+      - key: CASHFREE_PAYOUTS_CLIENT_SECRET
+        sync: false
       # ── Real Money Providers (set these in Render dashboard when you have keys) ──
       - key: PAYMENT_PROVIDER_STRIPE_KEY
         sync: false

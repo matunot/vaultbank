@@ -18,6 +18,7 @@
  */
 
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const {
@@ -28,51 +29,9 @@ const {
     createAuditLog,
 } = require('../config/database');
 const { activeCollectionsProvider, collectionsAvailability } = require('../collections');
+const { ensureCollectionsSchema } = require('../collections/schema');
 
 const CURRENCY = 'INR';
-
-let tablesReady = false;
-async function ensureTables() {
-    if (tablesReady) return;
-    await db.ensureConnection();
-    await db.query(`
-        CREATE TABLE IF NOT EXISTS virtual_accounts (
-            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            provider TEXT NOT NULL,
-            provider_virtual_account_id TEXT NOT NULL UNIQUE,
-            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-            account_id UUID NOT NULL,
-            currency TEXT NOT NULL DEFAULT 'INR',
-            bank_code TEXT,
-            account_number TEXT,
-            ifsc TEXT,
-            status TEXT NOT NULL DEFAULT 'provisioning'
-                CHECK (status IN ('provisioning','active','conflict','error','disabled')),
-            provisioned_at TIMESTAMP WITH TIME ZONE,
-            last_error TEXT,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-    `);
-    await db.query(`
-        CREATE TABLE IF NOT EXISTS collection_events (
-            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-            provider TEXT NOT NULL,
-            event_id TEXT NOT NULL,
-            event_type TEXT,
-            status TEXT NOT NULL DEFAULT 'received'
-                CHECK (status IN ('received','credited','credited_duplicate','unmatched','currency_rejected','failed')),
-            amount NUMERIC(15,2),
-            currency TEXT,
-            virtual_account_id TEXT,
-            utr TEXT,
-            credited_at TIMESTAMP WITH TIME ZONE,
-            payload JSONB,
-            received_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-    `);
-    tablesReady = true;
-}
 
 async function audit(userId, action, resourceId, details, req) {
     try {
@@ -88,11 +47,14 @@ async function audit(userId, action, resourceId, details, req) {
     } catch (_) { /* best-effort; money paths above are already atomic */ }
 }
 
-// Deterministic, UPPERCASE-alphanumeric provider ID per user (Cashfree pattern
-// ^[A-Z0-9]+$). Stable across retries — the SAME id must always map to the
-// SAME user, which also makes provider-side duplicates (HTTP 409) meaningful.
+// Deterministic, UPPERCASE-alphanumeric provider ID per user. Cashfree allows
+// at most 20 characters ((^[A-Z0-9]+$) + length cap), so the user UUID is
+// hashed to 18 hex chars: VB + 18 = 20. Stable across retries — the SAME id
+// must always map to the SAME user, which also makes provider duplicates
+// (HTTP 409) meaningful.
 function vAccountIdForUser(userId) {
-    return ('VB' + String(userId).replace(/-/g, '')).toUpperCase();
+    const hash = crypto.createHash('sha256').update(String(userId)).digest('hex');
+    return 'VB' + hash.slice(0, 18).toUpperCase();
 }
 
 // ============================================================
@@ -117,7 +79,7 @@ router.get('/api/collections/my-details', authenticateToken, async (req, res) =>
                 availability: collectionsAvailability(),
             });
         }
-        await ensureTables();
+        await ensureCollectionsSchema();
         const user = await findUserById(req.user.id);
         if (!user) return res.status(404).json({ success: false, message: 'User not found.' });
 
@@ -171,10 +133,15 @@ router.get('/api/collections/my-details', authenticateToken, async (req, res) =>
         try {
             const issued = await active.adapter.createVirtualAccount({
                 virtualAccountId: providerVAccountId,
-                name: user.full_name || 'VaultBank Customer',
+                name: user.full_name,
                 email: user.email,
-                phone: user.phone || undefined,
+                phone: user.phone,
             });
+            if (String(issued.status || '').toLowerCase() !== 'active') {
+                const notActive = new Error('Provider has not activated the virtual account yet.');
+                notActive.code = 'COLLECTIONS_VBA_NOT_ACTIVE';
+                throw notActive;
+            }
             const { rows: updated } = await db.query(
                 `UPDATE virtual_accounts
                  SET status = 'active', bank_code = $3, account_number = $4, ifsc = $5,
@@ -224,10 +191,22 @@ router.get('/api/collections/my-details', authenticateToken, async (req, res) =>
             if (conflict) {
                 return res.status(409).json({ success: false, code: 'COLLECTIONS_VBA_CONFLICT', message: e.message });
             }
-            return res.status(502).json({ success: false, code: e.code || 'COLLECTIONS_PROVIDER_ERROR', message: e.message });
+            if (e.code === 'COLLECTIONS_CUSTOMER_DETAILS_REQUIRED') {
+                return res.status(400).json({ success: false, code: e.code, message: e.message });
+            }
+            // Never echo raw provider error text to the customer. The code is
+            // enough to support them; the details stay in last_error/audit.
+            return res.status(502).json({
+                success: false,
+                code: e.code || 'COLLECTIONS_PROVIDER_ERROR',
+                message: 'The provider could not issue your receiving details. Try again later.',
+            });
         }
     } catch (error) {
         console.error('Collections my-details error:', error.message);
+        if (error.code === 'COLLECTIONS_SCHEMA_NOT_READY') {
+            return res.status(503).json({ success: false, code: error.code, message: error.message });
+        }
         res.status(500).json({ success: false, message: 'Could not load your receiving details.' });
     }
 });
@@ -236,14 +215,20 @@ router.get('/api/collections/my-details', authenticateToken, async (req, res) =>
 // POST /api/collections/webhook/cashfree — signature FIRST, then writes
 // ============================================================
 router.post('/api/collections/webhook/cashfree', express.raw({ type: 'application/json' }), async (req, res) => {
-    let claimed = null;
+    let client = null;
     try {
         const active = activeCollectionsProvider();
         if (!active) {
             // No provider configured: nothing to verify against — fail closed.
             return res.status(503).json({ success: false, message: 'Collections provider not configured.' });
         }
-        const rawBody = Buffer.isBuffer(req.body) ? req.body.toString('utf8') : (typeof req.body === 'string' ? req.body : null);
+        const rawBody = Buffer.isBuffer(req.body)
+            ? req.body.toString('utf8')
+            : (typeof req.body === 'string'
+                ? req.body
+                : (Buffer.isBuffer(req.rawBody)
+                    ? req.rawBody.toString('utf8')
+                    : (typeof req.rawBody === 'string' ? req.rawBody : null)));
         if (!rawBody) {
             return res.status(400).json({ success: false, message: 'Missing raw body.' });
         }
@@ -263,65 +248,122 @@ router.post('/api/collections/webhook/cashfree', express.raw({ type: 'applicatio
 
         // 2. Normalize + validate the payment event.
         const event = active.adapter.parsePaymentWebhook(payload);
-        if (!event || !event.eventId || !(event.amount > 0) || !event.virtualAccountId) {
-            console.warn('[collections] Webhook missing identity fields — acked, not credited.');
-            return res.status(200).json({ success: true, message: 'Event ignored (missing identity fields).' });
+        // Do not ack a signed-but-unusable event: Cashfree treats 2xx as
+        // delivered and never retries, so an unparseable payment would vanish.
+        // Record it as failed for operators, then return non-2xx.
+        const invalidReason = !event
+            ? 'unsupported event'
+            : (!event.eventId
+                ? 'missing event id'
+                : (!(event.amount > 0)
+                    ? 'missing or invalid amount'
+                    : (!/^\d+(\.\d{1,2})?$/.test(String(event.amount))
+                        ? 'invalid amount precision'
+                        : (!event.virtualAccountId ? 'missing virtual account id' : null))));
+        if (invalidReason) {
+            await ensureCollectionsSchema();
+            const invalidEventId = 'invalid:' + crypto.createHash('sha256').update(rawBody).digest('hex');
+            await db.query(
+                `INSERT INTO collection_events (provider, event_id, event_type, status, amount, currency, virtual_account_id, utr, payload)
+                 VALUES ($1, $2, $3, 'failed', $4, $5, $6, $7, $8)
+                 ON CONFLICT (provider, event_id) DO NOTHING`,
+                [
+                    active.name,
+                    invalidEventId,
+                    (event && event.eventType) || 'UNSUPPORTED',
+                    event && Number.isFinite(event.amount) && event.amount > 0 ? event.amount : null,
+                    (event && event.currency) || null,
+                    (event && event.virtualAccountId) || null,
+                    (event && event.utr) || null,
+                    JSON.stringify(payload),
+                ]
+            );
+            console.warn('[collections] Invalid signed webhook recorded as failed:', invalidReason, 'event', event && event.eventId);
+            return res.status(400).json({ success: false, code: 'COLLECTIONS_EVENT_INVALID', message: 'Webhook event could not be processed (' + invalidReason + ').' });
+        }
+        if (event.paymentStatus && String(event.paymentStatus).toUpperCase() !== 'SUCCESS') {
+            return res.status(200).json({ success: true, message: 'Non-success payment event ignored.' });
         }
 
-        await ensureTables();
+        await ensureCollectionsSchema();
+
+        // UTR is the stable bank reference; fall back to the provider payment id.
+        const paymentReference = String(event.paymentReference || event.eventId);
+        const eventCurrency = String(event.currency || '').trim().toUpperCase();
+
+        client = await db.getClient();
+        await client.query('BEGIN');
+
+        // Serialize retries for the same provider payment even when Cashfree
+        // delivers it under two different event ids (new + legacy payloads).
+        await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', ['collection:' + paymentReference]);
 
         // 3. Claim the event id exactly once (Cashfree delivers at-least-once).
-        const claim = await db.query(
+        const claim = await client.query(
             `INSERT INTO collection_events (provider, event_id, event_type, amount, currency, virtual_account_id, utr, payload)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
              ON CONFLICT (provider, event_id) DO NOTHING
              RETURNING id`,
-            [active.name, event.eventId, event.eventType, event.amount, event.currency, event.virtualAccountId, event.utr, JSON.stringify(payload)]
+            [active.name, event.eventId, event.eventType || null, event.amount, eventCurrency || null, event.virtualAccountId, event.utr || null, JSON.stringify(payload)]
         );
         if (claim.rowCount === 0) {
+            await client.query('COMMIT');
             return res.status(200).json({ success: true, duplicate: true, message: 'Duplicate event ignored.' });
         }
-        claimed = claim.rows[0].id;
+        const eventRowId = claim.rows[0].id;
 
-        // 4. Ownership mapping through the virtual account.
-        const { rows: vaRows } = await db.query(
-            `SELECT va.*, a.status AS account_status
+        // 4. Ownership mapping through the virtual account. A frozen/missing
+        // account is NOT acknowledged: roll back and let Cashfree retry so the
+        // money is never silently lost. Any non-disabled row is valid here: the
+        // provider issued this VBA and its signed webhook proves the money
+        // arrived, even if a previous create response was lost (conflict/error).
+        const { rows: vaRows } = await client.query(
+            `SELECT va.*
              FROM virtual_accounts va JOIN accounts a ON a.id = va.account_id
              WHERE va.provider = $1 AND va.provider_virtual_account_id = $2
-               AND va.status = 'active'
+               AND va.status <> 'disabled' AND a.status = 'active'
              LIMIT 1`,
             [active.name, event.virtualAccountId]
         );
         if (vaRows.length === 0) {
-            await db.query("UPDATE collection_events SET status = 'unmatched' WHERE id = $1", [claimed]);
-            return res.status(200).json({ success: true, message: 'Virtual account not matched — no credit.' });
+            await client.query('ROLLBACK');
+            console.error('[collections] Unmatched virtual account for event', event.eventId, 'va', event.virtualAccountId, '— provider will retry.');
+            return res.status(500).json({ success: false, code: 'COLLECTIONS_VA_UNMATCHED', message: 'Virtual account not ready — retry later.' });
         }
         const va = vaRows[0];
 
-        // 5. Currency/amount validation.
-        if (String(event.currency).toUpperCase() !== CURRENCY) {
-            await db.query("UPDATE collection_events SET status = 'currency_rejected' WHERE id = $1", [claimed]);
+        // 5. Currency validation.
+        if (eventCurrency !== CURRENCY) {
+            await client.query("UPDATE collection_events SET status = 'currency_rejected' WHERE id = $1", [eventRowId]);
+            await client.query('COMMIT');
             return res.status(200).json({ success: true, message: 'Non-INR payment not credited.' });
         }
 
-        // 6. Ledger guard — crash-window recovery, exactly once.
-        const { rows: seen } = await db.query(
+        // 6. Ledger guard — crash-window recovery, exactly once. The payment
+        // reference (UTR when present) is stable across webhook generations.
+        const { rows: seen } = await client.query(
             'SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1',
-            [event.eventId]
+            [paymentReference]
         );
         if (seen.length > 0) {
-            await db.query("UPDATE collection_events SET status = 'credited_duplicate', credited_at = NOW() WHERE id = $1", [claimed]);
+            await client.query("UPDATE collection_events SET status = 'credited_duplicate', credited_at = NOW() WHERE id = $1", [eventRowId]);
+            await client.query('COMMIT');
             return res.status(200).json({ success: true, duplicate: true, message: 'Already credited.' });
         }
 
-        // 7. Atomic exactly-once credit to the user's INR account.
-        const { rows: upd } = await db.query(
-            'UPDATE accounts SET balance = balance + $2 WHERE id = $1 RETURNING (balance - $2) AS balance_before, balance AS balance_after',
+        // 7. Credit + ledger + event status in ONE transaction. A failure at
+        // any point rolls the whole credit back; the provider retry re-claims
+        // the event and starts cleanly.
+        const { rows: upd } = await client.query(
+            `UPDATE accounts
+                SET balance = balance + $2, available_balance = available_balance + $2
+              WHERE id = $1
+              RETURNING (balance - $2) AS balance_before, balance AS balance_after`,
             [va.account_id, event.amount]
         );
         if (upd.length === 0) {
-            await db.query("UPDATE collection_events SET status = 'failed' WHERE id = $1", [claimed]);
-            return res.status(200).json({ success: true, message: 'Account missing at credit time — flagged.' });
+            await client.query('ROLLBACK');
+            return res.status(500).json({ success: false, code: 'COLLECTIONS_ACCOUNT_MISSING', message: 'Account missing — retry later.' });
         }
         const before = parseFloat(upd[0].balance_before);
         const after = parseFloat(upd[0].balance_after);
@@ -336,39 +378,51 @@ router.post('/api/collections/webhook/cashfree', express.raw({ type: 'applicatio
             balance_after: after,
             description: `INR collection — ${event.utr ? 'UTR ' + event.utr : 'event ' + event.eventId}`,
             category: 'income',
-            external_reference: event.eventId,
+            external_reference: paymentReference,
             metadata: {
                 provider: active.name,
                 automatic: true,
                 virtual_account_id: event.virtualAccountId,
                 utr: event.utr,
                 remitter_name: event.remitterName,
-                remitter_account_last4: event.remitterAccount,
+                remitter_account_last4: event.remitterAccount ? String(event.remitterAccount).slice(-4) : null,
             },
-        });
-        await createNotification(va.user_id, {
-            type: 'transaction',
-            title: 'Deposit received',
-            message: `${CURRENCY} ${event.amount.toFixed(2)} received and credited automatically (UTR ${event.utr || event.eventId}). New balance: ${CURRENCY} ${after.toFixed(2)}.`,
-        });
-        await db.query("UPDATE collection_events SET status = 'credited', credited_at = NOW() WHERE id = $1", [claimed]);
+        }, client);
+        await client.query("UPDATE collection_events SET status = 'credited', credited_at = NOW() WHERE id = $1", [eventRowId]);
+        await client.query('COMMIT');
+
+        // Notification is best-effort AFTER the money transaction commits.
+        try {
+            await createNotification(va.user_id, {
+                type: 'transaction',
+                title: 'Deposit received',
+                message: `${CURRENCY} ${Number(event.amount).toFixed(2)} received and credited automatically (UTR ${event.utr || event.eventId}). New balance: ${CURRENCY} ${after.toFixed(2)}.`,
+            });
+        } catch (notifErr) {
+            console.warn('[collections] Credit notification failed (credit committed):', notifErr.message);
+        }
         return res.status(200).json({ success: true, credited: true });
     } catch (error) {
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (_) { /* already committed or connection lost */ }
+        }
         console.error('[collections] Webhook error:', error.message);
-        if (claimed) {
-            try { await db.query("UPDATE collection_events SET status = 'failed' WHERE id = $1", [claimed]); } catch (_) { /* noop */ }
+        if (error.code === 'COLLECTIONS_SCHEMA_NOT_READY') {
+            return res.status(503).json({ success: false, code: error.code, message: error.message });
         }
         // 500 makes Cashfree retry — correct, since we may have failed mid-flow.
         return res.status(500).json({ success: false, message: 'Webhook processing failed.' });
+    } finally {
+        if (client) client.release();
     }
 });
 
 // ============================================================
 // GET /api/collections/admin/overview — reconciliation visibility (admin)
 // ============================================================
-router.get('/api/collections/admin/overview', requireAdmin, async (req, res) => {
+router.get('/api/collections/admin/overview', authenticateToken, requireAdmin, async (req, res) => {
     try {
-        await ensureTables();
+        await ensureCollectionsSchema();
         const { rows: counts } = await db.query(
             `SELECT status, COUNT(*) AS n FROM collection_events GROUP BY status`
         );
@@ -376,12 +430,19 @@ router.get('/api/collections/admin/overview', requireAdmin, async (req, res) => 
             'SELECT id, provider, event_id, event_type, status, amount, currency, virtual_account_id, utr, received_at, credited_at FROM collection_events ORDER BY received_at DESC LIMIT 25'
         );
         const { rows: vas } = await db.query(
-            `SELECT va.provider_virtual_account_id, va.user_id, va.status, va.bank_code, va.account_number, va.ifsc, va.provisioned_at
+            `SELECT va.provider_virtual_account_id, va.user_id, va.status, va.bank_code,
+                    CASE WHEN length(va.account_number) > 4
+                         THEN '****' || right(va.account_number, 4)
+                         ELSE va.account_number END AS account_number,
+                    va.ifsc, va.provisioned_at
              FROM virtual_accounts va ORDER BY va.created_at DESC LIMIT 25`
         );
         res.status(200).json({ success: true, eventCounts: counts, recentEvents: events, virtualAccounts: vas });
     } catch (error) {
         console.error('Collections admin overview error:', error.message);
+        if (error.code === 'COLLECTIONS_SCHEMA_NOT_READY') {
+            return res.status(503).json({ success: false, code: error.code, message: error.message });
+        }
         res.status(500).json({ success: false, message: 'Could not load the collections overview.' });
     }
 });

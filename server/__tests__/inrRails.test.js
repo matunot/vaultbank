@@ -148,7 +148,9 @@ function scriptDb({ inrAccount = INR_ACCOUNT, existingVa = null, vaJoin = VA_ACT
     const payoutState = { row: Object.assign({}, payoutRow) };
     CDB.db.query.mockImplementation(async (sql) => {
         sqls.push(String(sql));
+        if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
         if (sql.includes('CREATE TABLE IF NOT EXISTS')) return { rows: [] };
+        if (sql.includes('CREATE UNIQUE INDEX')) return { rows: [] };
         if (sql.includes('FROM accounts WHERE user_id = $1 AND currency')) {
             return { rows: inrAccount ? [inrAccount] : [] };
         }
@@ -181,6 +183,27 @@ function scriptDb({ inrAccount = INR_ACCOUNT, existingVa = null, vaJoin = VA_ACT
         if (sql.includes('FROM accounts WHERE user_id = $1 AND currency = $2')) return { rows: inrAccount ? [inrAccount] : [] };
         return { rows: [] };
     });
+    // Webhook + payout money paths use a pooled client transaction. The
+    // collections webhook is the only flow scriptDb exercises here.
+    CDB.db.getClient.mockImplementation(async () => ({
+        query: jest.fn(async (sql) => {
+            sqls.push(String(sql));
+            const s = String(sql).trim();
+            if (s === 'BEGIN' || s === 'COMMIT' || s === 'ROLLBACK') return { rows: [], rowCount: 0 };
+            if (s.includes('pg_advisory_xact_lock')) return { rows: [], rowCount: 0 };
+            if (s.includes('INSERT INTO collection_events')) {
+                claims += 1;
+                const claimed = claims <= claimCount;
+                return { rows: claimed ? [{ id: 'ce-1' }] : [], rowCount: claimed ? 1 : 0 };
+            }
+            if (s.includes('FROM virtual_accounts va JOIN accounts')) return { rows: vaJoin ? [vaJoin] : [] };
+            if (s.includes('FROM transactions WHERE external_reference')) return { rows: ledgerRows };
+            if (s.includes('balance = balance + $2')) return { rows: creditRows };
+            if (s.includes("UPDATE collection_events SET status")) return { rows: [] };
+            return { rows: [], rowCount: 0 };
+        }),
+        release: jest.fn(),
+    }));
     return sqls;
 }
 
@@ -259,9 +282,21 @@ describe('collections rail: idempotent provisioning through the real provider AP
         expect(res.body.details.ifsc).toBe('YESB0001234');
         const arg = cashfreeVa.createVirtualAccount.mock.calls[0][0];
         expect(arg.virtualAccountId).toMatch(/^[A-Z0-9]+$/); // deterministic + provider format
+        expect(arg.virtualAccountId.length).toBeLessThanOrEqual(20); // Cashfree VBA id cap
         // claim happens BEFORE the provider call
         const claimIdx = sqls.findIndex((s) => s.includes('INSERT INTO virtual_accounts'));
         expect(claimIdx).toBeGreaterThanOrEqual(0);
+    });
+
+    test('provider-issued but not-yet-active details are not reported as active', async () => {
+        scriptDb({ existingVa: null });
+        cashfreeVa.createVirtualAccount.mockResolvedValue({
+            provider: 'cashfree', providerVirtualAccountId: 'VBU1', bankCode: 'YESB',
+            accountNumber: '98912574001', ifsc: 'YESB0001234', status: 'pending',
+        });
+        const res = await call(collectionsRouter, '/api/collections/my-details');
+        expect(res.code).toBe(502);
+        expect(res.body.details).toBeUndefined();
     });
 
     test('existing active VA is returned without re-provisioning', async () => {
@@ -330,14 +365,14 @@ describe('collections webhook: verify first, credit exactly once', () => {
         expect(CDB.createTransaction).not.toHaveBeenCalled();
     });
 
-    test('unknown virtual account -> unmatched, no credit', async () => {
+    test('unknown virtual account -> 500 + ROLLBACK so the provider retries, no credit', async () => {
         cashfreeVa.verifyWebhookSignature.mockReturnValue(true);
         cashfreeVa.parsePaymentWebhook.mockReturnValue(paymentEvent());
         const sqls = scriptDb({ vaJoin: null });
         const res = await hookCall();
-        expect(res.code).toBe(200);
-        expect(res.body.credited).toBeUndefined();
-        expect(sqls.some((s) => s.includes("UPDATE collection_events SET status = 'unmatched'"))).toBe(true);
+        expect(res.code).toBe(500);
+        expect(res.body.code).toBe('COLLECTIONS_VA_UNMATCHED');
+        expect(sqls.some((s) => s.trim().startsWith('ROLLBACK'))).toBe(true);
         expect(CDB.createTransaction).not.toHaveBeenCalled();
     });
 
@@ -374,11 +409,15 @@ describe('payouts rail: reservation-first through a real provider only', () => {
         // Pre-transaction db.query mock (INR account lookup, ensureTables, replay, status updates)
         CDB.db.query.mockImplementation(async (sql) => {
             sqls.push(String(sql));
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes('FROM accounts WHERE user_id')) {
                 return { rows: [INR_ACCOUNT] };
             }
             if (sql.includes('CREATE TABLE') || sql.includes('CREATE UNIQUE INDEX')) {
                 return { rows: [] };
+            }
+            if (sql.includes("UPDATE payout_requests SET status = 'submitted'")) {
+                return { rows: [{ id: 'po-new' }], rowCount: 1 };
             }
             if (sql.includes('FROM payout_requests WHERE user_id = $1 AND idempotency_key')) {
                 return { rows: [{ ...PAYOUT_ROW, status: 'reserved' }] }; // replay lookup
@@ -432,7 +471,7 @@ describe('payouts rail: reservation-first through a real provider only', () => {
     const request = (body, headers) => call(payoutsRouter, '/api/payouts/requests', {
         method: 'post',
         body: Object.assign({ amount: 100, bankAccount: '001111222333', ifsc: 'HDFC0000001' }, body || {}),
-        headers,
+        headers: Object.assign({ 'idempotency-key': 'test-payout-key-1' }, headers || {}),
     });
 
     test('unconfigured -> 503, zero reservation', async () => {
@@ -535,6 +574,7 @@ describe('payout reconciliation: terminal state only from the provider status AP
         const sqls = [];
         CDB.db.query.mockImplementation(async (sql) => {
             sqls.push(String(sql));
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes('FROM payout_requests WHERE id = $1')) {
                 return { rows: [{ ...PAYOUT_ROW, status: 'submitted' }] };
             }
@@ -575,6 +615,7 @@ describe('payout reconciliation: terminal state only from the provider status AP
         let currentStatus = 'submitted';
         CDB.db.query.mockImplementation(async (sql) => {
             sqls.push(String(sql));
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes("SET status = 'succeeded'")) {
                 currentStatus = 'succeeded';
                 return { rows: [{ ...PAYOUT_ROW, status: currentStatus }], rowCount: 1 };
@@ -585,7 +626,7 @@ describe('payout reconciliation: terminal state only from the provider status AP
             if (sql.includes('UPDATE transactions SET status')) return { rows: [] };
             return { rows: [] };
         });
-        cashfreePayouts.getTransferStatus.mockResolvedValue({ status: 'SUCCESS', referenceId: '2001', utr: 'UTR-2' });
+        cashfreePayouts.getTransferStatus.mockResolvedValue({ status: 'SUCCESS', referenceId: '2001', utr: 'UTR-2', amount: 100, currency: 'INR' });
         const res = await reconcile();
         expect(res.code).toBe(200);
         expect(res.body.payout.status).toBe('succeeded');
@@ -598,6 +639,7 @@ describe('payout reconciliation: terminal state only from the provider status AP
         let currentStatus = 'submitted';
         CDB.db.query.mockImplementation(async (sql) => {
             sqls.push(String(sql));
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes('FROM payout_requests WHERE id = $1')) {
                 return { rows: [{ ...PAYOUT_ROW, status: currentStatus }] };
             }
@@ -624,7 +666,7 @@ describe('payout reconciliation: terminal state only from the provider status AP
             }),
             release: jest.fn(),
         }));
-        cashfreePayouts.getTransferStatus.mockResolvedValue({ status: 'ERROR' });
+        cashfreePayouts.getTransferStatus.mockResolvedValue({ status: 'ERROR', amount: 100, currency: 'INR' });
         const res = await reconcile();
         expect(res.code).toBe(200);
         expect(res.body.payout.status).toBe('failed_refunded');
@@ -637,8 +679,9 @@ describe('payout reconciliation: terminal state only from the provider status AP
 
     test('terminal status already reached -> no provider call, no state change', async () => {
         CDB.db.query.mockImplementation(async (sql) => {
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
             if (sql.includes('FROM payout_requests WHERE id')) {
-                return { rows: [{ ...PAYOUT_ROW, status: 'succeeded' }] };
+                return { rows: [{ ...PAYOUT_ROW, status: 'failed_refunded' }] };
             }
             return { rows: [] };
         });
@@ -646,6 +689,87 @@ describe('payout reconciliation: terminal state only from the provider status AP
         expect(res.code).toBe(200);
         expect(res.body.message).toContain('Terminal');
         expect(cashfreePayouts.getTransferStatus).not.toHaveBeenCalled();
+    });
+
+    test('provider REVERSED after SUCCESS -> reversal refunds once and marks the withdrawal reversed', async () => {
+        let currentStatus = 'succeeded';
+        const sqls = [];
+        const client = {
+            query: jest.fn(async (sql, params) => {
+                sqls.push(String(sql));
+                const s = String(sql).trim();
+                if (s === 'BEGIN' || s === 'COMMIT') return { rows: [], rowCount: 0 };
+                if (s === 'ROLLBACK') return { rows: [], rowCount: 0 };
+                if (s.includes("SET status = 'failed_refunded'")) {
+                    currentStatus = 'failed_refunded';
+                    return { rows: [{ id: 'po-1' }], rowCount: 1 };
+                }
+                if (s.includes('FROM transactions WHERE external_reference')) return { rows: [] };
+                if (s.includes('available_balance = available_balance + $2')) {
+                    return { rows: [{ balance_before: '400.00', balance_after: '500.00' }] };
+                }
+                if (s.includes('INSERT INTO transactions')) return { rows: [{ id: 'txn-refund' }], rowCount: 1 };
+                if (s.includes('UPDATE transactions SET status = $2')) {
+                    expect(params[1]).toBe('reversed');
+                    return { rows: [], rowCount: 1 };
+                }
+                return { rows: [], rowCount: 0 };
+            }),
+            release: jest.fn(),
+        };
+        CDB.db.getClient.mockResolvedValue(client);
+        CDB.db.query.mockImplementation(async (sql) => {
+            sqls.push(String(sql));
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
+            if (sql.includes('FROM payout_requests WHERE id = $1')) {
+                return { rows: [{ ...PAYOUT_ROW, status: currentStatus }] };
+            }
+            return { rows: [] };
+        });
+        cashfreePayouts.getTransferStatus.mockResolvedValue({ status: 'REVERSED', amount: 100, currency: 'INR', utr: 'UTR-R' });
+        const res = await reconcile();
+        expect(res.code).toBe(200);
+        expect(res.body.payout.status).toBe('failed_refunded');
+        expect(sqls.some((s) => s.includes("SET status = 'failed_refunded'"))).toBe(true);
+        expect(sqls.some((s) => s.includes('available_balance = available_balance + $2'))).toBe(true);
+        expect(sqls.some((s) => s.trim() === 'COMMIT')).toBe(true);
+        expect(CDB.createNotification).toHaveBeenCalled();
+    });
+
+    test('refund account missing -> rollback, 500, payout never marked refunded', async () => {
+        let currentStatus = 'submitted';
+        const sqls = [];
+        const client = {
+            query: jest.fn(async (sql) => {
+                sqls.push(String(sql));
+                const s = String(sql).trim();
+                if (s === 'BEGIN' || s === 'COMMIT') return { rows: [], rowCount: 0 };
+                if (s === 'ROLLBACK') { currentStatus = 'submitted'; return { rows: [], rowCount: 0 }; }
+                if (s.includes("SET status = 'failed_refunded'")) {
+                    currentStatus = 'failed_refunded';
+                    return { rows: [{ id: 'po-1' }], rowCount: 1 };
+                }
+                if (s.includes('FROM transactions WHERE external_reference')) return { rows: [] };
+                if (s.includes('available_balance = available_balance + $2')) return { rows: [] }; // account gone
+                return { rows: [], rowCount: 0 };
+            }),
+            release: jest.fn(),
+        };
+        CDB.db.getClient.mockResolvedValue(client);
+        CDB.db.query.mockImplementation(async (sql) => {
+            sqls.push(String(sql));
+            if (sql.includes('to_regclass')) return { rows: [{ ready: true }] };
+            if (sql.includes('FROM payout_requests WHERE id = $1')) {
+                return { rows: [{ ...PAYOUT_ROW, status: currentStatus }] };
+            }
+            return { rows: [] };
+        });
+        cashfreePayouts.getTransferStatus.mockResolvedValue({ status: 'ERROR', amount: 100, currency: 'INR' });
+        const res = await reconcile();
+        expect(res.code).toBe(500);
+        expect(res.body.code).toBe('PAYOUT_REFUND_ACCOUNT_MISSING');
+        expect(sqls.some((s) => s.trim() === 'ROLLBACK')).toBe(true);
+        expect(currentStatus).toBe('submitted');
     });
 });
 

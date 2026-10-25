@@ -2,8 +2,9 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { adminLimiter } = require('../middleware/rateLimiter');
-const { demoStore, findUserById } = require('../config/database');
+const { demoStore, findUserById, db } = require('../config/database');
 const { generateAuditReport } = require('../utils/audit');
+const { checkSchema } = require('../utils/schemaReadiness');
 
 const router = express.Router();
 
@@ -337,6 +338,22 @@ router.get('/api/admin/audit-report', authenticateToken, requireAdmin, async (re
     } catch (err) {
         console.error('Admin audit report generation error:', err);
         return res.status(500).json({ success: false, message: 'Failed to generate audit report.' });
+    }
+});
+
+/**
+ * GET /api/admin/schema-readiness
+ * Read-only object-presence report for the INR/transfer schema.
+ * No row data, no credentials, no account numbers.
+ * Accessible only to admin users.
+ */
+router.get('/api/admin/schema-readiness', authenticateToken, requireAdmin, adminLimiter, async (req, res) => {
+    try {
+        const schema = await checkSchema(db);
+        return res.status(200).json({ success: true, schema });
+    } catch (err) {
+        console.error('Admin schema readiness error:', err.message);
+        return res.status(503).json({ success: false, code: 'SCHEMA_CHECK_UNAVAILABLE', message: 'Schema readiness could not be checked (database unavailable or in demo mode).' });
     }
 });
 
