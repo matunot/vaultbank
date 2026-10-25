@@ -8,10 +8,10 @@ import {
 import { useAccountData } from '../hooks/useAccountData';
 import { api } from '../api';
 import Avatar from './Avatar';
-import { WithdrawModal } from './Modals';
 import { DirectUpiDepositModal } from './DirectUpiDepositModal';
 import { DirectUpiAdminReview } from './DirectUpiAdminReview';
 import { DirectBankPayoutModal } from './DirectBankPayoutModal';
+import { DirectBankPayoutAdminReview } from './DirectBankPayoutAdminReview';
 
 /** A real registered VaultBank user (from the backend directory). */
 interface Recipient {
@@ -150,7 +150,6 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
   };
 
   // One idempotent INR payout form is shared by all Withdraw buttons.
-  const [showWithdraw, setShowWithdraw] = useState(false);
   const [showDirectUpi, setShowDirectUpi] = useState(false);
   const [showDirectBankPayout, setShowDirectBankPayout] = useState(false);
 
@@ -443,7 +442,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
           { icon: Send, label: 'Send Money', desc: `VaultBank user (${currency})`, color: '#3b82f6', action: () => setShowSend(true) },
           { icon: QrCode, label: 'Receive', desc: 'VaultBank Direct UPI', color: '#10b981', action: () => { setCurrency('INR'); setShowDirectUpi(true); } },
           { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : 'VaultBank Direct UPI', color: '#06b6d4', action: () => { if (currency === 'USD' && onOpenModal) onOpenModal('deposit'); else { setCurrency('INR'); setShowDirectUpi(true); } } },
-          { icon: Banknote, label: 'Withdraw INR', desc: 'Cashfree payout only; no USD bank payout rail', color: '#f59e0b', action: () => { setCurrency('INR'); setShowWithdraw(true); } },
+          { icon: Banknote, label: 'Withdraw INR', desc: 'VaultBank manual bank payout', color: '#f59e0b', action: () => { setCurrency('INR'); setShowDirectBankPayout(true); } },
         ].map((a, i) => (
           <motion.button
             key={a.label}
@@ -802,7 +801,6 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       </AnimatePresence>
 
       {/* Keep the payout modal mounted while hidden so ambiguous outcomes retain the same idempotency key. */}
-      <WithdrawModal isOpen={showWithdraw} onClose={() => setShowWithdraw(false)} />
       <DirectUpiDepositModal
         isOpen={showDirectUpi}
         onClose={() => setShowDirectUpi(false)}
