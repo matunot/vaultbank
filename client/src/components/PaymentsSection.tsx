@@ -814,7 +814,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
         onOpenInrAccount={openInrWallet}
       />
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectUpiAdminReview />}
-      {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectBankPayoutAdminReview />
+      {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectBankPayoutAdminReview />}
     </div>
   );
 }
