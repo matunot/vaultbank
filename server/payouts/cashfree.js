@@ -169,8 +169,27 @@ async function authedFetch(path, { method = 'GET', body, retriedAuth = false } =
  * request has not been sent yet. Even a timeout after addBeneficiary only
  * means the beneficiary may exist — no money has moved.
  */
-async function ensureBeneficiary({ beneId, name, email, phone, bankAccount, ifsc }) {
+async function ensureBeneficiary({ beneId, name, email, phone, bankAccount, ifsc, address1, city, state, pincode }) {
     try {
+        // Never send placeholder contact/address details to a banking provider.
+        // Validate before any provider request, including beneficiary lookup.
+        const actualName = String(name || '').trim();
+        const actualEmail = String(email || '').trim();
+        const phoneDigits = String(phone || '').replace(/\\D/g, '');
+        const actualAddress = String(address1 || '').trim();
+        const actualCity = String(city || '').trim();
+        const actualState = String(state || '').trim();
+        const actualPincode = String(pincode || '').trim();
+        if (actualName.length < 2 ||
+            !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(actualEmail) ||
+            phoneDigits.length < 10 || phoneDigits.length > 15 ||
+            actualAddress.length < 3 || !actualCity || !actualState || !/^\\d{6}$/.test(actualPincode)) {
+            const err = new Error('Real beneficiary name, email, phone, street address, city, state and six-digit PIN code are required.');
+            err.code = 'PAYOUTS_BENEFICIARY_DETAILS_REQUIRED';
+            err.safe = true;
+            throw err;
+        }
+        const providerPhone = phoneDigits.length === 12 && phoneDigits.startsWith('91') ? phoneDigits.slice(2) : phoneDigits;
         const existing = await authedFetch('/payout/v1/getBeneficiary/' + encodeURIComponent(beneId));
         if (existing.ok && existing.data && existing.data.data) {
             const b = existing.data.data;
@@ -193,15 +212,15 @@ async function ensureBeneficiary({ beneId, name, email, phone, bankAccount, ifsc
             method: 'POST',
             body: {
                 beneId,
-                name,
-                email: email || 'customers@vaultbank.example',
-                phone: phone || '9999999999',
+                name: actualName,
+                email: actualEmail,
+                phone: providerPhone,
                 bankAccount,
                 ifsc,
-                address1: 'VaultBank payout',
-                city: 'Mumbai',
-                state: 'Maharashtra',
-                pincode: '400001',
+                address1: actualAddress,
+                city: actualCity,
+                state: actualState,
+                pincode: actualPincode,
             },
         });
         if (!added.ok) {
