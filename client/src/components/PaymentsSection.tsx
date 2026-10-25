@@ -146,36 +146,8 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
     }
   };
 
-  // ── INR withdraw form ──
-  const [showWithdraw, setShowWithdraw] = useState(false); // USD WithdrawModal
-  const [wdAmount, setWdAmount] = useState('');
-  const [wdBankAccount, setWdBankAccount] = useState('');
-  const [wdIfsc, setWdIfsc] = useState('');
-  const [wdStatus, setWdStatus] = useState<'idle' | 'sending' | 'success' | 'error'>('idle');
-  const [wdMsg, setWdMsg] = useState('');
-  const wdKeyRef = useRef<string | null>(null);
-
-  const submitPayout = async () => {
-    const amt = parseFloat(wdAmount);
-    if (!(amt > 0) || !wdBankAccount.trim() || !wdIfsc.trim()) return;
-    if (!wdKeyRef.current) wdKeyRef.current = `po-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    setWdStatus('sending');
-    setWdMsg('');
-    try {
-      const res = await api.createPayoutRequest({ amount: amt, bankAccount: wdBankAccount.trim(), ifsc: wdIfsc.trim().toUpperCase() }, wdKeyRef.current);
-      if (!res.success) throw new Error(res.message || 'Payout request failed.');
-      setWdStatus('success');
-      setWdMsg(res.message || 'Payout submitted — status updates after provider reconciliation.');
-      wdKeyRef.current = null;
-      setWdAmount('');
-      setWdBankAccount('');
-      setWdIfsc('');
-      loadInr();
-    } catch (err: any) {
-      setWdStatus('error');
-      setWdMsg(err?.message || 'Payout request failed.');
-    }
-  };
+  // One idempotent INR payout form is shared by all Withdraw buttons.
+  const [showWithdraw, setShowWithdraw] = useState(false);
 
   // ── REAL send-money flow (live user search + real transfer) ──
   const [showSend, setShowSend] = useState(false);
@@ -398,10 +370,9 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  onClick={() => { if (currency === 'USD') setShowWithdraw(true); }}
-                  disabled={currency === 'INR'}
-                  className="px-4 py-3 rounded-xl glass-btn text-sm font-bold text-white/80 flex items-center gap-2 disabled:opacity-40"
-                  title={currency === 'INR' ? 'INR withdrawals live in the INR wallet panel below' : 'Withdraw to bank'}
+                  onClick={() => setShowWithdraw(true)}
+                  className="px-4 py-3 rounded-xl glass-btn text-sm font-bold text-white/80 flex items-center gap-2"
+                  title="Open the verified INR payout form"
                 >
                   <Download className="w-4 h-4" /> Withdraw
                 </motion.button>
@@ -455,7 +426,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
           { icon: Send, label: 'Send Money', desc: `VaultBank user (${currency})`, color: '#3b82f6', action: () => setShowSend(true) },
           { icon: QrCode, label: 'Receive', desc: 'Your account details', color: '#10b981', action: () => {} },
           { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : 'INR receiving details', color: '#06b6d4', action: () => { if (currency === 'USD' && onOpenModal) onOpenModal('deposit'); else fetchMyDetails(); } },
-          { icon: Banknote, label: 'Withdraw', desc: currency === 'USD' ? 'To your bank (USD)' : 'To your bank (INR)', color: '#f59e0b', action: () => { if (currency === 'USD') setShowWithdraw(true); } },
+          { icon: Banknote, label: 'Withdraw INR', desc: 'Cashfree payout with live readiness gate', color: '#f59e0b', action: () => setShowWithdraw(true) },
         ].map((a, i) => (
           <motion.button
             key={a.label}
@@ -548,36 +519,24 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
             )}
           </div>
 
-          {/* Withdraw INR + payout records */}
+          {/* INR payout entry point — all requests use the same guarded, idempotent modal */}
           <div className="glass-panel rounded-3xl p-6 lg:col-span-2">
             <div className="flex items-center justify-between mb-3">
               <h3 className="font-display text-xl text-white flex items-center gap-2">
                 <Banknote className="w-5 h-5 text-amber-400" /> Withdraw INR to Bank
               </h3>
+              <button onClick={() => setShowWithdraw(true)} className="px-4 py-2 rounded-xl bg-white/10 border border-white/10 text-xs font-bold text-white hover:bg-white/15">
+                Open secure form
+              </button>
             </div>
             {!inrRail?.payouts ? (
               <p className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
-                External INR withdrawals are not available yet — no authorized payout provider is configured. Your INR balance stays safe and fully available for internal transfers.
+                External INR payouts are not currently available. The form checks live credentials before it submits anything; no balance will be debited while the rail is unready.
               </p>
-            ) : inrState !== 'ready' ? (
-              <p className="text-sm text-white/40">Open your INR wallet first to withdraw.</p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <input value={wdAmount} onChange={(e) => setWdAmount(e.target.value)} type="number" placeholder="Amount (₹)"
-                  className="glass-input rounded-xl px-4 py-3 text-sm text-white" />
-                <input value={wdBankAccount} onChange={(e) => setWdBankAccount(e.target.value)} placeholder="Bank account number"
-                  className="glass-input rounded-xl px-4 py-3 text-sm text-white" />
-                <input value={wdIfsc} onChange={(e) => setWdIfsc(e.target.value)} placeholder="IFSC (e.g. HDFC0000001)"
-                  className="glass-input rounded-xl px-4 py-3 text-sm text-white uppercase" />
-                <div className="md:col-span-3">
-                  <button onClick={submitPayout} disabled={wdStatus === 'sending' || !(parseFloat(wdAmount) > 0) || !wdBankAccount.trim() || !wdIfsc.trim()}
-                    className="px-5 py-3 rounded-xl bg-linear-to-r from-amber-400 to-orange-500 text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50">
-                    {wdStatus === 'sending' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} Request Withdrawal
-                  </button>
-                  {wdStatus === 'success' && <p className="text-xs text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 mt-3">{wdMsg}</p>}
-                  {wdStatus === 'error' && <p className="text-xs text-rose-400 font-bold bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 mt-3">{wdMsg}</p>}
-                </div>
-              </div>
+              <p className="text-sm text-white/50">
+                Payout requests require your real profile contact details, recipient bank details, and a real postal address. An admin must verify Cashfree live credentials before the form will submit.
+              </p>
             )}
             {payoutRecords.length > 0 && (
               <div className="mt-5 space-y-2">
@@ -825,12 +784,8 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
         )}
       </AnimatePresence>
 
-      {/* ── Withdraw Modal (USD) ── */}
-      <AnimatePresence>
-        {showWithdraw && (
-          <WithdrawModal isOpen={true} onClose={() => setShowWithdraw(false)} />
-        )}
-      </AnimatePresence>
+      {/* Keep the payout modal mounted while hidden so ambiguous outcomes retain the same idempotency key. */}
+      <WithdrawModal isOpen={showWithdraw} onClose={() => setShowWithdraw(false)} />
     </div>
   );
 }
