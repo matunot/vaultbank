@@ -408,6 +408,41 @@ export const api = {
     });
   },
 
+  // VaultBank-owned manual bank payout rail. Requests reserve funds; the operator sends via the bank and confirms the bank-statement UTR.
+  async directBankPayoutAvailability(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/direct-bank-payouts/availability');
+  },
+
+  async createDirectBankPayoutRequest(data: { amount: number; beneficiaryName: string; bankAccount: string; ifsc: string }, idempotencyKey: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/direct-bank-payouts/requests', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify(data),
+    });
+  },
+
+  async directBankPayoutRequests(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/direct-bank-payouts/requests');
+  },
+
+  async directBankPayoutAdminRequests(status = 'reserved'): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/direct-bank-payouts/admin/requests?status=${encodeURIComponent(status)}`);
+  },
+
+  async confirmDirectBankPayoutRequest(id: string, data: { settlementAmount: string; bankUtr: string; evidenceNote: string }): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/direct-bank-payouts/admin/requests/${encodeURIComponent(id)}/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async refundDirectBankPayoutRequest(id: string, evidenceNote: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/direct-bank-payouts/admin/requests/${encodeURIComponent(id)}/refund`, {
+      method: 'POST',
+      body: JSON.stringify({ evidenceNote }),
+    });
+  },
+
   async usdcAddress(network?: string, token?: string): Promise<ApiResponse> {
     const params = new URLSearchParams();
     if (network) params.set('network', network);
