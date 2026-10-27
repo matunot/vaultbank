@@ -198,7 +198,7 @@ router.get('/api/direct-bank-payouts/availability', (req, res) => {
   });
 });
 
-router.post('/api/direct-bank-payouts/requests', authenticateToken, async (req, res) => {
+router.post('/api/direct-bank-payouts/requests', authenticateToken, requireAdmin, async (req, res) => {
   let client;
   let requestReference = null;
   let amountPaise = null;
@@ -341,7 +341,7 @@ router.post('/api/direct-bank-payouts/requests', authenticateToken, async (req, 
   }
 });
 
-router.get('/api/direct-bank-payouts/requests', authenticateToken, async (req, res) => {
+router.get('/api/direct-bank-payouts/requests', authenticateToken, requireAdmin, async (req, res) => {
   try {
     await ensureTables();
     const result = await db.query(
