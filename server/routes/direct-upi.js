@@ -186,7 +186,7 @@ router.get('/api/direct-upi/availability', (req, res) => {
   });
 });
 
-router.get('/api/direct-upi/config', authenticateToken, (req, res) => {
+router.get('/api/direct-upi/config', authenticateToken, requireAdmin, (req, res) => {
   const status = readiness();
   res.status(200).json({
     success: true,
@@ -205,7 +205,7 @@ router.get('/api/direct-upi/config', authenticateToken, (req, res) => {
   });
 });
 
-router.post('/api/direct-upi/intents', authenticateToken, async (req, res) => {
+router.post('/api/direct-upi/intents', authenticateToken, requireAdmin, async (req, res) => {
   let idempotencyKey = '';
   let requestAmountPaise = null;
   let cfg = null;
@@ -307,7 +307,7 @@ router.post('/api/direct-upi/intents', authenticateToken, async (req, res) => {
   }
 });
 
-router.get('/api/direct-upi/intents', authenticateToken, async (req, res) => {
+router.get('/api/direct-upi/intents', authenticateToken, requireAdmin, async (req, res) => {
   try {
     await ensureSchema();
     await sweepExpired();
@@ -322,7 +322,7 @@ router.get('/api/direct-upi/intents', authenticateToken, async (req, res) => {
   }
 });
 
-router.post('/api/direct-upi/intents/:id/cancel', authenticateToken, async (req, res) => {
+router.post('/api/direct-upi/intents/:id/cancel', authenticateToken, requireAdmin, async (req, res) => {
   try {
     await ensureSchema();
     const result = await db.query(
@@ -340,7 +340,7 @@ router.post('/api/direct-upi/intents/:id/cancel', authenticateToken, async (req,
   }
 });
 
-router.get('/api/direct-upi/admin/intents', requireAdmin, async (req, res) => {
+router.get('/api/direct-upi/admin/intents', authenticateToken, requireAdmin, async (req, res) => {
   try {
     await ensureSchema();
     await sweepExpired();
@@ -364,7 +364,7 @@ router.get('/api/direct-upi/admin/intents', requireAdmin, async (req, res) => {
   }
 });
 
-router.post('/api/direct-upi/admin/intents/:id/verify', requireAdmin, async (req, res) => {
+router.post('/api/direct-upi/admin/intents/:id/verify', authenticateToken, requireAdmin, async (req, res) => {
   const settlementAmountPaise = parseAmountToPaise(req.body && req.body.settlementAmount);
   const bankUtr = String((req.body && req.body.bankUtr) || '').trim();
   const evidenceNote = String((req.body && req.body.evidenceNote) || '').trim();
@@ -507,7 +507,7 @@ router.post('/api/direct-upi/admin/intents/:id/verify', requireAdmin, async (req
   }
 });
 
-router.post('/api/direct-upi/admin/intents/:id/fail', requireAdmin, async (req, res) => {
+router.post('/api/direct-upi/admin/intents/:id/fail', authenticateToken, requireAdmin, async (req, res) => {
   try {
     await ensureSchema();
     const note = String((req.body && req.body.note) || '').trim();
