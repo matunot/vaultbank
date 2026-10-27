@@ -73,6 +73,14 @@ Do not confirm from a customer screenshot, browser return, SMS, or email alone. 
 - Do not mix personal and unrelated customer funds or market these manual rails as a bank, payment aggregator, or authorised wallet service without the relevant approvals.
 
 
+## Customer rollout flags (off unless explicitly approved)
+
+The public customer flows are deliberately separate opt-ins:
+- `VB_DIRECT_UPI_CUSTOMER_ACCESS_ENABLED=true` permits authenticated customers with both `email_verified=true` and `kyc_status='verified'` to create/list/cancel their own UPI intents. Admin statement verification remains admin-only.
+- `VB_DIRECT_BANK_PAYOUT_CUSTOMER_ACCESS_ENABLED=true` permits authenticated customers meeting those same verification requirements to submit/list their own manual payout requests. Admin confirmation/refund remains admin-only.
+
+Leave both flags unset/false by default. Do not enable them just to remove an access-denied message. These flags do not create a bank API or make transfers automatic; UPI credit remains manual and payout requests only reserve funds until an operator performs and reconciles the bank transfer. Enable a customer flag only after the responsible entity has confirmed that this activity is permitted, bank/UPI terms are satisfied, appropriate compliance/customer protections are in place, and the receiving/payout accounts are controlled and monitored.
+
 ## Production pilot access restriction
 
 The customer-facing intent/history/cancel endpoints for these direct rails are intentionally restricted to authenticated `admin`/`super_admin` accounts during the first production pilot. This is an access-control gate, not proof that the rail is ready for public customers. UPI admin review and all other admin payout endpoints must run both `authenticateToken` and `requireAdmin`; admin-role checks alone do not authenticate a request. Keep real customer access disabled until the receiving VPA/payee are independently verified, transfer evidence and reconciliation are operational, and the operator has confirmed the applicable bank/UPI permissions and compliance requirements.
