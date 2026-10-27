@@ -23,6 +23,28 @@ const MAX_AMOUNT_PAISE = 1000000; // INR 10,000.00 pilot cap.
 const ACCOUNT_RE = /^[0-9]{6,20}$/;
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 const UTR_RE = /^[A-Za-z0-9/-]{6,80}$/;
+
+// Separate opt-in: payout requests reserve ledger funds and are NOT automatic
+// transfers. Admins retain access; customers need explicit rollout + verification.
+function requireVerifiedCustomerOrAdmin(req, res, next) {
+  if (req.user && ['admin', 'super_admin'].includes(req.user.role)) return next();
+  if (process.env.VB_DIRECT_BANK_PAYOUT_CUSTOMER_ACCESS_ENABLED !== 'true') {
+    return res.status(403).json({
+      success: false,
+      code: 'DIRECT_PAYOUT_CUSTOMER_ACCESS_DISABLED',
+      message: 'Manual bank payouts are restricted to the authorized admin pilot.',
+    });
+  }
+  if (!req.user || req.user.email_verified !== true || req.user.kyc_status !== 'verified') {
+    return res.status(403).json({
+      success: false,
+      code: 'CUSTOMER_VERIFICATION_REQUIRED',
+      message: 'Verify your email and complete identity verification before requesting a payout.',
+    });
+  }
+  return next();
+}
+
 let tablesReady = false;
 
 function getEncryptionKey() {
@@ -198,7 +220,7 @@ router.get('/api/direct-bank-payouts/availability', (req, res) => {
   });
 });
 
-router.post('/api/direct-bank-payouts/requests', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/api/direct-bank-payouts/requests', authenticateToken, requireVerifiedCustomerOrAdmin, async (req, res) => {
   let client;
   let requestReference = null;
   let amountPaise = null;
@@ -341,7 +363,7 @@ router.post('/api/direct-bank-payouts/requests', authenticateToken, requireAdmin
   }
 });
 
-router.get('/api/direct-bank-payouts/requests', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/api/direct-bank-payouts/requests', authenticateToken, requireVerifiedCustomerOrAdmin, async (req, res) => {
   try {
     await ensureTables();
     const result = await db.query(

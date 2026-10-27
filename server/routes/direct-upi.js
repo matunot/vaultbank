@@ -24,6 +24,27 @@ const EXPIRY_MINUTES = 30;
 const VPA_RE = /^[A-Za-z0-9._-]{2,100}@[A-Za-z0-9.-]{2,64}$/;
 const UTR_RE = /^[A-Za-z0-9/-]{6,80}$/;
 
+// Customer access remains off unless the operator explicitly enables the pilot.
+// Admins keep access for reconciliation. Non-admin customers must be verified.
+function requireVerifiedCustomerOrAdmin(req, res, next) {
+  if (req.user && ['admin', 'super_admin'].includes(req.user.role)) return next();
+  if (process.env.VB_DIRECT_UPI_CUSTOMER_ACCESS_ENABLED !== 'true') {
+    return res.status(403).json({
+      success: false,
+      code: 'DIRECT_UPI_CUSTOMER_ACCESS_DISABLED',
+      message: 'Direct UPI is restricted to the authorized admin pilot.',
+    });
+  }
+  if (!req.user || req.user.email_verified !== true || req.user.kyc_status !== 'verified') {
+    return res.status(403).json({
+      success: false,
+      code: 'CUSTOMER_VERIFICATION_REQUIRED',
+      message: 'Verify your email and complete identity verification before using Direct UPI.',
+    });
+  }
+  return next();
+}
+
 let schemaReady = false;
 
 function readiness() {
@@ -186,7 +207,7 @@ router.get('/api/direct-upi/availability', (req, res) => {
   });
 });
 
-router.get('/api/direct-upi/config', authenticateToken, requireAdmin, (req, res) => {
+router.get('/api/direct-upi/config', authenticateToken, requireVerifiedCustomerOrAdmin, (req, res) => {
   const status = readiness();
   res.status(200).json({
     success: true,
@@ -205,7 +226,7 @@ router.get('/api/direct-upi/config', authenticateToken, requireAdmin, (req, res)
   });
 });
 
-router.post('/api/direct-upi/intents', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/api/direct-upi/intents', authenticateToken, requireVerifiedCustomerOrAdmin, async (req, res) => {
   let idempotencyKey = '';
   let requestAmountPaise = null;
   let cfg = null;
@@ -307,7 +328,7 @@ router.post('/api/direct-upi/intents', authenticateToken, requireAdmin, async (r
   }
 });
 
-router.get('/api/direct-upi/intents', authenticateToken, requireAdmin, async (req, res) => {
+router.get('/api/direct-upi/intents', authenticateToken, requireVerifiedCustomerOrAdmin, async (req, res) => {
   try {
     await ensureSchema();
     await sweepExpired();
@@ -322,7 +343,7 @@ router.get('/api/direct-upi/intents', authenticateToken, requireAdmin, async (re
   }
 });
 
-router.post('/api/direct-upi/intents/:id/cancel', authenticateToken, requireAdmin, async (req, res) => {
+router.post('/api/direct-upi/intents/:id/cancel', authenticateToken, requireVerifiedCustomerOrAdmin, async (req, res) => {
   try {
     await ensureSchema();
     const result = await db.query(

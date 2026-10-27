@@ -24,7 +24,7 @@ jest.mock('../middleware/auth', () => ({
 const CDB = require('../config/database');
 const router = require('../routes/direct-upi');
 const ENV = process.env;
-const ENV_KEYS = ['VB_UPI_DEPOSIT_ENABLED', 'VB_UPI_RECEIVING_VPA', 'VB_UPI_RECEIVING_NAME'];
+const ENV_KEYS = ['VB_UPI_DEPOSIT_ENABLED', 'VB_UPI_RECEIVING_VPA', 'VB_UPI_RECEIVING_NAME', 'VB_DIRECT_UPI_CUSTOMER_ACCESS_ENABLED'];
 const SAVED = {};
 for (const key of ENV_KEYS) {
   SAVED[key] = ENV[key];
@@ -123,6 +123,55 @@ describe('VaultBank-owned Direct UPI rail', () => {
       body: { amount: 10 },
     });
     expect(response.code).toBe(403);
+    expect(CDB.db.query).not.toHaveBeenCalled();
+  });
+
+  test('customer access stays closed unless explicitly enabled', async () => {
+    enable();
+    const response = await call('/api/direct-upi/intents', {
+      method: 'post',
+      user: { id: 'customer-2', role: 'user', email_verified: true, kyc_status: 'verified' },
+      headers: { 'idempotency-key': 'upi-customer-closed-01' },
+      body: { amount: 1 },
+    });
+    expect(response.code).toBe(403);
+    expect(response.body.code).toBe('DIRECT_UPI_CUSTOMER_ACCESS_DISABLED');
+    expect(CDB.db.query).not.toHaveBeenCalled();
+  });
+
+  test('explicit customer pilot allows only email-verified, KYC-verified users to create a pending intent', async () => {
+    enable();
+    ENV.VB_DIRECT_UPI_CUSTOMER_ACCESS_ENABLED = 'true';
+    CDB.db.query.mockImplementation(async (sql) => {
+      const query = String(sql);
+      if (query.includes('COUNT(*) AS open_count')) return { rows: [{ open_count: '0' }] };
+      if (query.includes('SELECT id FROM accounts')) return { rows: [{ id: 'account-inr-customer' }] };
+      if (query.includes('INSERT INTO direct_upi_deposit_intents')) return { rows: [{ ...INTENT, user_id: 'customer-verified', account_id: 'account-inr-customer', amount: '1.00' }] };
+      return { rows: [] };
+    });
+    const response = await call('/api/direct-upi/intents', {
+      method: 'post',
+      user: { id: 'customer-verified', role: 'user', email_verified: true, kyc_status: 'verified' },
+      headers: { 'idempotency-key': 'upi-customer-open-001' },
+      body: { amount: 1 },
+    });
+    expect(response.code).toBe(201);
+    expect(response.body.intent.status).toBe('pending');
+    expect(response.body.transfer.amount).toBe('1.00');
+    expect(CDB.db.query.mock.calls.some(([sql]) => String(sql).includes('balance = balance +'))).toBe(false);
+  });
+
+  test('customer pilot rejects users without completed KYC or email verification', async () => {
+    enable();
+    ENV.VB_DIRECT_UPI_CUSTOMER_ACCESS_ENABLED = 'true';
+    const response = await call('/api/direct-upi/intents', {
+      method: 'post',
+      user: { id: 'customer-pending', role: 'user', email_verified: false, kyc_status: 'pending' },
+      headers: { 'idempotency-key': 'upi-customer-unverified' },
+      body: { amount: 1 },
+    });
+    expect(response.code).toBe(403);
+    expect(response.body.code).toBe('CUSTOMER_VERIFICATION_REQUIRED');
     expect(CDB.db.query).not.toHaveBeenCalled();
   });
 

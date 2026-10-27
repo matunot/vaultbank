@@ -25,7 +25,7 @@ jest.mock('../middleware/auth', () => ({
 const CDB = require('../config/database');
 const route = require('../routes/direct-bank-payouts');
 
-const ENV_KEYS = ['VB_DIRECT_BANK_PAYOUTS_ENABLED', 'VB_DIRECT_PAYOUT_ENCRYPTION_KEY'];
+const ENV_KEYS = ['VB_DIRECT_BANK_PAYOUTS_ENABLED', 'VB_DIRECT_PAYOUT_ENCRYPTION_KEY', 'VB_DIRECT_BANK_PAYOUT_CUSTOMER_ACCESS_ENABLED'];
 const SAVED_ENV = {};
 for (const key of ENV_KEYS) {
   SAVED_ENV[key] = process.env[key];
@@ -126,6 +126,35 @@ describe('VaultBank-owned manual bank payouts', () => {
       body: { amount: '100.00', beneficiaryName: 'Someone Else', bankAccount: '123456789', ifsc: 'HDFC0001234' },
     });
     expect(response.statusCode).toBe(403);
+    expect(CDB.db.query).not.toHaveBeenCalled();
+    expect(CDB.db.getClient).not.toHaveBeenCalled();
+  });
+
+  test('manual payout customer access stays closed unless explicitly enabled', async () => {
+    enable();
+    const response = await call('/api/direct-bank-payouts/requests', {
+      method: 'post',
+      user: { id: 'customer-2', role: 'user', email_verified: true, kyc_status: 'verified' },
+      headers: { 'idempotency-key': 'payout-customer-closed-01' },
+      body: { amount: '10.00', beneficiaryName: 'Alice User', bankAccount: '123456789', ifsc: 'HDFC0001234' },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.body.code).toBe('DIRECT_PAYOUT_CUSTOMER_ACCESS_DISABLED');
+    expect(CDB.db.query).not.toHaveBeenCalled();
+    expect(CDB.db.getClient).not.toHaveBeenCalled();
+  });
+
+  test('manual payout customer pilot rejects users without completed KYC or email verification', async () => {
+    enable();
+    process.env.VB_DIRECT_BANK_PAYOUT_CUSTOMER_ACCESS_ENABLED = 'true';
+    const response = await call('/api/direct-bank-payouts/requests', {
+      method: 'post',
+      user: { id: 'customer-pending', role: 'user', email_verified: false, kyc_status: 'pending' },
+      headers: { 'idempotency-key': 'payout-customer-unverified' },
+      body: { amount: '10.00', beneficiaryName: 'Alice User', bankAccount: '123456789', ifsc: 'HDFC0001234' },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(response.body.code).toBe('CUSTOMER_VERIFICATION_REQUIRED');
     expect(CDB.db.query).not.toHaveBeenCalled();
     expect(CDB.db.getClient).not.toHaveBeenCalled();
   });
