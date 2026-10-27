@@ -10,7 +10,7 @@ jest.mock('../config/database', () => ({
 
 jest.mock('../middleware/auth', () => ({
   authenticateToken: (req, res, next) => {
-    if (!req.user) req.user = { id: 'user-1', role: 'user' };
+    if (!req.user) req.user = { id: 'user-1', role: 'admin' };
     next();
   },
   requireAdmin: (req, res, next) => {
@@ -112,6 +112,18 @@ describe('VaultBank-owned Direct UPI rail', () => {
     expect(response.code).toBe(200);
     expect(response.body.enabled).toBe(false);
     expect(response.body.vpa).toBeNull();
+  });
+
+  test('blocks non-admin users from the admin-only production pilot', async () => {
+    enable();
+    const response = await call('/api/direct-upi/intents', {
+      method: 'post',
+      user: { id: 'customer-2', role: 'user' },
+      headers: { 'idempotency-key': 'upi-pilot-customer-1' },
+      body: { amount: 10 },
+    });
+    expect(response.code).toBe(403);
+    expect(CDB.db.query).not.toHaveBeenCalled();
   });
 
   test('rejects disabled creation without touching the database', async () => {

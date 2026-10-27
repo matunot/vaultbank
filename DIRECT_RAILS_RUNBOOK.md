@@ -71,3 +71,8 @@ Do not confirm from a customer screenshot, browser return, SMS, or email alone. 
 - Keep all new environment flags unset/false until a controlled pilot is permitted.
 - Begin with your own receiving account and a minimal controlled test only after confirming bank terms. Reconcile the bank statement independently; never treat CI pass as proof of a real settlement.
 - Do not mix personal and unrelated customer funds or market these manual rails as a bank, payment aggregator, or authorised wallet service without the relevant approvals.
+
+
+## Production pilot access restriction
+
+The customer-facing intent/history/cancel endpoints for these direct rails are intentionally restricted to authenticated `admin`/`super_admin` accounts during the first production pilot. This is an access-control gate, not proof that the rail is ready for public customers. UPI admin review and all other admin payout endpoints must run both `authenticateToken` and `requireAdmin`; admin-role checks alone do not authenticate a request. Keep real customer access disabled until the receiving VPA/payee are independently verified, transfer evidence and reconciliation are operational, and the operator has confirmed the applicable bank/UPI permissions and compliance requirements.

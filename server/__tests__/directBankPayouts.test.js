@@ -11,7 +11,7 @@ jest.mock('../config/database', () => ({
 
 jest.mock('../middleware/auth', () => ({
   authenticateToken: (req, res, next) => {
-    if (!req.user) req.user = { id: 'user-1', role: 'user' };
+    if (!req.user) req.user = { id: 'user-1', role: 'admin' };
     next();
   },
   requireAdmin: (req, res, next) => {
@@ -117,6 +117,19 @@ beforeEach(() => {
 });
 
 describe('VaultBank-owned manual bank payouts', () => {
+  test('blocks non-admin users from creating a payout during the admin-only pilot', async () => {
+    enable();
+    const response = await call('/api/direct-bank-payouts/requests', {
+      method: 'post',
+      user: { id: 'customer-2', role: 'user' },
+      headers: { 'idempotency-key': 'payout-pilot-customer-1' },
+      body: { amount: '100.00', beneficiaryName: 'Someone Else', bankAccount: '123456789', ifsc: 'HDFC0001234' },
+    });
+    expect(response.statusCode).toBe(403);
+    expect(CDB.db.query).not.toHaveBeenCalled();
+    expect(CDB.db.getClient).not.toHaveBeenCalled();
+  });
+
   test('is fail-closed without the feature flag and encryption key', async () => {
     const result = route.readiness();
     expect(result.available).toBe(false);
