@@ -118,6 +118,35 @@ app.get('/health', (req, res) => {
     });
 });
 
+// Readiness check is separate from /health (liveness) so periodic uptime pings
+// do not keep a scale-to-zero database compute awake. This endpoint performs a
+// real SELECT 1 and returns 503 whenever PostgreSQL cannot serve requests.
+app.get('/ready', async (req, res) => {
+    try {
+        const { query: dbQuery, isDemo } = require('./config/db');
+        if (isDemo) {
+            return res.status(503).json({
+                status: 'not_ready',
+                database: 'demo_mode',
+                timestamp: new Date().toISOString()
+            });
+        }
+        await dbQuery('SELECT 1');
+        return res.status(200).json({
+            status: 'ready',
+            database: 'connected',
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('[ready] PostgreSQL readiness probe failed:', error.message);
+        return res.status(503).json({
+            status: 'not_ready',
+            database: 'unavailable',
+            timestamp: new Date().toISOString()
+        });
+    }
+});
+
 // ─── Input Sanitization ──────────────────────────────────────────────────────
 // Sanitize all request bodies and query parameters BEFORE routes so XSS
 // payloads are stripped from every endpoint, including auth.
@@ -404,6 +433,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // ─── Ensure Database Connection ───────────────────────────────────────────────
 const { ensureConnection } = require('./config/db');
+const { isProductionRuntime } = require('./config/database-mode');
 const { seedDemoData } = require('./config/database');
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
@@ -437,7 +467,12 @@ async function startServer() {
         // Seed demo data (safe: only runs if no users exist)
         await seedDemoData();
     } catch (err) {
-        console.warn('âš ï¸  Could not connect to database, starting in demo mode:', err.message);
+        if (isProductionRuntime(process.env)) {
+            console.error('[startup] FATAL: PostgreSQL is unavailable; refusing to start the API in production:', err.message);
+            process.exit(1);
+            return;
+        }
+        console.warn('âš ï¸  Could not connect to database, starting in local demo mode:', err.message);
     }
 
     app.listen(PORT, () => {
