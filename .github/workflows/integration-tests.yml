@@ -25,6 +25,7 @@ name: Integration Tests (PostgreSQL)
       - 'server/services/**'
       - 'server/vbr/**'
       - 'server/config/**'
+      - 'server/__tests__/databaseProductionSafety.test.js'
       - 'server/migrations/**'
       - 'server/utils/schemaReadiness.js'
       - 'server/scripts/check-inr-schema.js'
@@ -100,6 +101,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Run production database safety tests
+        run: npx --yes jest@30.5.2 __tests__/databaseProductionSafety.test.js --runInBand --testPathIgnorePatterns /node_modules/
 
       - name: Run direct UPI safety tests
         run: |
