@@ -176,6 +176,17 @@ export function DirectUpiDepositModal({ isOpen, onClose, accountState, onOpenInr
             <div className="flex items-center gap-2 rounded-xl bg-white/5 p-4 text-sm text-white/60"><Loader2 className="h-4 w-4 animate-spin" /> Checking your INR account…</div>
           ) : accountState === 'error' ? (
             <div className="rounded-xl border border-rose-500/20 bg-rose-500/5 p-4 text-sm text-rose-200">Your INR account status could not be checked. Refresh the account data before creating a deposit.</div>
+          ) : error && !config ? (
+            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-300" />
+                <div>
+                  <p className="text-sm font-semibold text-white">Direct UPI access could not be loaded.</p>
+                  <p className="mt-1 text-xs leading-relaxed text-white/60">{error} Customer access may be restricted to verified pilot users. Do not send money unless the verified receiver details are displayed.</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => void refresh()} className="mt-4 rounded-xl bg-white/10 px-4 py-2 text-xs font-bold text-white hover:bg-white/15">Retry configuration</button>
+            </div>
           ) : !config?.enabled ? (
             <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
               <div className="flex items-start gap-3">
