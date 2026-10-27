@@ -20,6 +20,7 @@ try {
 
 const db = require('./db');
 const isDemo = db.isDemo;
+const { isProductionRuntime } = require('./database-mode');
 
 // ============================================================
 // UNIQUE ACCOUNT NUMBER GENERATION
@@ -915,7 +916,7 @@ const seedDemoData = async () => {
     // Explicit default-credential usage is detected and reported on boot.
     const demoEmail = 'demo@vaultbank.com';
     const adminEmail = 'admin@vaultbank.com';
-    const isProd = process?.env?.NODE_ENV === 'production';
+    const isProd = isProductionRuntime(process.env);
     const demoPass = process?.env?.DEMO_PASSWORD;
     const adminPassRaw = process?.env?.ADMIN_PASSWORD;
     // A known-default env value is treated as UNSET: honoring it would keep
