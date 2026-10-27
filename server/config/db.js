@@ -9,20 +9,39 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
 const { Pool } = require('pg');
+const { isProductionRuntime, resolveDemoMode } = require('./database-mode');
 
-// ─── Compatibility flags ─────────────────────────────────────────────────────
-// Auto-detect demo mode: if no DATABASE_URL is configured, fall back to the
-// in-memory demo store so the API keeps working (e.g., on Render free tier
-// where DATABASE_URL may not have been configured in the dashboard).
-const isDemo = !process.env.DATABASE_URL;
+// ─── Database mode: demo is for local/test only ──────────────────────────────
+// Never silently switch a production deployment to in-memory demo accounts.
+const databaseUrl = String(process.env.DATABASE_URL || '').trim();
+const isDemo = resolveDemoMode(process.env);
 const isMongo = false;
 
+// Remove sslmode from the URL and configure TLS explicitly. Production always
+// validates the database server certificate; local/test URLs may remain plain
+// when deliberately configured for a local PostgreSQL instance.
+function connectionOptions(url) {
+    if (!url) return { connectionString: url, ssl: false };
+    let connectionString = url;
+    let requestedSslMode = '';
+    try {
+        const parsed = new URL(url);
+        requestedSslMode = String(parsed.searchParams.get('sslmode') || '').toLowerCase();
+        if (requestedSslMode) parsed.searchParams.delete('sslmode');
+        connectionString = parsed.toString();
+    } catch (_) {
+        // Let pg emit the useful malformed-URL error rather than masking it.
+    }
+    const useTls = isProductionRuntime(process.env) || (requestedSslMode && requestedSslMode !== 'disable');
+    return {
+        connectionString,
+        ssl: useTls ? { rejectUnauthorized: true } : false,
+    };
+}
+
 // ─── PostgreSQL Connection Pool ──────────────────────────────────────────────
-const pool = process.env.DATABASE_URL ? new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL && process.env.DATABASE_URL.includes('sslmode') 
-        ? { rejectUnauthorized: false } 
-        : false,
+const pool = databaseUrl ? new Pool({
+    ...connectionOptions(databaseUrl),
     max: 10,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 30000,
