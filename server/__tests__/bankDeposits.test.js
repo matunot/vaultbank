@@ -269,6 +269,29 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         expect(res.body.code).toBe('EVIDENCE_REQUIRED');
     });
 
+    test('statement reference is mandatory and must come from the bank statement', async () => {
+        configure();
+        const sqls = scriptDb();
+        const res = await call('/api/bank-deposits/admin/instructions/bd-1/verify', {
+            method: 'post', body: { settlementAmount: '100.00', note: 'statement line 42 was checked' }, user: ADMIN,
+        });
+        expect(res.code).toBe(400);
+        expect(res.body.code).toBe('BANK_STATEMENT_REFERENCE_REQUIRED');
+        expect(sqls.some((q) => q.includes('balance = balance + $2'))).toBe(false);
+    });
+
+    test('partial or excess statement amount is rejected before any credit', async () => {
+        configure();
+        const sqls = scriptDb({ claimRows: [Object.assign({}, INSTRUCTION, { status: 'settling' })] });
+        const res = await call('/api/bank-deposits/admin/instructions/bd-1/verify', {
+            method: 'post', body: { settlementAmount: '100.01', note: 'statement line 42 was checked', externalTxnRef: 'UTR-TEST-0002' }, user: ADMIN,
+        });
+        expect(res.code).toBe(409);
+        expect(res.body.code).toBe('BANK_DEPOSIT_AMOUNT_MISMATCH');
+        expect(sqls.some((q) => q.includes('balance = balance + $2'))).toBe(false);
+        expect(CDB.createTransaction).not.toHaveBeenCalled();
+    });
+
     test('happy path: claim -> ledger guard -> atomic credit -> settled, credited once', async () => {
         configure();
         const sqls = scriptDb({ claimRows: [Object.assign({}, INSTRUCTION, { status: 'settling' })] });
@@ -335,9 +358,9 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         CDB.db.query.mockImplementation(async (sql) => {
             sqls.push(String(sql));
             if (sql.includes('FROM bank_deposit_instructions')) {
-                return { rows: [Object.assign({}, INSTRUCTION, { status: 'settled', settlement_amount: '150.00', settlement_note: 'x' })] };
+                return { rows: [Object.assign({}, INSTRUCTION, { status: 'settled', settlement_amount: '100.00', settlement_note: 'x' })] };
             }
-            if (sql.includes('balance = balance - $2')) return { rows: [{ balance_before: '160.00', balance_after: '10.00', balance: '10.00' }] };
+            if (sql.includes('balance = balance - $2')) return { rows: [{ balance_before: '100.00', balance_after: '0.00', balance: '0.00' }] };
             if (sql.includes("status = 'reversed'")) return { rows: [{ id: 'bd-1' }] };
             return { rows: [] };
         });
@@ -348,7 +371,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         expect(res.body.reversed).toBe(true);
         expect(sqls.filter((s) => s.includes('balance = balance - $2'))).toHaveLength(1);
         const txn = CDB.createTransaction.mock.calls[0][0];
-        expect(txn.amount).toBe('-150.00');
+        expect(txn.amount).toBe('-100.00');
         expect(txn.type).toBe('adjustment');
     });
 
