@@ -60,6 +60,11 @@ const SAVED = {};
 for (const k of Object.keys(CFG)) { SAVED[k] = ENVP[k]; delete ENVP[k]; }
 afterAll(() => { for (const [k, v] of Object.entries(SAVED)) { if (v === undefined) delete ENVP[k]; else ENVP[k] = v; } });
 const configure = () => { for (const [k, v] of Object.entries(CFG)) ENVP[k] = v; };
+afterEach(() => {
+    // Do not let one configured-rail test turn the following test into a
+    // configured receiving account; every test opts in explicitly via configure().
+    for (const k of Object.keys(CFG)) delete ENVP[k];
+});
 
 const INSTRUCTION = {
     id: 'bd-1', user_id: 'u-1', account_id: 'acc-1', reference: 'VB-BD-TEST-0001',
