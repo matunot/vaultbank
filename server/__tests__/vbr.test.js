@@ -29,6 +29,7 @@ jest.mock('../config/database', () => ({
 jest.mock('../services/ledgerJournalService', () => ({
     ensureVaultLedgerSchema: jest.fn().mockResolvedValue(undefined),
     ensureCustomerLedgerAccount: jest.fn().mockResolvedValue({ id: 'customer-ledger' }),
+    changeVerifiedAvailableBalance: jest.fn().mockResolvedValue({ id: 'customer-ledger', currency: 'INR', verified_available_balance: '1000.00' }),
     postBalancedJournal: jest.fn().mockResolvedValue({ journalId: 'journal-test', replay: false }),
     toMinorUnits: (value) => {
         const input = String(value == null ? '' : value).trim();
