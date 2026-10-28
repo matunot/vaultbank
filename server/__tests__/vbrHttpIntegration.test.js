@@ -127,6 +127,13 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
             'UPDATE accounts SET balance = $2, available_balance = $3, held_balance = $4 WHERE id = ANY($1)',
             [accountIds, balance, available, held]
         );
+        // Test-only synthetic funding must reset the first-party spendability
+        // guard together with the visible account row. Production never uses
+        // this helper and keeps verified funds strict.
+        await pool.query(
+            'UPDATE vb_ledger_accounts SET verified_available_balance = $2 WHERE account_id = ANY($1)',
+            [accountIds, available]
+        );
     }
 
     async function getAccount(accountId) {
