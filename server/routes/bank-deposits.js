@@ -26,6 +26,7 @@ const { v4: uuidv4 } = require('uuid');
 const {
     ensureVaultLedgerSchema,
     ensureCustomerLedgerAccount,
+    changeVerifiedAvailableBalance,
     postBalancedJournal,
     toMinorUnits,
 } = require('../services/ledgerJournalService');
@@ -414,6 +415,7 @@ router.post('/api/bank-deposits/admin/instructions/:id/verify', requireAdmin, as
         }
 
         await ensureCustomerLedgerAccount(client, instruction.account_id);
+        await changeVerifiedAvailableBalance(client, instruction.account_id, settlementText, 'credit');
         const accountUpdate = await client.query(
             `UPDATE accounts
                 SET balance = balance + $2, available_balance = available_balance + $2
@@ -566,62 +568,81 @@ router.post('/api/bank-deposits/admin/instructions/:id/reverse', requireAdmin, a
             return res.status(409).json({ success: false, code: 'BANK_DEPOSIT_NOT_REVERSIBLE', message: 'Only a settled or pending-reversal deposit may be reversed.' });
         }
         amountText = String(instruction.settlement_amount || instruction.amount);
-        const amountMinor = toMinorUnits(amountText);
         await ensureCustomerLedgerAccount(client, instruction.account_id);
-        const debited = await client.query(
-            `UPDATE accounts
-                SET balance = balance - $2, available_balance = available_balance - $2
-              WHERE id = $1 AND user_id = $3 AND currency = $4 AND status = 'active'
-                AND balance >= $2 AND available_balance >= $2
-              RETURNING (balance + $2) AS balance_before, balance AS balance_after`,
-            [instruction.account_id, amountText, instruction.user_id, instruction.currency]
-        );
-        if (!debited.rows.length) {
+
+        // Only previously verified funds can be reversed automatically.
+        // Unverified opening balances are not a source of spendable cash.
+        try {
+            await changeVerifiedAvailableBalance(client, instruction.account_id, amountText, 'debit');
+        } catch (error) {
+            if (!error || error.code !== 'VB_LEDGER_VERIFIED_FUNDS_INSUFFICIENT') throw error;
             await client.query(
                 "UPDATE bank_deposit_instructions SET status = 'reversal_required', settlement_note = $2 WHERE id = $1",
                 [instruction.id, note]
             );
             await client.query('COMMIT');
             needsReview = true;
-        } else {
-            const amount = amountText;
-            await createTransaction({
-                account_id: instruction.account_id,
-                user_id: instruction.user_id,
-                type: 'adjustment',
-                status: 'completed',
-                amount: '-' + amount,
-                currency: instruction.currency,
-                balance_before: String(debited.rows[0].balance_before),
-                balance_after: String(debited.rows[0].balance_after),
-                description: 'Bank deposit reversal — ref ' + instruction.reference,
-                category: 'expense',
-                external_reference: instruction.reference + '-REVERSAL',
-                metadata: { manual_verification: true, reversal: true, admin_id: req.user.id, instruction_id: instruction.id, note },
-            }, client);
-            await postBalancedJournal(client, {
-                eventType: 'deposit_reversed',
-                sourceType: 'bank_deposit_instruction',
-                sourceId: String(instruction.id),
-                currency: instruction.currency,
-                description: 'VaultBank bank-transfer deposit reversed after bank recall/reversal evidence',
-                actorUserId: req.user.id,
-                metadata: { reference: instruction.reference, reversalNote: note },
-                entries: [
-                    { accountId: instruction.account_id, side: 'debit', amount },
-                    { systemCode: 'INBOUND_SETTLEMENT_ASSET', side: 'credit', amount },
-                ],
-            });
-            const updated = await client.query(
-                "UPDATE bank_deposit_instructions SET status = 'reversed', settlement_note = $2 WHERE id = $1 AND status IN ('settled','reversal_required') RETURNING id",
-                [instruction.id, note]
+        }
+
+        if (!needsReview) {
+            const debited = await client.query(
+                `UPDATE accounts
+                    SET balance = balance - $2, available_balance = available_balance - $2
+                  WHERE id = $1 AND user_id = $3 AND currency = $4 AND status = 'active'
+                    AND balance >= $2 AND available_balance >= $2
+                  RETURNING (balance + $2) AS balance_before, balance AS balance_after`,
+                [instruction.account_id, amountText, instruction.user_id, instruction.currency]
             );
-            if (!updated.rows.length) {
-                const error = new Error('Deposit reversal state could not be finalized.');
-                error.code = 'BANK_DEPOSIT_REVERSAL_STATE_FAILED';
-                throw error;
+            if (!debited.rows.length) {
+                // The spendable account balance and verified-funds tracker are
+                // one contract. Restore the tracker before flagging review.
+                await changeVerifiedAvailableBalance(client, instruction.account_id, amountText, 'credit');
+                await client.query(
+                    "UPDATE bank_deposit_instructions SET status = 'reversal_required', settlement_note = $2 WHERE id = $1",
+                    [instruction.id, note]
+                );
+                await client.query('COMMIT');
+                needsReview = true;
+            } else {
+                const amount = amountText;
+                await createTransaction({
+                    account_id: instruction.account_id,
+                    user_id: instruction.user_id,
+                    type: 'adjustment',
+                    status: 'completed',
+                    amount: '-' + amount,
+                    currency: instruction.currency,
+                    balance_before: String(debited.rows[0].balance_before),
+                    balance_after: String(debited.rows[0].balance_after),
+                    description: 'Bank deposit reversal — ref ' + instruction.reference,
+                    category: 'expense',
+                    external_reference: instruction.reference + '-REVERSAL',
+                    metadata: { manual_verification: true, reversal: true, admin_id: req.user.id, instruction_id: instruction.id, note },
+                }, client);
+                await postBalancedJournal(client, {
+                    eventType: 'deposit_reversed',
+                    sourceType: 'bank_deposit_instruction',
+                    sourceId: String(instruction.id),
+                    currency: instruction.currency,
+                    description: 'VaultBank bank-transfer deposit reversed after bank recall/reversal evidence',
+                    actorUserId: req.user.id,
+                    metadata: { reference: instruction.reference, reversalNote: note },
+                    entries: [
+                        { accountId: instruction.account_id, side: 'debit', amount },
+                        { systemCode: 'INBOUND_SETTLEMENT_ASSET', side: 'credit', amount },
+                    ],
+                });
+                const updated = await client.query(
+                    "UPDATE bank_deposit_instructions SET status = 'reversed', settlement_note = $2 WHERE id = $1 AND status IN ('settled','reversal_required') RETURNING id",
+                    [instruction.id, note]
+                );
+                if (!updated.rows.length) {
+                    const error = new Error('Deposit reversal state could not be finalized.');
+                    error.code = 'BANK_DEPOSIT_REVERSAL_STATE_FAILED';
+                    throw error;
+                }
+                await client.query('COMMIT');
             }
-            await client.query('COMMIT');
         }
         if (needsReview) {
             try {
