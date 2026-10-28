@@ -189,7 +189,7 @@ describe('receiving-account configuration gates everything', () => {
             method: 'post',
             body: { amount: 100 },
         });
-        expect(res.code).toBeNull();
+        expect(res.code).toBe(200);
         expect(res.body.success).toBe(true);
         expect(CDB.findAccountByUserIdAndCurrency).toHaveBeenCalledWith('u-1', 'INR');
         expect(sqls.some((sql) => sql.includes('INSERT INTO bank_deposit_instructions'))).toBe(true);
