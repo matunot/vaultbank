@@ -200,7 +200,7 @@ describe('schemaReadiness utility', () => {
     test('same-named non-unique idempotency index is not ready', async () => {
         const result = await checkSchema(fakeDb({ nonUniqueIndex: 'vb_ledger_customer_account_uq' }));
         expect(result.ready).toBe(false);
-        expect(result.indexes.payout_idempotency_user_key).toBe(true);
+        expect(result.indexes.vb_ledger_customer_account_uq).toBe(true);
         expect(result.indexUnique.vb_ledger_customer_account_uq).toBe(false);
         expect(result.notes.join(' ')).toContain('not unique');
     });
