@@ -107,6 +107,12 @@ jobs:
       - name: Run production database safety tests
         run: npx --yes jest@30.5.2 __tests__/databaseProductionSafety.test.js --runInBand --testPathIgnorePatterns /node_modules/
 
+      - name: Run provider registry and native-only safety tests
+        run: |
+          npx --yes jest@30.5.2 __tests__/cashfreeAdapters.test.js __tests__/inrSchemaFailClosed.test.js \
+            --testPathIgnorePatterns /node_modules/ \
+            --runInBand --testTimeout=60000 --verbose --forceExit
+
       - name: Run direct UPI safety tests
         run: |
           npx --yes jest@30.5.2 __tests__/directUpi.test.js \
