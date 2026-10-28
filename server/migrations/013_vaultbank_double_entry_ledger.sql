@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS vb_ledger_accounts (
         'customer_liability', 'settlement_asset', 'payout_payable', 'opening_balance_offset'
     )),
     label TEXT NOT NULL,
+    verified_available_balance NUMERIC(20,2) NOT NULL DEFAULT 0 CHECK (verified_available_balance >= 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CHECK (
         (account_id IS NOT NULL AND system_code IS NULL AND account_type = 'customer_liability')
