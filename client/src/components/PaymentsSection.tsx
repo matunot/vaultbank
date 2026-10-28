@@ -12,6 +12,8 @@ import { DirectUpiDepositModal } from './DirectUpiDepositModal';
 import { DirectUpiAdminReview } from './DirectUpiAdminReview';
 import { DirectBankPayoutModal } from './DirectBankPayoutModal';
 import { DirectBankPayoutAdminReview } from './DirectBankPayoutAdminReview';
+import { BankTransferDepositPanel } from './BankTransferDepositPanel';
+import { BankDepositAdminReview } from './BankDepositAdminReview';
 
 /** A real registered VaultBank user (from the backend directory). */
 interface Recipient {
@@ -582,6 +584,9 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
         </motion.div>
       )}
 
+      {/* VaultBank-owned bank-transfer instruction + manual statement reconciliation. */}
+      <BankTransferDepositPanel />
+
       {/* ── REAL rails readiness — no fake providers ── */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-panel rounded-3xl p-6">
         <h3 className="font-display text-xl text-white mb-1">Payment Rails</h3>
@@ -815,6 +820,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       />
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectUpiAdminReview />}
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectBankPayoutAdminReview />}
+      {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <BankDepositAdminReview />}
     </div>
   );
 }
