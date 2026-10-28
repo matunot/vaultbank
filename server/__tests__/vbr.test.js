@@ -37,17 +37,6 @@ jest.mock('../services/ledgerJournalService', () => ({
         return BigInt(parts[0]) * 100n + BigInt((parts[1] || '').padEnd(2, '0') || '0');
     },
 }));
-jest.mock('../services/ledgerJournalService', () => ({
-    ensureVaultLedgerSchema: jest.fn().mockResolvedValue(undefined),
-    ensureCustomerLedgerAccount: jest.fn().mockResolvedValue({ id: 'customer-ledger' }),
-    postBalancedJournal: jest.fn().mockResolvedValue({ journalId: 'journal-test', replay: false }),
-    toMinorUnits: (value) => {
-        const input = String(value == null ? '' : value).trim();
-        if (!/^\d+(?:\.\d{1,2})?$/.test(input)) throw new Error('invalid amount');
-        const parts = input.split('.');
-        return BigInt(parts[0]) * 100n + BigInt((parts[1] || '').padEnd(2, '0') || '0');
-    },
-}));
 jest.mock('../middleware/auth', () => ({
     authenticateToken: (req, res, next) => { if (!req.user) req.user = { id: 'u-1', role: 'user' }; next(); },
     requireAdmin: (req, res, next) => {
