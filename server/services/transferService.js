@@ -346,23 +346,6 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
                     message: 'Recipient account not found.' };
         }
 
-        // Pass the verified-funds provenance to the recipient atomically.
-        const verifiedCredit = await client.query(
-            `UPDATE vb_ledger_accounts
-                SET verified_available_balance = verified_available_balance + $3
-              WHERE account_id = $1 AND currency = $2
-              RETURNING id`,
-            [recipientAccount.id, currency, amount]
-        );
-        if (!verifiedCredit.rows.length) {
-            await client.query('ROLLBACK');
-            return {
-                error: 'recipient_ledger_missing',
-                code: 'RECIPIENT_LEDGER_NOT_INITIALIZED',
-                message: 'Recipient verified-funds ledger is not initialized; no transfer was committed.',
-            };
-        }
-
         // Opening snapshots remain unverified. Only externally verified funds
         // can leave the account through the native internal rail.
         try {
