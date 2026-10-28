@@ -14,6 +14,7 @@ import CalendarEvents from './CalendarEvents';
 import QuickContacts from './QuickContacts';
 import AchievementsPanel from './AchievementsPanel';
 import SmartInsights from './SmartInsights';
+import PreviewOnlyNotice from './PreviewOnlyNotice';
 import { useAppStore } from '../store';
 import { useAccountData, TransactionData } from '../hooks/useAccountData';
 
@@ -130,12 +131,12 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal, userName 
         <div className="lg:col-span-2">
           <Section delay={0.2}><Transactions transactions={realTransactions} loading={loading} /></Section>
         </div>
-        <SpendingPanel />
+        {import.meta.env.DEV ? <SpendingPanel /> : <PreviewOnlyNotice title="Spending insights are a preview" message="This panel currently uses example data in local development. Live account spending analytics are not connected yet." />}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Section delay={0.3}><SavingsGoals goals={store.goals} onAddToGoal={store.addToGoal} /></Section>
-        <Section delay={0.35}><BudgetPanel budget={store.budget} /></Section>
+        <Section delay={0.3}>{import.meta.env.DEV ? <SavingsGoals goals={store.goals} onAddToGoal={store.addToGoal} /> : <PreviewOnlyNotice title="Savings goals are not connected yet" message="Example goals are shown only in local development. Goal balances are not linked to your account ledger." />}</Section>
+        <Section delay={0.35}>{import.meta.env.DEV ? <BudgetPanel budget={store.budget} /> : <PreviewOnlyNotice title="Budget tracking is a preview" message="The budget widget uses sample values in local development and is not yet connected to your verified transaction history." />}</Section>
         <Section delay={0.4}><CurrencyConverter /></Section>
       </div>
 
@@ -143,14 +144,14 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal, userName 
         <div className="lg:col-span-2">
           <Section delay={0.45}><CardsPanel cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /></Section>
         </div>
-        <Section delay={0.5}><InvestmentsPanel /></Section>
-        <Section delay={0.55}><CalendarEvents /></Section>
+        <Section delay={0.5}>{import.meta.env.DEV ? <InvestmentsPanel /> : <PreviewOnlyNotice title="Portfolio holdings are not connected" message="Sample holdings and market movements are shown only in local development. No live investments are represented here." />}</Section>
+        <Section delay={0.55}>{import.meta.env.DEV ? <CalendarEvents /> : <PreviewOnlyNotice title="Calendar is a preview" message="Sample dates and bills are shown only in local development. No real bill schedule is linked yet." />}</Section>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Section delay={0.6}><QuickContacts /></Section>
-        <Section delay={0.65}><AchievementsPanel /></Section>
-        <Section delay={0.7}><SmartInsights /></Section>
+        <Section delay={0.6}>{import.meta.env.DEV ? <QuickContacts /> : <PreviewOnlyNotice title="Trusted recipients will appear here" message="Example contacts are limited to local development. Use Payments to search registered recipients from the backend." />}</Section>
+        <Section delay={0.65}>{import.meta.env.DEV ? <AchievementsPanel /> : <PreviewOnlyNotice title="Achievements are a preview" message="Example milestones are shown only in local development; live achievements have not been connected to verified activity." />}</Section>
+        <Section delay={0.7}>{import.meta.env.DEV ? <SmartInsights /> : <PreviewOnlyNotice title="Personalized insights are not active yet" message="The current insights are fixed examples and are not generated from your actual transactions. They are shown only in local development." />}</Section>
       </div>
     </div>
   );
