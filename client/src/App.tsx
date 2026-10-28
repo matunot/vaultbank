@@ -261,7 +261,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass">
               <Shield className="w-3.5 h-3.5 text-amber-500" />
               <span className="text-[10px] tracking-widest font-semibold text-white/30">
-                END-TO-END ENCRYPTED Â· FDIC INSURED Â· 256-BIT SSL
+                LIVE FEATURES ARE LABELED BY AVAILABILITY
               </span>
             </div>
           </motion.div>
