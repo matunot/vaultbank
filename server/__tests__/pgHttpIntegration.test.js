@@ -288,6 +288,14 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
 
         const succeeded = results.filter(r => r.status === 200 && r.body.success && !r.body.replay);
         const rejected = results.filter(r => r.status === 400);
+        if (succeeded.length !== 3 || rejected.length !== 2) {
+            const current = await getAccount(alice.id);
+            console.error('INTERNAL_TRANSFER_CONCURRENCY_DIAGNOSTIC', JSON.stringify({
+                results: results.map((r, index) => ({ index, status: r.status, body: r.body })),
+                currentBalance: current && current.balance,
+                currentAvailableBalance: current && current.available_balance,
+            }));
+        }
         expect(succeeded.length).toBe(3);
         expect(rejected.length).toBe(2);
 
