@@ -108,7 +108,7 @@ describe('schema checks are fail-closed', () => {
         jest.resetModules();
         const CDB = require('../config/database');
         const cashfree = require('../payouts/cashfree');
-        CDB.findUserById.mockResolvedValue({ id: 'u-1', full_name: 'A', email: 'a@example.com' });
+        CDB.findUserById.mockResolvedValue({ id: 'u-1', full_name: 'A', email: 'a@example.com', phone: '9876543210' });
         CDB.db.query.mockImplementation(async (sql) => {
             if (sql.includes('to_regclass')) return { rows: [{ ready: false }] };
             if (sql.includes('FROM accounts WHERE user_id')) return { rows: [INR_ACCOUNT] };
@@ -117,7 +117,7 @@ describe('schema checks are fail-closed', () => {
         const router = require('../routes/external-payouts');
         const res = await call(router, '/api/payouts/requests', {
             method: 'post',
-            body: { amount: '100.00', bankAccount: '001111222333', ifsc: 'HDFC0000001' },
+            body: { amount: '100.00', bankAccount: '001111222333', ifsc: 'HDFC0000001', address1: '123 Main Street', city: 'Bhopal', state: 'Madhya Pradesh', pincode: '462001' },
             headers: { 'idempotency-key': 'schema-test-key' },
         });
         expect(res.code).toBe(503);
