@@ -13,6 +13,7 @@ const express = require('express');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const router = express.Router();
+const { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, changeVerifiedAvailableBalance, postBalancedJournal } = require('../services/ledgerJournalService');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { db, createNotification, createAuditLog } = require('../config/database');
 
@@ -401,6 +402,7 @@ router.post('/api/direct-upi/admin/intents/:id/verify', authenticateToken, requi
 
   let client;
   try {
+    await ensureVaultLedgerSchema();
     await ensureSchema();
     client = await db.getClient();
     await client.query('BEGIN');
@@ -449,6 +451,8 @@ router.post('/api/direct-upi/admin/intents/:id/verify', authenticateToken, requi
       throw error;
     }
 
+    await ensureCustomerLedgerAccount(client, intent.account_id);
+    await changeVerifiedAvailableBalance(client, intent.account_id, String(intent.amount), 'credit');
     const accountResult = await client.query(
       "UPDATE accounts SET balance = balance + $2, available_balance = available_balance + $2 " +
       "WHERE id = $1 AND user_id = $3 AND currency = 'INR' AND status = 'active' " +
@@ -484,6 +488,19 @@ router.post('/api/direct-upi/admin/intents/:id/verify', authenticateToken, requi
         }),
       ]
     );
+    await postBalancedJournal(client, {
+      eventType: 'deposit_settled',
+      sourceType: 'direct_upi_deposit',
+      sourceId: String(intent.id),
+      currency: 'INR',
+      description: 'VaultBank Direct UPI deposit verified against the receiving bank statement',
+      actorUserId: req.user.id,
+      metadata: { reference: intent.reference, bankUtr, verification: 'manual-bank-statement' },
+      entries: [
+        { systemCode: 'INBOUND_SETTLEMENT_ASSET', side: 'debit', amount: String(intent.amount) },
+        { accountId: intent.account_id, side: 'credit', amount: String(intent.amount) },
+      ],
+    });
     await client.query(
       "UPDATE direct_upi_deposit_intents SET status = 'settled', settled_at = NOW() WHERE id = $1 AND status = 'settling'",
       [intent.id]

@@ -117,10 +117,41 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         return rows[0];
     }
 
+    // Synthetic test funding is isolated to the throwaway PostgreSQL test DB.
+    // Reset both the account row and the verified-funds control so one test's
+    // spend cannot leak into the next test's funding assumptions.
+    async function setAccountBalances(accountIds, balance, availableBalance = balance, heldBalance = 0) {
+        const ids = Array.isArray(accountIds) ? accountIds : [accountIds];
+        await pool.query(
+            'UPDATE accounts SET balance = $2, available_balance = $3, held_balance = $4 WHERE id = ANY($1::uuid[])',
+            [ids, String(balance), String(availableBalance), String(heldBalance)]
+        );
+        await pool.query(
+            'UPDATE vb_ledger_accounts SET verified_available_balance = $2 WHERE account_id = ANY($1::uuid[])',
+            [ids, String(availableBalance)]
+        );
+    }
+
     async function getLedgerRows(transferId) {
         const { rows } = await pool.query(
             'SELECT * FROM transactions WHERE reference_id = $1 ORDER BY type',
             [transferId]
+        );
+        return rows;
+    }
+
+    async function getOwnedJournalRows(transferId) {
+        const { rows } = await pool.query(
+            `SELECT j.id AS journal_id, j.event_type, j.source_id, j.currency,
+                    e.side, e.amount::text AS amount, la.account_id, la.system_code
+             FROM vb_ledger_journals j
+             JOIN vb_ledger_entries e ON e.journal_id = j.id
+             JOIN vb_ledger_accounts la ON la.id = e.ledger_account_id
+             WHERE j.event_type = 'internal_transfer'
+               AND j.source_type = 'transfer'
+               AND j.source_id = $1
+             ORDER BY e.side`,
+            [String(transferId)]
         );
         return rows;
     }
@@ -130,7 +161,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
         const bob = testData.accounts.bob_usd;
-        await pool.query('UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = ANY($1)', [[alice.id, bob.id]]);
+        await setAccountBalances([alice.id, bob.id], 1000);
 
         const response = await postTransfer({
             recipientEmail: `${testPrefix}-bob@test.invalid`,
@@ -168,6 +199,25 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         expect(outRow.reference_id).toBe(transferId);
         expect(inRow.reference_id).toBe(transferId);
 
+        // The VaultBank-owned ledger must contain exactly one balanced journal
+        // for this transfer, independent of the user-facing transaction history.
+        const journal = await getOwnedJournalRows(transferId);
+        expect(journal).toHaveLength(2);
+        expect(new Set(journal.map((entry) => entry.journal_id)).size).toBe(1);
+        expect(new Set(journal.map((entry) => entry.event_type))).toEqual(new Set(['internal_transfer']));
+        expect(new Set(journal.map((entry) => entry.currency))).toEqual(new Set(['USD']));
+        expect(journal.filter((entry) => entry.side === 'debit')).toHaveLength(1);
+        expect(journal.filter((entry) => entry.side === 'credit')).toHaveLength(1);
+        expect(journal.find((entry) => entry.side === 'debit').account_id).toBe(alice.id);
+        expect(journal.find((entry) => entry.side === 'credit').account_id).toBe(bob.id);
+        expect(journal.reduce((sum, entry) => sum + Number(entry.amount), 0)).toBe(500);
+        expect(journal.every((entry) => entry.source_id === transferId)).toBe(true);
+
+        const verifiedSender = await pool.query('SELECT verified_available_balance FROM vb_ledger_accounts WHERE account_id = $1', [alice.id]);
+        const verifiedRecipient = await pool.query('SELECT verified_available_balance FROM vb_ledger_accounts WHERE account_id = $1', [bob.id]);
+        expect(Number(verifiedSender.rows[0].verified_available_balance)).toBe(750);
+        expect(Number(verifiedRecipient.rows[0].verified_available_balance)).toBe(1250);
+
         // ── Parameter bug regression: counterparty fields must hold the correct data ──
         expect(outRow.counterparty_name).toBe(bob.account_name); // sender row → recipient account is counterparty
         expect(outRow.counterparty_account).toBe(bob.account_number);
@@ -195,7 +245,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
     test('concurrent same-key requests: exactly one transfer commits, the other returns replay', async () => {
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
-        await pool.query('UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = $1', [alice.id]);
+        await setAccountBalances(alice.id, 1000);
 
         const idemKey = `http-it-idem-${Date.now()}`;
         const body = {
@@ -226,6 +276,11 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         const transferId = successes[0].body.transfer.id;
         const ledger = await getLedgerRows(transferId);
         expect(ledger).toHaveLength(2);
+        const journal = await getOwnedJournalRows(transferId);
+        expect(journal).toHaveLength(2);
+        expect(journal.filter((entry) => entry.side === 'debit')).toHaveLength(1);
+        expect(journal.filter((entry) => entry.side === 'credit')).toHaveLength(1);
+        expect(journal.reduce((sum, entry) => sum + Number(entry.amount), 0)).toBe(200);
 
         // Cleanup
         await pool.query('DELETE FROM transactions WHERE reference_id = $1', [transferId]);
@@ -237,7 +292,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
     test('5 concurrent transfers of 300 vs 1000 available: exactly 3 succeed, never overspend', async () => {
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
-        await pool.query('UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = $1', [alice.id]);
+        await setAccountBalances(alice.id, 1000);
 
         const results = await Promise.all(
             Array.from({ length: 5 }, (_, i) =>
@@ -265,8 +320,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
             await pool.query('DELETE FROM transactions WHERE reference_id = $1', [tid]);
             await pool.query('DELETE FROM transfers WHERE id = $1', [tid]);
         }
-        await pool.query('UPDATE accounts SET balance = 1000, available_balance = 1000 WHERE id = ANY($1)',
-            [[alice.id, testData.accounts.bob_usd.id, testData.accounts.carol_usd.id]]);
+        await setAccountBalances([alice.id, testData.accounts.bob_usd.id, testData.accounts.carol_usd.id], 1000);
     });
 
     // ── Test 4: Invalid amounts and currencies ──
@@ -335,10 +389,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
     test('held balance blocks the transfer via the available_balance guard', async () => {
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
-        await pool.query(
-            'UPDATE accounts SET balance = 500, available_balance = 100, held_balance = 400 WHERE id = $1',
-            [alice.id]
-        );
+        await setAccountBalances(alice.id, 500, 100, 400);
         const response = await postTransfer({
             recipientEmail: `${testPrefix}-bob@test.invalid`,
             amount: 200,
@@ -350,7 +401,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         expect(parseFloat(final.balance)).toBe(500);
         expect(parseFloat(final.available_balance)).toBe(100);
         expect(parseFloat(final.held_balance)).toBe(400);
-        await pool.query('UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = $1', [alice.id]);
+        await setAccountBalances(alice.id, 1000);
     });
 
     // ── Test 9: Parameter bug regression — reference_id is the transfer UUID ──
@@ -358,7 +409,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
         const bob = testData.accounts.bob_usd;
-        await pool.query('UPDATE accounts SET balance = 1000, available_balance = 1000 WHERE id = ANY($1)', [[alice.id, bob.id]]);
+        await setAccountBalances([alice.id, bob.id], 1000);
 
         const response = await postTransfer({
             recipientEmail: `${testPrefix}-bob@test.invalid`,
@@ -401,10 +452,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         const alice = testData.accounts.alice_usd;
         const bob = testData.accounts.bob_usd;
         const carol = testData.accounts.carol_usd;
-        await pool.query(
-            'UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = ANY($1)',
-            [[alice.id, bob.id, carol.id]]
-        );
+        await setAccountBalances([alice.id, bob.id, carol.id], 1000);
         const key = `http-it-params-${Date.now()}`;
         const bobEmail = `${testPrefix}-bob@test.invalid`;
         const base = { recipientEmail: bobEmail, amount: 100, currency: 'USD' };
@@ -462,10 +510,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         const aliceInr = testData.accounts.alice_inr;
         const bobUsd = testData.accounts.bob_usd;
         const bobInr = testData.accounts.bob_inr;
-        await pool.query(
-            'UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = ANY($1)',
-            [[aliceUsd.id, aliceInr.id, bobUsd.id, bobInr.id]]
-        );
+        await setAccountBalances([aliceUsd.id, aliceInr.id, bobUsd.id, bobInr.id], 1000);
         const key = `http-it-crosscurrency-${Date.now()}`;
         try {
             // Same user, same key, different currencies, fired concurrently.
@@ -523,10 +568,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
                 'DELETE FROM transfer_idempotency WHERE user_id = $1 AND idempotency_key = $2',
                 [testData.userIds.alice, key]
             );
-            await pool.query(
-                'UPDATE accounts SET balance = 1000, available_balance = 1000 WHERE id = ANY($1)',
-                [[aliceUsd.id, aliceInr.id, bobUsd.id, bobInr.id]]
-            );
+            await setAccountBalances([aliceUsd.id, aliceInr.id, bobUsd.id, bobInr.id], 1000);
         }
     });
 
@@ -535,10 +577,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
         const bob = testData.accounts.bob_usd;
-        await pool.query(
-            'UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = ANY($1)',
-            [[alice.id, bob.id]]
-        );
+        await setAccountBalances([alice.id, bob.id], 1000);
         // Account-number resolution does NOT filter status — this reaches the
         // guarded credit inside the transaction.
         await pool.query("UPDATE accounts SET status = 'closed' WHERE id = $1", [bob.id]);

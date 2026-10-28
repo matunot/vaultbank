@@ -14,6 +14,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
+const { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, changeVerifiedAvailableBalance, postBalancedJournal } = require('../services/ledgerJournalService');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { db, findUserById, createNotification, createAuditLog } = require('../config/database');
 
@@ -270,6 +271,7 @@ router.post('/api/direct-bank-payouts/requests', authenticateToken, requireVerif
     const amount = Number(amountPaise) / 100;
     const encrypted = encryptAccountNumber(bankAccount);
     fingerprint = destinationFingerprint(beneficiaryName, bankAccount, ifsc);
+    await ensureVaultLedgerSchema();
     await ensureTables();
 
     // Fast idempotent replay path avoids holding/decrypting any unnecessary state.
@@ -289,6 +291,17 @@ router.post('/api/direct-bank-payouts/requests', authenticateToken, requireVerif
     client = await db.getClient();
     await client.query('BEGIN');
     try {
+      await ensureCustomerLedgerAccount(client, account.id);
+      try {
+        await changeVerifiedAvailableBalance(client, account.id, String(amount), 'debit');
+      } catch (error) {
+        if (error && error.code === 'VB_LEDGER_VERIFIED_FUNDS_INSUFFICIENT') {
+          const unverified = new Error('Insufficient externally verified spendable INR funds.');
+          unverified.code = 'DIRECT_PAYOUT_UNVERIFIED_FUNDS';
+          throw unverified;
+        }
+        throw error;
+      }
       const claim = await client.query(
         "INSERT INTO direct_bank_payout_requests " +
         "(user_id, account_id, request_reference, idempotency_key, amount, currency, beneficiary_name, destination_account_encrypted, destination_fingerprint, destination_account_masked, destination_ifsc, status) " +
@@ -312,6 +325,19 @@ router.post('/api/direct-bank-payouts/requests', authenticateToken, requireVerif
         "VALUES ($1, $2, 'withdrawal', 'processing', $3, 'INR', $4, $5, $6, 'expense', $7, $8::jsonb)",
         [account.id, req.user.id, -amount, Number(debit.rows[0].balance_before), Number(debit.rows[0].balance_after), 'VaultBank manual bank payout ' + requestReference + ' to ' + ('****' + bankAccount.slice(-4)), requestReference, JSON.stringify({ rail: 'vaultbank-manual-bank-payout', automaticTransfer: false, requestReference, destinationIfsc: ifsc, destinationAccountMasked: '****' + bankAccount.slice(-4) })]
       );
+      await postBalancedJournal(client, {
+        eventType: 'payout_reserved',
+        sourceType: 'direct_bank_payout',
+        sourceId: requestReference,
+        currency: 'INR',
+        description: 'VaultBank native bank payout reserved pending external bank settlement',
+        actorUserId: req.user.id,
+        metadata: { destinationAccountMasked: '****' + bankAccount.slice(-4), destinationIfsc: ifsc, automaticTransfer: false },
+        entries: [
+          { accountId: account.id, side: 'debit', amount: String(amount) },
+          { systemCode: 'OUTBOUND_PAYOUTS_PAYABLE', side: 'credit', amount: String(amount) },
+        ],
+      });
       await client.query('COMMIT');
       await audit(req.user.id, 'direct_bank_payout_requested', row.id, { requestReference, amount, destinationIfsc: ifsc, destinationAccountMasked: '****' + bankAccount.slice(-4) }, req);
       try {
@@ -328,6 +354,9 @@ router.post('/api/direct-bank-payouts/requests', authenticateToken, requireVerif
       });
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch (_) {}
+      if (error && error.code === 'DIRECT_PAYOUT_UNVERIFIED_FUNDS') {
+        return res.status(400).json({ success: false, code: error.code, message: error.message });
+      }
       if (error && error.code === 'DIRECT_PAYOUT_INSUFFICIENT_FUNDS') {
         return res.status(400).json({ success: false, code: error.code, message: error.message });
       }
@@ -409,6 +438,7 @@ router.post('/api/direct-bank-payouts/admin/requests/:id/confirm', authenticateT
 
   let client;
   try {
+    await ensureVaultLedgerSchema();
     await ensureTables();
     client = await db.getClient();
     await client.query('BEGIN');
@@ -426,6 +456,7 @@ router.post('/api/direct-bank-payouts/admin/requests/:id/confirm', authenticateT
       await client.query('ROLLBACK');
       return res.status(409).json({ success: false, code: 'DIRECT_PAYOUT_AMOUNT_MISMATCH', message: 'The bank debit amount must exactly match the reserved payout.' });
     }
+    await ensureCustomerLedgerAccount(client, payout.account_id);
     const updated = await client.query(
       "UPDATE direct_bank_payout_requests SET status = 'succeeded', bank_utr = $2, evidence_note = $3, verified_by_admin_id = $4, completed_at = NOW(), updated_at = NOW() WHERE id = $1 AND status = 'reserved' RETURNING *",
       [payout.id, bankUtr, evidenceNote, req.user.id]
@@ -443,6 +474,19 @@ router.post('/api/direct-bank-payouts/admin/requests/:id/confirm', authenticateT
       error.code = 'DIRECT_PAYOUT_LEDGER_ROW_MISSING';
       throw error;
     }
+    await postBalancedJournal(client, {
+      eventType: 'payout_settled',
+      sourceType: 'direct_bank_payout',
+      sourceId: payout.request_reference,
+      currency: 'INR',
+      description: 'VaultBank native bank payout confirmed against the outgoing bank statement',
+      actorUserId: req.user.id,
+      metadata: { bankUtr, verification: 'manual-bank-statement', evidenceNote },
+      entries: [
+        { systemCode: 'OUTBOUND_PAYOUTS_PAYABLE', side: 'debit', amount: String(payout.amount) },
+        { systemCode: 'BANK_SETTLEMENT_ASSET', side: 'credit', amount: String(payout.amount) },
+      ],
+    });
     await client.query('COMMIT');
     try {
       await createNotification(payout.user_id, {
@@ -470,6 +514,7 @@ router.post('/api/direct-bank-payouts/admin/requests/:id/refund', authenticateTo
   if (note.length < 10 || note.length > 500) return res.status(400).json({ success: false, code: 'DIRECT_PAYOUT_REFUND_EVIDENCE_REQUIRED', message: 'Explain the bank-statement evidence proving no transfer was sent (10-500 characters).' });
   let client;
   try {
+    await ensureVaultLedgerSchema();
     await ensureTables();
     client = await db.getClient();
     await client.query('BEGIN');
@@ -499,9 +544,19 @@ router.post('/api/direct-bank-payouts/admin/requests/:id/refund', authenticateTo
       await client.query('ROLLBACK');
       return res.status(409).json({ success: false, code: 'DIRECT_PAYOUT_NOT_PENDING', message: 'Payout was concurrently resolved.' });
     }
+    await ensureCustomerLedgerAccount(client, payout.account_id);
     const refundExternalRef = payout.request_reference + '-REFUND';
     const seen = await client.query('SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1', [refundExternalRef]);
-    if (!seen.rows.length) {
+    if (seen.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        code: 'DIRECT_PAYOUT_REFUND_RECONCILIATION_REQUIRED',
+        message: 'A legacy refund record already exists. No additional balance change was made; reconcile this payout before retrying.',
+      });
+    }
+    await changeVerifiedAvailableBalance(client, payout.account_id, String(payout.amount), 'credit');
+    {
       const refund = await client.query(
         "UPDATE accounts SET balance = balance + $2, available_balance = available_balance + $2 WHERE id = $1 AND user_id = $3 AND currency = 'INR' RETURNING (balance - $2) AS balance_before, balance AS balance_after",
         [payout.account_id, Number(payout.amount), payout.user_id]
@@ -526,6 +581,19 @@ router.post('/api/direct-bank-payouts/admin/requests/:id/refund', authenticateTo
       error.code = 'DIRECT_PAYOUT_LEDGER_ROW_MISSING';
       throw error;
     }
+    await postBalancedJournal(client, {
+      eventType: 'payout_refund',
+      sourceType: 'direct_bank_payout',
+      sourceId: payout.request_reference,
+      currency: 'INR',
+      description: 'VaultBank native bank payout reservation refunded after bank evidence review',
+      actorUserId: req.user.id,
+      metadata: { evidenceNote: note, reason: 'bank statement confirms no transfer was sent' },
+      entries: [
+        { systemCode: 'OUTBOUND_PAYOUTS_PAYABLE', side: 'debit', amount: String(payout.amount) },
+        { accountId: payout.account_id, side: 'credit', amount: String(payout.amount) },
+      ],
+    });
     await client.query('COMMIT');
     try {
       await createNotification(payout.user_id, {

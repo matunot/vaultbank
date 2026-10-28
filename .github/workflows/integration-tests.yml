@@ -11,8 +11,10 @@ name: Integration Tests (PostgreSQL)
       - 'server/routes/external-payouts.js'
       - 'server/routes/direct-upi.js'
       - 'server/routes/direct-bank-payouts.js'
+      - 'server/routes/bank-deposits.js'
       - 'server/__tests__/directUpi.test.js'
       - 'server/__tests__/directBankPayouts.test.js'
+      - 'server/__tests__/bankDeposits.test.js'
       - 'client/src/components/DirectUpiDepositModal.tsx'
       - 'client/src/components/DirectUpiAdminReview.tsx'
       - 'client/src/components/DirectBankPayoutModal.tsx'
@@ -105,6 +107,12 @@ jobs:
       - name: Run production database safety tests
         run: npx --yes jest@30.5.2 __tests__/databaseProductionSafety.test.js --runInBand --testPathIgnorePatterns /node_modules/
 
+      - name: Verify provider isolation and native-ledger fail-closed schema
+        run: |
+          npx --yes jest@30.5.2 __tests__/cashfreeAdapters.test.js __tests__/inrSchemaFailClosed.test.js \
+            --testPathIgnorePatterns /node_modules/ \
+            --runInBand --testTimeout=60000 --verbose --forceExit
+
       - name: Run direct UPI safety tests
         run: |
           npx --yes jest@30.5.2 __tests__/directUpi.test.js \
@@ -116,6 +124,13 @@ jobs:
           npx --yes jest@30.5.2 __tests__/directBankPayouts.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --runInBand --testTimeout=60000 --verbose --forceExit
+
+      - name: Run native bank deposit safety tests
+        run: |
+          npx --yes jest@30.5.2 __tests__/bankDeposits.test.js \
+            --testPathIgnorePatterns /node_modules/ \
+            --runInBand --testTimeout=60000 --verbose --forceExit
+
 
       - name: Create test database
         run: |

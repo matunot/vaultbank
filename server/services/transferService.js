@@ -38,6 +38,7 @@
  */
 
 const { db, createNotification } = require('../config/database');
+const { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, changeVerifiedAvailableBalance, postBalancedJournal } = require('./ledgerJournalService');
 
 const PROBE_LOCK_TIMEOUT = '5s';
 const UNKEYED_READ_ATTEMPTS = 3;
@@ -195,11 +196,21 @@ async function resolveTransferOutcome({ transferId, userId, currency, idempotenc
  * @returns {Promise<{transferId, senderBalance, newSenderBalance, recipientBalance, replay?, verified?}|{ambiguous: boolean, code, message}|{error, code, message}>}
  */
 async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, amount, currency, description, idempotencyKey, onBeforeCommit, senderName }) {
+    await ensureVaultLedgerSchema();
     const client = await db.getClient();
     let transferId = null;
     let destroyClient = false;
     try {
         await client.query('BEGIN');
+
+        // Every account is mapped before its balance changes; first-use accounts
+        // receive a one-time opening snapshot in this same transaction.
+        // Lock both account rows in a deterministic order to prevent
+        // deadlocks when two users transfer to each other concurrently.
+        const accountIds = [...new Set([senderAccount.id, recipientAccount.id].map(String))].sort();
+        for (const accountId of accountIds) {
+            await ensureCustomerLedgerAccount(client, accountId);
+        }
 
         // ── Idempotency claim ──
         if (idempotencyKey) {
@@ -335,6 +346,26 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
                     message: 'Recipient account not found.' };
         }
 
+        // Opening snapshots remain unverified. Only externally verified funds
+        // can leave the account through the native internal rail.
+        try {
+            await changeVerifiedAvailableBalance(client, senderAccount.id, String(amount), 'debit');
+        } catch (error) {
+            if (error && error.code === 'VB_LEDGER_VERIFIED_FUNDS_INSUFFICIENT') {
+                await client.query('ROLLBACK');
+                return {
+                    error: 'unverified_funds',
+                    code: 'UNVERIFIED_FUNDS',
+                    message: 'This account does not have enough externally verified funds for the transfer. Opening balances are not spendable until reconciled.',
+                };
+            }
+            throw error;
+        }
+
+        // Preserve verified-funds provenance on the receiving account. Both
+        // changes commit with the account updates or are rolled back together.
+        await changeVerifiedAvailableBalance(client, recipientAccount.id, String(amount), 'credit');
+
         // ── Ledger rows (INSIDE the transaction — same client) ──
         await client.query(
             `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
@@ -356,6 +387,22 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
              description || `Transfer from ${senderAccount.account_number}`,
              transferId, senderName || senderAccount.account_name, senderAccount.account_number]
         );
+
+        // ── VaultBank-owned double-entry journal ──
+        // Same client/transaction as both account updates and transaction rows.
+        await postBalancedJournal(client, {
+            eventType: 'internal_transfer',
+            sourceType: 'transfer',
+            sourceId: String(transferId),
+            currency,
+            description: description || 'VaultBank internal transfer',
+            actorUserId: userId,
+            metadata: { rail: 'vaultbank-native-internal' },
+            entries: [
+                { accountId: senderAccount.id, side: 'debit', amount: String(amount) },
+                { accountId: recipientAccount.id, side: 'credit', amount: String(amount) },
+            ],
+        });
 
         // ── Caller hook: final intent state commits WITH the money ──
         if (onBeforeCommit) await onBeforeCommit(client, { transferId });

@@ -1,5 +1,5 @@
 /**
- * Read-only INR rail schema readiness.
+ * Read-only VaultBank-native ledger and internal-rail schema readiness.
  *
  * Reports ONLY object presence and migration filenames — never row data,
  * account numbers, credentials or customer records. Safe to run against
@@ -19,6 +19,7 @@ const REQUIRED_MIGRATIONS = [
     '010_payout_idempotency.sql',
     '011_vbr_payment_intents.sql',
     '012_global_transfer_idempotency.sql',
+    '013_vaultbank_double_entry_ledger.sql',
 ];
 
 const REQUIRED_TABLES = [
@@ -28,18 +29,22 @@ const REQUIRED_TABLES = [
     'transfers',
     'transfer_idempotency',
     'payment_intents',
-    'payout_requests',
-    'virtual_accounts',
-    'collection_events',
+    'vb_ledger_bootstrap',
+    'vb_ledger_accounts',
+    'vb_ledger_journals',
+    'vb_ledger_entries',
 ];
 
 const REQUIRED_INDEXES = [
     'ux_transfer_idempotency_user_key',
     'payment_intent_idempotency_key',
     'ix_payment_intents_state',
-    'payout_idempotency_user_key',
-    'virtual_accounts_provider_va_uidx',
-    'collection_events_provider_event_id_uidx',
+    'vb_ledger_customer_account_uq',
+    'vb_ledger_system_code_currency_uq',
+    'vb_ledger_journals_source_idx',
+    'vb_ledger_journals_currency_created_idx',
+    'vb_ledger_entries_journal_idx',
+    'vb_ledger_entries_account_idx',
 ];
 
 // Presence alone is not enough for the idempotency arbiter indexes: a
@@ -48,19 +53,19 @@ const REQUIRED_INDEXES = [
 const UNIQUE_INDEXES = [
     'ux_transfer_idempotency_user_key',
     'payment_intent_idempotency_key',
-    'payout_idempotency_user_key',
-    'virtual_accounts_provider_va_uidx',
-    'collection_events_provider_event_id_uidx',
+    'vb_ledger_customer_account_uq',
+    'vb_ledger_system_code_currency_uq',
 ];
 
 const REQUIRED_COLUMNS = {
-    accounts: ['id', 'user_id', 'currency', 'balance', 'available_balance', 'status'],
+    accounts: ['id', 'user_id', 'currency', 'balance', 'available_balance', 'held_balance', 'status'],
     transactions: ['id', 'account_id', 'user_id', 'type', 'status', 'amount', 'currency', 'balance_before', 'balance_after', 'external_reference'],
     transfer_idempotency: ['user_id', 'idempotency_key', 'currency'],
     payment_intents: ['id', 'user_id', 'account_id', 'idempotency_key', 'direction', 'method', 'amount', 'currency', 'state', 'transfer_id'],
-    payout_requests: ['id', 'user_id', 'account_id', 'transfer_id', 'idempotency_key', 'bene_id', 'amount', 'currency', 'status'],
-    virtual_accounts: ['provider', 'provider_virtual_account_id', 'user_id', 'account_id', 'status'],
-    collection_events: ['provider', 'event_id', 'status', 'amount', 'currency', 'virtual_account_id', 'utr'],
+    vb_ledger_bootstrap: ['singleton_id', 'cutover_at', 'opening_balance_reconciled'],
+    vb_ledger_accounts: ['id', 'account_id', 'system_code', 'currency', 'account_type', 'verified_available_balance'],
+    vb_ledger_journals: ['id', 'event_type', 'source_type', 'source_id', 'currency', 'state'],
+    vb_ledger_entries: ['id', 'journal_id', 'ledger_account_id', 'side', 'amount'],
 };
 
 async function checkSchema(db) {
@@ -135,9 +140,6 @@ async function checkSchema(db) {
     if (!tablesOk) {
         const missing = REQUIRED_TABLES.filter((t) => result.tables[t] !== true);
         result.notes.push('Missing tables: ' + missing.join(', '));
-        if (missing.some((t) => t === 'virtual_accounts' || t === 'collection_events')) {
-            result.notes.push('virtual_accounts/collection_events are created lazily on the first collections request; they are absent until then.');
-        }
     }
     if (!indexesOk) {
         const missing = REQUIRED_INDEXES.filter((i) => result.indexes[i] !== true);

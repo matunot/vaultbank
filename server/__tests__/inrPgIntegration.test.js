@@ -247,6 +247,113 @@ describeIfDb('INR rails integration: real PostgreSQL + real routes + real HMAC',
         expect(names.has('collection_events_provider_event_id_uidx')).toBe(true);
     });
 
+    test('VaultBank-owned ledger is balanced, immutable by source key, and rejects unbalanced journals', async () => {
+        const { db } = require('../config/database');
+        const { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, postBalancedJournal } = require('../services/ledgerJournalService');
+        await ensureVaultLedgerSchema();
+        const sourceId = `${prefix}-owned-ledger`;
+        const client = await db.getClient();
+        try {
+            await client.query('BEGIN');
+            await ensureCustomerLedgerAccount(client, aliceInr.id);
+            await ensureCustomerLedgerAccount(client, testData.accounts.bob_inr.id);
+            const posted = await postBalancedJournal(client, {
+                eventType: 'internal_transfer',
+                sourceType: 'ledger_integration_test',
+                sourceId,
+                currency: 'INR',
+                description: 'VaultBank owned ledger integration test',
+                actorUserId: aliceId,
+                entries: [
+                    { accountId: aliceInr.id, side: 'debit', amount: '1.25' },
+                    { accountId: testData.accounts.bob_inr.id, side: 'credit', amount: '1.25' },
+                ],
+            });
+            expect(posted.replay).toBe(false);
+            await client.query('COMMIT');
+        } catch (error) {
+            try { await client.query('ROLLBACK'); } catch (_) {}
+            throw error;
+        } finally {
+            client.release();
+        }
+
+        const { rows: balanceRows } = await pool.query(
+            `SELECT j.currency,
+                    SUM(e.amount) FILTER (WHERE e.side = 'debit') AS debits,
+                    SUM(e.amount) FILTER (WHERE e.side = 'credit') AS credits,
+                    COUNT(*) AS entries
+               FROM vb_ledger_journals j JOIN vb_ledger_entries e ON e.journal_id = j.id
+              WHERE j.source_type = 'ledger_integration_test' AND j.source_id = $1
+              GROUP BY j.currency`,
+            [sourceId]
+        );
+        expect(balanceRows).toHaveLength(1);
+        expect(balanceRows[0].currency).toBe('INR');
+        expect(Number(balanceRows[0].debits)).toBe(Number(balanceRows[0].credits));
+        expect(Number(balanceRows[0].debits)).toBe(1.25);
+        expect(Number(balanceRows[0].entries)).toBe(2);
+
+        const replayClient = await db.getClient();
+        try {
+            await replayClient.query('BEGIN');
+            const replay = await postBalancedJournal(replayClient, {
+                eventType: 'internal_transfer',
+                sourceType: 'ledger_integration_test',
+                sourceId,
+                currency: 'INR',
+                description: 'Retry of same test journal',
+                actorUserId: aliceId,
+                entries: [
+                    { accountId: aliceInr.id, side: 'debit', amount: '1.25' },
+                    { accountId: testData.accounts.bob_inr.id, side: 'credit', amount: '1.25' },
+                ],
+            });
+            expect(replay.replay).toBe(true);
+            await expect(postBalancedJournal(replayClient, {
+                eventType: 'internal_transfer',
+                sourceType: 'ledger_integration_test',
+                sourceId,
+                currency: 'INR',
+                description: 'Conflict must not replay',
+                actorUserId: aliceId,
+                entries: [
+                    { accountId: aliceInr.id, side: 'debit', amount: '1.26' },
+                    { accountId: testData.accounts.bob_inr.id, side: 'credit', amount: '1.26' },
+                ],
+            })).rejects.toMatchObject({ code: 'VB_LEDGER_IDEMPOTENCY_CONFLICT' });
+            await replayClient.query('ROLLBACK');
+        } finally {
+            replayClient.release();
+        }
+
+        const badClient = await db.getClient();
+        const badSource = `${prefix}-unbalanced-ledger`;
+        try {
+            await badClient.query('BEGIN');
+            const { rows } = await badClient.query(
+                `INSERT INTO vb_ledger_journals
+                    (event_type, source_type, source_id, currency, description)
+                 VALUES ('internal_transfer', 'ledger_integration_test', $1, 'INR', 'Must fail balance constraint')
+                 RETURNING id`,
+                [badSource]
+            );
+            await badClient.query(
+                'INSERT INTO vb_ledger_entries (journal_id, ledger_account_id, side, amount) VALUES ($1, (SELECT id FROM vb_ledger_accounts WHERE account_id = $2), \'debit\', 1.00)',
+                [rows[0].id, aliceInr.id]
+            );
+            await expect(badClient.query('COMMIT')).rejects.toMatchObject({ code: '23514' });
+            await badClient.query('ROLLBACK').catch(() => {});
+        } finally {
+            badClient.release();
+        }
+        const { rows: badRows } = await pool.query(
+            'SELECT id FROM vb_ledger_journals WHERE source_type = $1 AND source_id = $2',
+            ['ledger_integration_test', badSource]
+        );
+        expect(badRows).toHaveLength(0);
+    });
+
     test('admin reconciliation queues require authentication', async () => {
         const payouts = await request(app).get('/api/payouts/admin/requests');
         expect(payouts.status).toBe(401);

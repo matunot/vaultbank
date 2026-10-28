@@ -91,7 +91,7 @@ async function applySchema(pool) {
     try {
         await pool.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
     } catch (_) { /* may already exist or lack permissions */ }
-    const needed = ['007_real_banking_schema.sql', '008_credit_schema.sql', '009_transfer_idempotency.sql', '010_payout_idempotency.sql', '011_vbr_payment_intents.sql', '012_global_transfer_idempotency.sql'];
+    const needed = ['007_real_banking_schema.sql', '008_credit_schema.sql', '009_transfer_idempotency.sql', '010_payout_idempotency.sql', '011_vbr_payment_intents.sql', '012_global_transfer_idempotency.sql', '013_vaultbank_double_entry_ledger.sql'];
     for (const file of needed) {
         const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8')
             // 007 opens with DROP TABLE ... CASCADE (a one-time reset of the
@@ -117,6 +117,72 @@ async function applySchema(pool) {
  * Creates test users and accounts for the integration tests.
  * Each test run uses a unique prefix so concurrent CI runs don't collide.
  */
+/**
+ * Seed explicitly verified synthetic funding for isolated tests only.
+ * Production migrations never promote existing account balances to verified
+ * funds. Test fixtures create a matching opening journal and verified balance
+ * so the real internal-transfer route can be tested without bank APIs.
+ */
+async function seedVerifiedTestLedgerAccount(pool, account) {
+    const currency = String(account.currency).toUpperCase();
+    if (!['INR', 'USD'].includes(currency)) throw new Error('Unsupported test ledger currency');
+    const amount = String(account.balance);
+    const verifiedAvailable = String(account.available_balance);
+    const client = await pool.connect();
+    try {
+        await client.query('BEGIN');
+        const { rows: customerRows } = await client.query(
+            `INSERT INTO vb_ledger_accounts
+                (account_id, system_code, currency, account_type, label, verified_available_balance)
+             VALUES ($1, NULL, $2, 'customer_liability', 'Synthetic verified test funding', $3)
+             ON CONFLICT (account_id) WHERE account_id IS NOT NULL
+             DO UPDATE SET verified_available_balance = EXCLUDED.verified_available_balance
+             RETURNING id`,
+            [account.id, currency, verifiedAvailable]
+        );
+        if (!customerRows[0]) throw new Error('Could not initialize test customer ledger account');
+
+        await client.query(
+            `INSERT INTO vb_ledger_accounts (account_id, system_code, currency, account_type, label)
+             VALUES (NULL, 'OPENING_BALANCE_OFFSET', $1, 'opening_balance_offset', 'Test fixture funding offset')
+             ON CONFLICT (system_code, currency) WHERE system_code IS NOT NULL DO NOTHING`,
+            [currency]
+        );
+        const { rows: offsetRows } = await client.query(
+            "SELECT id FROM vb_ledger_accounts WHERE system_code = 'OPENING_BALANCE_OFFSET' AND currency = $1 LIMIT 1",
+            [currency]
+        );
+        if (!offsetRows[0]) throw new Error('Could not initialize test ledger offset');
+
+        const { rows: journalRows } = await client.query(
+            `INSERT INTO vb_ledger_journals
+                (event_type, source_type, source_id, currency, description, metadata)
+             VALUES ('opening_balance', 'account', $1, $2,
+                     'Synthetic externally verified test funding',
+                     '{"cutover":"test-fixture","openingBalanceReconciled":true}'::jsonb)
+             ON CONFLICT (event_type, source_type, source_id) DO NOTHING
+             RETURNING id`,
+            [String(account.id), currency]
+        );
+        if (journalRows.length) {
+            await client.query(
+                "INSERT INTO vb_ledger_entries (journal_id, ledger_account_id, side, amount) VALUES ($1, $2, 'debit', $3)",
+                [journalRows[0].id, offsetRows[0].id, amount]
+            );
+            await client.query(
+                "INSERT INTO vb_ledger_entries (journal_id, ledger_account_id, side, amount) VALUES ($1, $2, 'credit', $3)",
+                [journalRows[0].id, customerRows[0].id, amount]
+            );
+        }
+        await client.query('COMMIT');
+    } catch (error) {
+        try { await client.query('ROLLBACK'); } catch (_) {}
+        throw error;
+    } finally {
+        client.release();
+    }
+}
+
 async function seedTestData(pool, prefix) {
     const userIds = {};
     for (const name of ['alice', 'bob', 'carol']) {
@@ -141,6 +207,7 @@ async function seedTestData(pool, prefix) {
             [userId, usdNum, `${name} USD`, 1000.00]
         );
         accounts[name + '_usd'] = usd[0];
+        await seedVerifiedTestLedgerAccount(pool, usd[0]);
         const inrNum = `${prefix}-INR-${name.toUpperCase()}`;
         const { rows: inr } = await pool.query(
             `INSERT INTO accounts (user_id, account_number, account_type, account_name, currency, balance, available_balance, held_balance, status)
@@ -150,12 +217,34 @@ async function seedTestData(pool, prefix) {
             [userId, inrNum, `${name} INR`, 50000.00]
         );
         accounts[name + '_inr'] = inr[0];
+        await seedVerifiedTestLedgerAccount(pool, inr[0]);
     }
     return { userIds, accounts };
 }
 
 async function cleanupTestData(pool, prefix) {
     // Clean up by prefix (safe: only removes test entities)
+    // Ledger journal is append-oriented in the application. Test cleanup
+    // removes only journals linked to this run's test users/accounts.
+    await pool.query(`
+        DELETE FROM vb_ledger_journals j
+         WHERE j.actor_user_id IN (SELECT id FROM users WHERE email LIKE $1)
+            OR j.source_id IN (SELECT id::text FROM accounts WHERE account_number LIKE $1)
+            OR j.source_id IN (
+                SELECT t.id::text FROM transfers t
+                JOIN accounts a ON a.id = t.from_account_id OR a.id = t.to_account_id
+                WHERE a.account_number LIKE $1
+            )
+            OR j.id IN (
+                SELECT e.journal_id FROM vb_ledger_entries e
+                JOIN vb_ledger_accounts la ON la.id = e.ledger_account_id
+                JOIN accounts a ON a.id = la.account_id
+                WHERE a.account_number LIKE $1
+            )
+    `, [`${prefix}-%`]);
+    await pool.query(`DELETE FROM vb_ledger_accounts WHERE account_id IN (
+        SELECT id FROM accounts WHERE account_number LIKE $1
+    )`, [`${prefix}-%`]);
     // payment_intents first — its transfer_id FK would block the transfers delete.
     await pool.query(`DELETE FROM payment_intents WHERE user_id IN (
         SELECT id FROM users WHERE email LIKE $1

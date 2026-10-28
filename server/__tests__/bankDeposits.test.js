@@ -24,6 +24,18 @@ jest.mock('../config/database', () => ({
     createNotification: jest.fn(),
     createAuditLog: jest.fn(),
 }));
+jest.mock('../services/ledgerJournalService', () => ({
+    ensureVaultLedgerSchema: jest.fn().mockResolvedValue(undefined),
+    ensureCustomerLedgerAccount: jest.fn().mockResolvedValue({ id: 'ledger-account-1', currency: 'USD', accountId: 'acc-1' }),
+    changeVerifiedAvailableBalance: jest.fn().mockResolvedValue({ id: 'customer-ledger', currency: 'INR', verified_available_balance: '1000.00' }),
+    postBalancedJournal: jest.fn().mockResolvedValue({ journalId: 'journal-1', replay: false }),
+    toMinorUnits: (value) => {
+        const input = String(value == null ? '' : value).trim();
+        if (!/^\d+(?:\.\d{1,2})?$/.test(input)) throw new Error('invalid amount');
+        const parts = input.split('.');
+        return BigInt(parts[0]) * 100n + BigInt((parts[1] || '').padEnd(2, '0') || '0');
+    },
+}));
 jest.mock('../middleware/auth', () => ({
     // Faithful shapes: any user passes auth; only role 'admin' passes requireAdmin.
     authenticateToken: (req, res, next) => { if (!req.user) req.user = { id: 'u-1', role: 'user' }; next(); },
@@ -48,6 +60,11 @@ const SAVED = {};
 for (const k of Object.keys(CFG)) { SAVED[k] = ENVP[k]; delete ENVP[k]; }
 afterAll(() => { for (const [k, v] of Object.entries(SAVED)) { if (v === undefined) delete ENVP[k]; else ENVP[k] = v; } });
 const configure = () => { for (const [k, v] of Object.entries(CFG)) ENVP[k] = v; };
+afterEach(() => {
+    // Do not let one configured-rail test turn the following test into a
+    // configured receiving account; every test opts in explicitly via configure().
+    for (const k of Object.keys(CFG)) delete ENVP[k];
+});
 
 const INSTRUCTION = {
     id: 'bd-1', user_id: 'u-1', account_id: 'acc-1', reference: 'VB-BD-TEST-0001',
@@ -77,7 +94,7 @@ async function call(path, { method = 'get', body, user } = {}) {
     const res = mkRes();
     const req = {
         method: method.toUpperCase(),
-        user: user || { id: 'u-1', role: 'user' },
+        user: user || { id: 'u-1', role: 'user', email_verified: true, kyc_status: 'verified' },
         ip: '127.0.0.1',
         headers: {},
         body: body || {},
@@ -100,7 +117,7 @@ async function call(path, { method = 'get', body, user } = {}) {
 
 const ADMIN = { id: 'adm-1', role: 'admin' };
 
-function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ balance: '50.00' }] } = {}) {
+function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ balance_before: '100.00', balance_after: '50.00', balance: '50.00' }], instructionRow = INSTRUCTION } = {}) {
     const sqls = [];
     CDB.db.query.mockImplementation(async (sql) => {
         sqls.push(String(sql));
@@ -109,13 +126,15 @@ function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ 
         if (sql.includes("INSERT INTO bank_deposit_instructions")) return { rows: [INSTRUCTION] };
         if (sql.includes("status = 'settling'")) return { rows: claimRows === undefined ? [] : claimRows };
         if (sql.includes('FROM transactions WHERE external_reference')) return { rows: ledgerRows };
-        if (sql.includes('balance = balance + $2')) return { rows: [{ balance_before: '100.00', balance_after: '250.00' }] };
+        if (sql.includes('balance = balance + $2')) return { rows: [{ balance_before: '100.00', balance_after: '200.00' }] };
         if (sql.includes('balance = balance - $2')) return { rows: debitRows };
-        if (sql.includes("status = 'settled'")) return { rows: [] };
+        if (sql.includes("status = 'settled'")) return { rows: [Object.assign({}, instructionRow, { status: 'settled', settled_at: new Date().toISOString() })] };
+        if (sql.includes("status = 'reversed'")) return { rows: [{ id: instructionRow.id || 'bd-1' }] };
+        if (sql.includes("status = 'reversal_required'")) return { rows: [{ id: instructionRow.id || 'bd-1' }] };
         if (sql.includes("status = 'expired'")) return { rows: [] };
         if (sql.includes("status = 'failed'")) return { rows: [Object.assign({}, INSTRUCTION, { status: 'failed' })] };
         if (sql.includes("status = 'cancelled'")) return { rows: [INSTRUCTION] };
-        if (sql.includes('FROM bank_deposit_instructions')) return { rows: [INSTRUCTION] };
+        if (sql.includes('FROM bank_deposit_instructions')) return { rows: [instructionRow] };
         return { rows: [] };
     });
     return sqls;
@@ -128,9 +147,35 @@ beforeEach(() => {
     CDB.createNotification.mockResolvedValue({ id: 'n-1' });
     CDB.createAuditLog.mockResolvedValue({ id: 'a-1' });
     CDB.db.query.mockResolvedValue({ rows: [] });
+    CDB.db.getClient.mockImplementation(async () => ({
+        query: (sql, params) => CDB.db.query(sql, params),
+        release: jest.fn(),
+    }));
+    const ledger = require('../services/ledgerJournalService');
+    ledger.ensureVaultLedgerSchema.mockResolvedValue(undefined);
+    ledger.ensureCustomerLedgerAccount.mockResolvedValue({ id: 'ledger-account-1', currency: 'USD', accountId: 'acc-1' });
+    ledger.postBalancedJournal.mockResolvedValue({ journalId: 'journal-1', replay: false });
 });
 
 describe('receiving-account configuration gates everything', () => {
+    test('unverified customers cannot retrieve receiving details or create deposit instructions', async () => {
+        configure();
+        const configRes = await call('/api/bank-deposits/config', {
+            user: { id: 'u-unverified', role: 'user', email_verified: false, kyc_status: 'pending' },
+        });
+        expect(configRes.code).toBe(403);
+        expect(configRes.body.code).toBe('CUSTOMER_VERIFICATION_REQUIRED');
+
+        const createRes = await call('/api/bank-deposits/instructions', {
+            method: 'post',
+            body: { amount: 100 },
+            user: { id: 'u-unverified', role: 'user', email_verified: true, kyc_status: 'pending' },
+        });
+        expect(createRes.code).toBe(403);
+        expect(createRes.body.code).toBe('CUSTOMER_VERIFICATION_REQUIRED');
+        expect(CDB.db.query).not.toHaveBeenCalled();
+    });
+
     test('unconfigured: config reports disabled, exposes NO account details', async () => {
         const res = await call('/api/bank-deposits/config');
         expect(res.code).toBe(200);
@@ -248,11 +293,34 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         expect(res.body.code).toBe('EVIDENCE_REQUIRED');
     });
 
+    test('statement reference is mandatory and must come from the bank statement', async () => {
+        configure();
+        const sqls = scriptDb();
+        const res = await call('/api/bank-deposits/admin/instructions/bd-1/verify', {
+            method: 'post', body: { settlementAmount: '100.00', note: 'statement line 42 was checked' }, user: ADMIN,
+        });
+        expect(res.code).toBe(400);
+        expect(res.body.code).toBe('BANK_STATEMENT_REFERENCE_REQUIRED');
+        expect(sqls.some((q) => q.includes('balance = balance + $2'))).toBe(false);
+    });
+
+    test('partial or excess statement amount is rejected before any credit', async () => {
+        configure();
+        const sqls = scriptDb({ claimRows: [Object.assign({}, INSTRUCTION, { status: 'settling' })] });
+        const res = await call('/api/bank-deposits/admin/instructions/bd-1/verify', {
+            method: 'post', body: { settlementAmount: '100.01', note: 'statement line 42 was checked', externalTxnRef: 'UTR-TEST-0002' }, user: ADMIN,
+        });
+        expect(res.code).toBe(409);
+        expect(res.body.code).toBe('BANK_DEPOSIT_AMOUNT_MISMATCH');
+        expect(sqls.some((q) => q.includes('balance = balance + $2'))).toBe(false);
+        expect(CDB.createTransaction).not.toHaveBeenCalled();
+    });
+
     test('happy path: claim -> ledger guard -> atomic credit -> settled, credited once', async () => {
         configure();
         const sqls = scriptDb({ claimRows: [Object.assign({}, INSTRUCTION, { status: 'settling' })] });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/verify', {
-            method: 'post', body: { settlementAmount: 150, note: 'statement line 42, wire from First Test Bank' }, user: ADMIN,
+            method: 'post', body: { settlementAmount: '100.00', note: 'statement line 42, wire from First Test Bank', externalTxnRef: 'UTR-TEST-0001' }, user: ADMIN,
         });
         expect(res.code).toBe(200);
         expect(res.body.credited).toBe(true);
@@ -261,7 +329,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         expect(CDB.createTransaction).toHaveBeenCalledTimes(1);
         const txn = CDB.createTransaction.mock.calls[0][0];
         expect(txn.type).toBe('deposit');
-        expect(txn.amount).toBe(150);
+        expect(txn.amount).toBe('100.00');
         expect(txn.external_reference).toBe('VB-BD-TEST-0001');
         expect(txn.metadata.manual_verification).toBe(true);
         expect(sqls.some((s) => s.includes("status = 'settled'"))).toBe(true);
@@ -273,7 +341,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         configure();
         const sqls = scriptDb({ claimRows: [] });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/verify', {
-            method: 'post', body: { settlementAmount: 150, note: 'statement line 42 again' }, user: ADMIN,
+            method: 'post', body: { settlementAmount: '100.00', note: 'statement line 42 again', externalTxnRef: 'UTR-TEST-0001' }, user: ADMIN,
         });
         expect(res.code).toBe(409);
         expect(sqls.some((s) => s.includes('balance = balance + $2'))).toBe(false);
@@ -287,14 +355,13 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
             ledgerRows: [{ id: 'tx-already' }],
         });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/verify', {
-            method: 'post', body: { settlementAmount: 150, note: 'retry after crash — ledger row exists' }, user: ADMIN,
+            method: 'post', body: { settlementAmount: '100.00', note: 'retry after crash — ledger row exists', externalTxnRef: 'UTR-TEST-0001' }, user: ADMIN,
         });
-        expect(res.code).toBe(200);
-        expect(res.body.credited).toBe(false);
-        expect(res.body.duplicate).toBe(true);
+        expect(res.code).toBe(409);
+        expect(res.body.code).toBe('BANK_DEPOSIT_RECONCILIATION_REQUIRED');
         expect(sqls.filter((s) => s.includes('balance = balance + $2'))).toHaveLength(0);
         expect(CDB.createTransaction).not.toHaveBeenCalled();
-        expect(sqls.some((s) => s.includes("status = 'settled'"))).toBe(true);
+        expect(sqls.some((s) => s.includes("status = 'settled'"))).toBe(false);
     });
 
     test('failed instruction: pending -> failed, NO credit, user notified', async () => {
@@ -315,9 +382,10 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         CDB.db.query.mockImplementation(async (sql) => {
             sqls.push(String(sql));
             if (sql.includes('FROM bank_deposit_instructions')) {
-                return { rows: [Object.assign({}, INSTRUCTION, { status: 'settled', settlement_amount: '150.00', settlement_note: 'x' })] };
+                return { rows: [Object.assign({}, INSTRUCTION, { status: 'settled', settlement_amount: '100.00', settlement_note: 'x' })] };
             }
-            if (sql.includes('balance = balance - $2')) return { rows: [{ balance: '10.00' }] };
+            if (sql.includes('balance = balance - $2')) return { rows: [{ balance_before: '100.00', balance_after: '0.00', balance: '0.00' }] };
+            if (sql.includes("status = 'reversed'")) return { rows: [{ id: 'bd-1' }] };
             return { rows: [] };
         });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/reverse', {
@@ -327,7 +395,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         expect(res.body.reversed).toBe(true);
         expect(sqls.filter((s) => s.includes('balance = balance - $2'))).toHaveLength(1);
         const txn = CDB.createTransaction.mock.calls[0][0];
-        expect(txn.amount).toBe(-150);
+        expect(txn.amount).toBe('-100.00');
         expect(txn.type).toBe('adjustment');
     });
 
@@ -340,6 +408,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
                 return { rows: [Object.assign({}, INSTRUCTION, { status: 'settled', settlement_amount: '150.00', settlement_note: 'x' })] };
             }
             if (sql.includes('balance = balance - $2')) return { rows: [] };
+            if (sql.includes("status = 'reversal_required'")) return { rows: [{ id: 'bd-1' }] };
             return { rows: [] };
         });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/reverse', {

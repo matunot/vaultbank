@@ -23,6 +23,15 @@
 const express = require('express');
 const router = express.Router();
 const { v4: uuidv4 } = require('uuid');
+const {
+    ensureVaultLedgerSchema,
+    ensureCustomerLedgerAccount,
+    changeVerifiedAvailableBalance,
+    postBalancedJournal,
+    toMinorUnits,
+} = require('../services/ledgerJournalService');
+const STATEMENT_REF_RE = /^[A-Za-z0-9-]{8,120}$/;
+
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const {
     db,
@@ -38,13 +47,28 @@ const MAX_AMOUNT = 100000;
 const MAX_OPEN = 3;
 
 // Receiving-account configuration (env only — never invented, never logged).
+// Customer deposit instructions and receiving details are limited to verified
+// customers. Admins retain access for the controlled pilot and reconciliation.
+function requireVerifiedDepositCustomerOrAdmin(req, res, next) {
+    if (req.user && ['admin', 'super_admin'].includes(req.user.role)) return next();
+    if (!req.user || req.user.email_verified !== true || req.user.kyc_status !== 'verified') {
+        return res.status(403).json({
+            success: false,
+            code: 'CUSTOMER_VERIFICATION_REQUIRED',
+            message: 'Verify your email and complete identity verification before receiving real-money deposit instructions.',
+        });
+    }
+    return next();
+}
+
 function receivingConfig() {
     const enabled = process['env'].VB_BANK_DEPOSIT_ENABLED === 'true';
     const bankName = (process['env'].VB_BANK_RECEIVING_BANK_NAME || '').trim();
     const holder = (process['env'].VB_BANK_RECEIVING_HOLDER || '').trim();
     const details = (process['env'].VB_BANK_RECEIVING_DETAILS || '').trim();
     const currency = (process['env'].VB_BANK_RECEIVING_CURRENCY || 'USD').trim().toUpperCase();
-    const configured = enabled && bankName && holder && details;
+    const supportedCurrency = ['INR', 'USD'].includes(currency);
+    const configured = enabled && !!bankName && !!holder && !!details && supportedCurrency;
     return {
         enabled: !!configured,
         bankName: configured ? bankName : null,
@@ -52,6 +76,7 @@ function receivingConfig() {
         details: configured ? details : null,
         currency: configured ? currency : null,
         verification: 'manual',
+        reason: !enabled ? 'disabled-by-operator' : (!supportedCurrency ? 'unsupported-ledger-currency' : (!bankName || !holder || !details ? 'receiving-account-not-configured' : null)),
         expiryHours: EXPIRY_HOURS,
         minAmount: MIN_AMOUNT,
         maxAmount: MAX_AMOUNT,
@@ -82,6 +107,13 @@ async function ensureTables() {
             external_txn_ref TEXT,
             credited_at TIMESTAMP WITH TIME ZONE
         )
+    `);
+    // A bank UTR may settle at most one VaultBank deposit instruction.
+    // If legacy duplicates exist, refuse to enable verification until reviewed.
+    await db.query(`
+        CREATE UNIQUE INDEX IF NOT EXISTS bank_deposit_external_txn_ref_uq
+        ON bank_deposit_instructions (external_txn_ref)
+        WHERE external_txn_ref IS NOT NULL
     `);
     tablesReady = true;
 }
@@ -122,7 +154,7 @@ async function audit(userId, action, resourceId, details, req) {
 // ============================================================
 // GET /api/bank-deposits/config — is the rail configured? (auth)
 // ============================================================
-router.get('/api/bank-deposits/config', authenticateToken, async (req, res) => {
+router.get('/api/bank-deposits/config', authenticateToken, requireVerifiedDepositCustomerOrAdmin, async (req, res) => {
     try {
         const cfg = receivingConfig();
         if (!cfg.enabled) {
@@ -151,7 +183,7 @@ router.get('/api/bank-deposits/config', authenticateToken, async (req, res) => {
 // ============================================================
 // POST /api/bank-deposits/instructions — create a deposit instruction
 // ============================================================
-router.post('/api/bank-deposits/instructions', authenticateToken, async (req, res) => {
+router.post('/api/bank-deposits/instructions', authenticateToken, requireVerifiedDepositCustomerOrAdmin, async (req, res) => {
     try {
         const cfg = receivingConfig();
         if (!cfg.enabled) {
@@ -278,7 +310,7 @@ router.post('/api/bank-deposits/instructions/:id/cancel', authenticateToken, asy
 // ============================================================
 // GET /api/bank-deposits/admin/instructions — review queue (admin)
 // ============================================================
-router.get('/api/bank-deposits/admin/instructions', requireAdmin, async (req, res) => {
+router.get('/api/bank-deposits/admin/instructions', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await ensureTables();
         await sweepExpired();
@@ -306,109 +338,194 @@ router.get('/api/bank-deposits/admin/instructions', requireAdmin, async (req, re
 // POST /api/bank-deposits/admin/instructions/:id/verify (admin)
 // The ONLY credit path. Admin asserts authentic bank-statement evidence.
 // ============================================================
-router.post('/api/bank-deposits/admin/instructions/:id/verify', requireAdmin, async (req, res) => {
+router.post('/api/bank-deposits/admin/instructions/:id/verify', authenticateToken, requireAdmin, async (req, res) => {
+    let client = null;
     try {
-        const settlementAmount = Math.round(parseFloat(req.body.settlementAmount) * 100) / 100;
-        const note = String(req.body.note || '').trim();
-        const externalTxnRef = req.body.externalTxnRef ? String(req.body.externalTxnRef).slice(0, 120) : null;
-        if (!(settlementAmount > 0) || settlementAmount > 1000000) {
-            return res.status(400).json({ success: false, message: 'A valid settlement amount is required.' });
+        const settlementText = String(req.body && req.body.settlementAmount != null ? req.body.settlementAmount : '').trim();
+        let settlementMinor;
+        try { settlementMinor = toMinorUnits(settlementText); }
+        catch (_) {
+            return res.status(400).json({ success: false, code: 'SETTLEMENT_AMOUNT_INVALID', message: 'A valid positive settlement amount with at most two decimals is required.' });
         }
-        if (note.length < 10) {
+        const note = String(req.body && req.body.note || '').trim();
+        const externalTxnRef = String(req.body && req.body.externalTxnRef || '').trim();
+        if (note.length < 10 || note.length > 500) {
             return res.status(400).json({
                 success: false,
                 code: 'EVIDENCE_REQUIRED',
-                message: 'Describe the statement evidence (at least 10 characters): date, sender, and the reference line you matched.',
+                message: 'Describe the authentic bank-statement line (10-500 characters), including date and sender/reference details.',
             });
         }
-        await ensureTables();
-        // Atomic claim: only pending/settling can transition; settled/failed/
-        // cancelled can never be claimed again (duplicate + replay protection).
-        const { rows: claimed } = await db.query(
-            `UPDATE bank_deposit_instructions
-             SET status = 'settling', verified_by_admin_id = $2
-             WHERE id = $1 AND status IN ('pending','settling')
-             RETURNING *`,
-            [req.params.id, req.user.id]
-        );
-        if (claimed.length === 0) {
-            return res.status(409).json({ success: false, message: 'Instruction is not open for verification — it may already be settled, failed or cancelled.' });
+        if (!STATEMENT_REF_RE.test(externalTxnRef)) {
+            return res.status(400).json({
+                success: false,
+                code: 'BANK_STATEMENT_REFERENCE_REQUIRED',
+                message: 'Enter the unique bank transaction reference/UTR from the receiving bank statement.',
+            });
         }
-        const instruction = claimed[0];
 
-        // Ledger guard (crash-window recovery): if the credit row already
-        // exists, confirm settled WITHOUT crediting twice.
-        const { rows: seen } = await db.query(
-            'SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1',
+        await ensureVaultLedgerSchema();
+        await ensureTables();
+        client = await db.getClient();
+        await client.query('BEGIN');
+        const selected = await client.query(
+            'SELECT * FROM bank_deposit_instructions WHERE id = $1 FOR UPDATE',
+            [req.params.id]
+        );
+        const instruction = selected.rows[0];
+        if (!instruction) {
+            await client.query('ROLLBACK');
+            return res.status(404).json({ success: false, message: 'Deposit instruction not found.' });
+        }
+        if (!['pending', 'settling'].includes(instruction.status)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ success: false, code: 'BANK_DEPOSIT_NOT_PENDING', message: 'Only an unresolved deposit instruction can be verified.' });
+        }
+        if (new Date(instruction.expires_at).getTime() <= Date.now()) {
+            await client.query("UPDATE bank_deposit_instructions SET status = 'expired' WHERE id = $1 AND status IN ('pending','settling')", [instruction.id]);
+            await client.query('COMMIT');
+            return res.status(409).json({ success: false, code: 'BANK_DEPOSIT_EXPIRED', message: 'This instruction expired. Reconcile any actual arrival manually before starting another credit.' });
+        }
+        if (toMinorUnits(String(instruction.amount)) !== settlementMinor) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                success: false,
+                code: 'BANK_DEPOSIT_AMOUNT_MISMATCH',
+                message: 'The bank-statement amount must exactly match the deposit instruction. Do not auto-credit partial or excess payments.',
+            });
+        }
+        if (instruction.external_txn_ref && instruction.external_txn_ref !== externalTxnRef) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ success: false, code: 'BANK_DEPOSIT_REFERENCE_MISMATCH', message: 'This instruction is already bound to a different bank transaction reference.' });
+        }
+
+        // Recover conservatively from a legacy split-write state. A pre-existing
+        // transaction without its native journal cannot safely be auto-replayed:
+        // the opening snapshot may already include the old credit.
+        const priorTransactions = await client.query(
+            'SELECT id, account_id, user_id, type, amount, currency FROM transactions WHERE external_reference = $1 LIMIT 2',
             [instruction.reference]
         );
-        const alreadyCredited = seen.length > 0;
-        let credited = false;
-        let newBalance = null;
-        if (!alreadyCredited) {
-            const { rows: upd } = await db.query(
-                'UPDATE accounts SET balance = balance + $2 WHERE id = $1 RETURNING (balance - $2) AS balance_before, balance AS balance_after',
-                [instruction.account_id, settlementAmount]
-            );
-            if (upd.length === 0) {
-                await db.query(
-                    "UPDATE bank_deposit_instructions SET status = 'failed', settlement_note = $2 WHERE id = $1",
-                    [instruction.id, 'account missing at credit time — no money moved']
-                );
-                return res.status(404).json({ success: false, message: 'Account not found at credit time — no money moved.' });
-            }
-            const before = parseFloat(upd[0].balance_before);
-            newBalance = parseFloat(upd[0].balance_after);
-            await createTransaction({
-                account_id: instruction.account_id,
-                user_id: instruction.user_id,
-                type: 'deposit',
-                status: 'completed',
-                amount: settlementAmount,
-                currency: instruction.currency,
-                balance_before: before,
-                balance_after: newBalance,
-                description: `Bank transfer deposit — ref ${instruction.reference}`,
-                category: 'income',
-                external_reference: instruction.reference,
-                metadata: {
-                    manual_verification: true,
-                    admin_id: req.user.id,
-                    instruction_id: instruction.id,
-                    expected_amount: parseFloat(instruction.amount),
-                    settlement_note: note,
-                    external_txn_ref: externalTxnRef,
-                },
+        if (priorTransactions.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({
+                success: false,
+                code: 'BANK_DEPOSIT_RECONCILIATION_REQUIRED',
+                message: 'A legacy ledger row already exists for this reference. No additional credit was made; reconcile this record before retrying.',
             });
-            credited = true;
+        }
+
+        const claimed = await client.query(
+            `UPDATE bank_deposit_instructions
+                SET status = 'settling', verified_by_admin_id = $2, external_txn_ref = $3
+              WHERE id = $1 AND status IN ('pending','settling')
+                AND (external_txn_ref IS NULL OR external_txn_ref = $3)
+              RETURNING *`,
+            [instruction.id, req.user.id, externalTxnRef]
+        );
+        if (!claimed.rows.length) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ success: false, code: 'BANK_DEPOSIT_NOT_PENDING', message: 'The instruction was concurrently resolved. No credit was made.' });
+        }
+
+        await ensureCustomerLedgerAccount(client, instruction.account_id);
+        await changeVerifiedAvailableBalance(client, instruction.account_id, settlementText, 'credit');
+        const accountUpdate = await client.query(
+            `UPDATE accounts
+                SET balance = balance + $2, available_balance = available_balance + $2
+              WHERE id = $1 AND user_id = $3 AND currency = $4 AND status = 'active'
+              RETURNING (balance - $2) AS balance_before, balance AS balance_after`,
+            [instruction.account_id, settlementText, instruction.user_id, instruction.currency]
+        );
+        if (!accountUpdate.rows.length) {
+            const error = new Error('Target account is missing, inactive, or has a different currency.');
+            error.code = 'BANK_DEPOSIT_ACCOUNT_NOT_ACTIVE';
+            throw error;
+        }
+
+        const before = String(accountUpdate.rows[0].balance_before);
+        const after = String(accountUpdate.rows[0].balance_after);
+        await createTransaction({
+            account_id: instruction.account_id,
+            user_id: instruction.user_id,
+            type: 'deposit',
+            status: 'completed',
+            amount: settlementText,
+            currency: instruction.currency,
+            balance_before: before,
+            balance_after: after,
+            description: 'Bank transfer deposit — ref ' + instruction.reference,
+            category: 'income',
+            external_reference: instruction.reference,
+            metadata: {
+                manual_verification: true,
+                admin_id: req.user.id,
+                instruction_id: instruction.id,
+                statement_reference: externalTxnRef,
+                evidence_note: note,
+            },
+        }, client);
+
+        await postBalancedJournal(client, {
+            eventType: 'bank_deposit_settled',
+            sourceType: 'bank_deposit_instruction',
+            sourceId: String(instruction.id),
+            currency: instruction.currency,
+            description: 'VaultBank bank-transfer deposit verified against receiving-bank statement',
+            actorUserId: req.user.id,
+            metadata: { reference: instruction.reference, statementReference: externalTxnRef, verification: 'manual-bank-statement', evidenceNote: note },
+            entries: [
+                { systemCode: 'INBOUND_SETTLEMENT_ASSET', side: 'debit', amount: settlementText },
+                { accountId: instruction.account_id, side: 'credit', amount: settlementText },
+            ],
+        });
+
+        const completed = await client.query(
+            `UPDATE bank_deposit_instructions
+                SET status = 'settled', settled_at = NOW(), settlement_amount = $2,
+                    settlement_note = $3, external_txn_ref = $4, credited_at = NOW()
+              WHERE id = $1 AND status = 'settling'
+              RETURNING *`,
+            [instruction.id, settlementText, note, externalTxnRef]
+        );
+        if (!completed.rows.length) {
+            const error = new Error('Deposit settlement state could not be finalized.');
+            error.code = 'BANK_DEPOSIT_FINAL_STATE_FAILED';
+            throw error;
+        }
+        await client.query('COMMIT');
+        const newBalance = Number(after);
+        try {
             await createNotification(instruction.user_id, {
                 type: 'transaction',
                 title: 'Deposit verified',
-                message: `${instruction.currency} ${settlementAmount.toFixed(2)} bank transfer credited (ref ${instruction.reference}). New balance: ${instruction.currency} ${newBalance.toFixed(2)}.`,
+                message: String(instruction.currency) + ' ' + Number(settlementText).toFixed(2) + ' bank transfer credited (ref ' + instruction.reference + '). New balance: ' + String(instruction.currency) + ' ' + newBalance.toFixed(2) + '.',
             });
-        }
-        await db.query(
-            `UPDATE bank_deposit_instructions
-             SET status = 'settled', settled_at = NOW(), settlement_amount = $2,
-                 settlement_note = $3, external_txn_ref = $4,
-                 credited_at = ${credited ? 'NOW()' : 'credited_at'}
-             WHERE id = $1`,
-            [instruction.id, settlementAmount, note, externalTxnRef]
-        );
-        await audit(req.user.id, credited ? 'bank_deposit_verified' : 'bank_deposit_verify_confirmed', instruction.id,
-            { reference: instruction.reference, settlementAmount, credited, duplicate: alreadyCredited, note }, req);
-        res.status(200).json({ success: true, credited, duplicate: alreadyCredited, reference: instruction.reference, newBalance });
+        } catch (_) {}
+        await audit(req.user.id, 'bank_deposit_verified', instruction.id,
+            { reference: instruction.reference, settlementAmount: Number(settlementText), credited: true, statementReference: externalTxnRef, note }, req);
+        return res.status(200).json({ success: true, credited: true, duplicate: false, reference: instruction.reference, newBalance });
     } catch (error) {
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (_) {}
+        }
+        if (error && error.code === '23505') {
+            return res.status(409).json({ success: false, code: 'BANK_DEPOSIT_REFERENCE_ALREADY_USED', message: 'This bank transaction reference has already been used. No additional credit was made.' });
+        }
+        if (error && error.code === 'VB_LEDGER_SCHEMA_NOT_READY') {
+            return res.status(503).json({ success: false, code: error.code, message: 'VaultBank ledger is not ready; no deposit credit was committed.' });
+        }
         console.error('Bank deposit verify error:', error.message);
-        res.status(500).json({ success: false, message: 'Verification failed.' });
+        return res.status(500).json({ success: false, message: 'Verification failed; no successful settlement should be assumed.' });
+    } finally {
+        if (client) client.release();
     }
 });
 
-// ============================================================
 // POST /api/bank-deposits/admin/instructions/:id/fail (admin)
 // Transfer never arrived / bounced — closes the instruction, NO credit.
 // ============================================================
-router.post('/api/bank-deposits/admin/instructions/:id/fail', requireAdmin, async (req, res) => {
+router.post('/api/bank-deposits/admin/instructions/:id/fail', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const note = String(req.body.note || '').trim() || 'Marked failed by admin review.';
         await ensureTables();
@@ -437,67 +554,146 @@ router.post('/api/bank-deposits/admin/instructions/:id/fail', requireAdmin, asyn
 // Compensating guarded debit for a settled deposit (chargeback/recall).
 // Never deletes ledger history; never forces a negative balance.
 // ============================================================
-router.post('/api/bank-deposits/admin/instructions/:id/reverse', requireAdmin, async (req, res) => {
+router.post('/api/bank-deposits/admin/instructions/:id/reverse', authenticateToken, requireAdmin, async (req, res) => {
+    let client = null;
+    let needsReview = false;
+    let instruction = null;
+    let amountText = null;
     try {
-        const note = String(req.body.note || '').trim();
-        if (note.length < 10) {
-            return res.status(400).json({ success: false, code: 'EVIDENCE_REQUIRED', message: 'Describe the reversal reason (bank chargeback, recall, or error).' });
+        const note = String(req.body && req.body.note || '').trim();
+        if (note.length < 10 || note.length > 500) {
+            return res.status(400).json({ success: false, code: 'EVIDENCE_REQUIRED', message: 'Describe the bank reversal reason (10-500 characters).' });
         }
+        await ensureVaultLedgerSchema();
         await ensureTables();
-        const { rows } = await db.query('SELECT * FROM bank_deposit_instructions WHERE id = $1', [req.params.id]);
-        const instruction = rows[0];
+        client = await db.getClient();
+        await client.query('BEGIN');
+        const selected = await client.query(
+            'SELECT * FROM bank_deposit_instructions WHERE id = $1 FOR UPDATE',
+            [req.params.id]
+        );
+        instruction = selected.rows[0];
         if (!instruction) {
+            await client.query('ROLLBACK');
             return res.status(404).json({ success: false, message: 'Instruction not found.' });
         }
-        if (instruction.status !== 'settled') {
-            return res.status(409).json({ success: false, message: 'Only settled deposits can be reversed.' });
+        if (!['settled', 'reversal_required'].includes(instruction.status)) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ success: false, code: 'BANK_DEPOSIT_NOT_REVERSIBLE', message: 'Only a settled or pending-reversal deposit may be reversed.' });
         }
-        const amount = parseFloat(instruction.settlement_amount || instruction.amount);
-        const { rows: debited } = await db.query(
-            'UPDATE accounts SET balance = balance - $2 WHERE id = $1 AND balance >= $2 RETURNING balance',
-            [instruction.account_id, amount]
-        );
-        if (debited.length === 0) {
-            await db.query("UPDATE bank_deposit_instructions SET status = 'reversal_required' WHERE id = $1", [instruction.id]);
+        amountText = String(instruction.settlement_amount || instruction.amount);
+        await ensureCustomerLedgerAccount(client, instruction.account_id);
+
+        // Only previously verified funds can be reversed automatically.
+        // Unverified opening balances are not a source of spendable cash.
+        try {
+            await changeVerifiedAvailableBalance(client, instruction.account_id, amountText, 'debit');
+        } catch (error) {
+            if (!error || error.code !== 'VB_LEDGER_VERIFIED_FUNDS_INSUFFICIENT') throw error;
+            await client.query(
+                "UPDATE bank_deposit_instructions SET status = 'reversal_required', settlement_note = $2 WHERE id = $1",
+                [instruction.id, note]
+            );
+            await client.query('COMMIT');
+            needsReview = true;
+        }
+
+        if (!needsReview) {
+            const debited = await client.query(
+                `UPDATE accounts
+                    SET balance = balance - $2, available_balance = available_balance - $2
+                  WHERE id = $1 AND user_id = $3 AND currency = $4 AND status = 'active'
+                    AND balance >= $2 AND available_balance >= $2
+                  RETURNING (balance + $2) AS balance_before, balance AS balance_after`,
+                [instruction.account_id, amountText, instruction.user_id, instruction.currency]
+            );
+            if (!debited.rows.length) {
+                // The spendable account balance and verified-funds tracker are
+                // one contract. Restore the tracker before flagging review.
+                await changeVerifiedAvailableBalance(client, instruction.account_id, amountText, 'credit');
+                await client.query(
+                    "UPDATE bank_deposit_instructions SET status = 'reversal_required', settlement_note = $2 WHERE id = $1",
+                    [instruction.id, note]
+                );
+                await client.query('COMMIT');
+                needsReview = true;
+            } else {
+                const amount = amountText;
+                await createTransaction({
+                    account_id: instruction.account_id,
+                    user_id: instruction.user_id,
+                    type: 'adjustment',
+                    status: 'completed',
+                    amount: '-' + amount,
+                    currency: instruction.currency,
+                    balance_before: String(debited.rows[0].balance_before),
+                    balance_after: String(debited.rows[0].balance_after),
+                    description: 'Bank deposit reversal — ref ' + instruction.reference,
+                    category: 'expense',
+                    external_reference: instruction.reference + '-REVERSAL',
+                    metadata: { manual_verification: true, reversal: true, admin_id: req.user.id, instruction_id: instruction.id, note },
+                }, client);
+                await postBalancedJournal(client, {
+                    eventType: 'deposit_reversed',
+                    sourceType: 'bank_deposit_instruction',
+                    sourceId: String(instruction.id),
+                    currency: instruction.currency,
+                    description: 'VaultBank bank-transfer deposit reversed after bank recall/reversal evidence',
+                    actorUserId: req.user.id,
+                    metadata: { reference: instruction.reference, reversalNote: note },
+                    entries: [
+                        { accountId: instruction.account_id, side: 'debit', amount },
+                        { systemCode: 'INBOUND_SETTLEMENT_ASSET', side: 'credit', amount },
+                    ],
+                });
+                const updated = await client.query(
+                    "UPDATE bank_deposit_instructions SET status = 'reversed', settlement_note = $2 WHERE id = $1 AND status IN ('settled','reversal_required') RETURNING id",
+                    [instruction.id, note]
+                );
+                if (!updated.rows.length) {
+                    const error = new Error('Deposit reversal state could not be finalized.');
+                    error.code = 'BANK_DEPOSIT_REVERSAL_STATE_FAILED';
+                    throw error;
+                }
+                await client.query('COMMIT');
+            }
+        }
+        if (needsReview) {
+            try {
+                await createNotification(instruction.user_id, {
+                    type: 'warning',
+                    title: 'Deposit reversal needs review',
+                    message: 'Deposit ' + instruction.reference + ' could not be debited automatically because available funds are insufficient. It has been flagged for reconciliation.',
+                });
+            } catch (_) {}
+            await audit(req.user.id, 'bank_deposit_reversal_required', instruction.id,
+                { reference: instruction.reference, amount: Number(amountText), note }, req);
+            return res.status(202).json({
+                success: true, reversed: false, status: 'reversal_required',
+                message: 'Available balance is insufficient; the reversal remains flagged for manual recovery.',
+            });
+        }
+        try {
             await createNotification(instruction.user_id, {
                 type: 'warning',
-                title: 'Deposit reversal pending',
-                message: `Deposit ${instruction.reference} is being reversed but your balance is insufficient. Please contact support.`,
+                title: 'Deposit reversed',
+                message: 'Deposit ' + instruction.reference + ' was reversed. ' + note,
             });
-            await audit(req.user.id, 'bank_deposit_reversal_required', instruction.id, { reference: instruction.reference, amount, note }, req);
-            return res.status(202).json({
-                success: true,
-                reversed: false,
-                status: 'reversal_required',
-                message: 'Balance insufficient for automatic reversal — flagged for manual recovery.',
-            });
-        }
-        const after = parseFloat(debited[0].balance);
-        await createTransaction({
-            account_id: instruction.account_id,
-            user_id: instruction.user_id,
-            type: 'adjustment',
-            status: 'completed',
-            amount: -amount,
-            currency: instruction.currency,
-            balance_before: after + amount,
-            balance_after: after,
-            description: `Bank deposit reversal — ref ${instruction.reference}`,
-            category: 'expense',
-            external_reference: instruction.reference,
-            metadata: { manual_verification: true, reversal: true, admin_id: req.user.id, instruction_id: instruction.id, note },
-        });
-        await db.query("UPDATE bank_deposit_instructions SET status = 'reversed', settlement_note = $2 WHERE id = $1", [instruction.id, note]);
-        await createNotification(instruction.user_id, {
-            type: 'warning',
-            title: 'Deposit reversed',
-            message: `Deposit ${instruction.reference} was reversed. ${note}`,
-        });
-        await audit(req.user.id, 'bank_deposit_reversed', instruction.id, { reference: instruction.reference, amount, note }, req);
-        res.status(200).json({ success: true, reversed: true, status: 'reversed' });
+        } catch (_) {}
+        await audit(req.user.id, 'bank_deposit_reversed', instruction.id,
+            { reference: instruction.reference, amount: Number(amountText), note }, req);
+        return res.status(200).json({ success: true, reversed: true, status: 'reversed' });
     } catch (error) {
+        if (client) {
+            try { await client.query('ROLLBACK'); } catch (_) {}
+        }
+        if (error && error.code === '23505') {
+            return res.status(409).json({ success: false, code: 'BANK_DEPOSIT_REVERSAL_ALREADY_POSTED', message: 'A reversal journal already exists for this instruction.' });
+        }
         console.error('Bank deposit reverse error:', error.message);
-        res.status(500).json({ success: false, message: 'Reversal failed.' });
+        return res.status(500).json({ success: false, message: 'Reversal was not confirmed. Check the account ledger before retrying.' });
+    } finally {
+        if (client) client.release();
     }
 });
 
