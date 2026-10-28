@@ -238,7 +238,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                   <Suspense fallback={<SectionLoader />}>
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
                     {active === 'vault' && (import.meta.env.DEV ? <VaultSection /> : <PreviewOnlyNotice title="Vaults are a development preview" message="Vault balances and sample rates are not connected to persistent account storage. This page is unavailable on production accounts until its ledger-backed functionality is implemented." />)}
-                    {active === 'swiss' && <SwissSection />}
+                    {active === 'swiss' && (import.meta.env.DEV ? <SwissSection /> : <PreviewOnlyNotice title="Swiss banking is not connected" message="The development view is illustrative only. No Swiss bank account, banking partnership, or deposit-protection arrangement is offered through this section." />)}
                     {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} />}
                     {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
                     {active === 'invest' && (import.meta.env.DEV ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
