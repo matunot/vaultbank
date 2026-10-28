@@ -336,26 +336,79 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
         }
 
         // ── Ledger rows (INSIDE the transaction — same client) ──
-        await client.query(
+        const { rows: outTransactionRows } = await client.query(
             `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
                 balance_before, balance_after, description, category, reference_id,
                 counterparty_name, counterparty_account)
-             VALUES ($1, $2, 'transfer_out', 'completed', $3, $4, $5, $6, $7, 'transfer', $8, $9, $10)`,
+             VALUES ($1, $2, 'transfer_out', 'completed', $3, $4, $5, $6, $7, 'transfer', $8, $9, $10)
+             RETURNING id`,
             [senderAccount.id, userId, -amount, currency,
              parseFloat(debit.rows[0].balance_before), parseFloat(debit.rows[0].balance_after),
              description || `Transfer to ${recipientAccount.account_number}`,
              transferId, recipientAccount.account_name, recipientAccount.account_number]
         );
-        await client.query(
+        const { rows: inTransactionRows } = await client.query(
             `INSERT INTO transactions (account_id, user_id, type, status, amount, currency,
                 balance_before, balance_after, description, category, reference_id,
                 counterparty_name, counterparty_account)
-             VALUES ($1, $2, 'transfer_in', 'completed', $3, $4, $5, $6, $7, 'income', $8, $9, $10)`,
+             VALUES ($1, $2, 'transfer_in', 'completed', $3, $4, $5, $6, $7, 'income', $8, $9, $10)
+             RETURNING id`,
             [recipientAccount.id, recipientAccount.user_id, amount, currency,
              parseFloat(credit.rows[0].balance_before), parseFloat(credit.rows[0].balance_after),
              description || `Transfer from ${senderAccount.account_number}`,
              transferId, senderName || senderAccount.account_name, senderAccount.account_number]
         );
+
+        // VaultBank-owned double-entry journal: ledger postings commit in the SAME
+        // PostgreSQL transaction as both account balance updates, transfer and
+        // customer transaction history. This core has no payment-processor dependency.
+        const postedAmount = String(amount);
+        await client.query(
+            `INSERT INTO ledger (transaction_id, account_id, user_id, entry_type, amount, balance_after, description)
+             VALUES ($1, $2, $3, 'debit', $4, $5, $6)`,
+            [outTransactionRows[0].id, senderAccount.id, userId, postedAmount,
+             String(debit.rows[0].balance_after), description || `Transfer to ${recipientAccount.account_number}`]
+        );
+        await client.query(
+            `INSERT INTO ledger (transaction_id, account_id, user_id, entry_type, amount, balance_after, description)
+             VALUES ($1, $2, $3, 'credit', $4, $5, $6)`,
+            [inTransactionRows[0].id, recipientAccount.id, recipientAccount.user_id, postedAmount,
+             String(credit.rows[0].balance_after), description || `Transfer from ${senderAccount.account_number}`]
+        );
+
+        // Fail closed before COMMIT if the journal is incomplete or unbalanced.
+        // Decimal arithmetic is converted to integer minor units for comparison.
+        const toMinorUnits = (value) => {
+            const normalized = String(value);
+            const [whole, fraction = ''] = normalized.split('.');
+            if (!/^\\d+$/.test(whole) || !/^\\d*$/.test(fraction) || fraction.length > 2) {
+                throw new Error('CORE_LEDGER_INVALID_AMOUNT');
+            }
+            return (BigInt(whole) * 100n) + BigInt((fraction + '00').slice(0, 2));
+        };
+        const { rows: journalCheck } = await client.query(
+            `SELECT COUNT(*)::int AS entry_count,
+                    COUNT(*) FILTER (WHERE l.entry_type = 'debit')::int AS debit_count,
+                    COUNT(*) FILTER (WHERE l.entry_type = 'credit')::int AS credit_count,
+                    COALESCE(SUM(l.amount) FILTER (WHERE l.entry_type = 'debit'), 0)::text AS debit_total,
+                    COALESCE(SUM(l.amount) FILTER (WHERE l.entry_type = 'credit'), 0)::text AS credit_total,
+                    COUNT(DISTINCT t.currency)::int AS currency_count
+             FROM ledger l
+             JOIN transactions t ON t.id = l.transaction_id
+             WHERE l.transaction_id = ANY($1::uuid[])`,
+            [[outTransactionRows[0].id, inTransactionRows[0].id]]
+        );
+        const journal = journalCheck[0];
+        if (!journal
+            || journal.entry_count !== 2
+            || journal.debit_count !== 1
+            || journal.credit_count !== 1
+            || journal.currency_count !== 1
+            || toMinorUnits(journal.debit_total) !== toMinorUnits(postedAmount)
+            || toMinorUnits(journal.credit_total) !== toMinorUnits(postedAmount)
+            || toMinorUnits(journal.debit_total) !== toMinorUnits(journal.credit_total)) {
+            throw new Error('CORE_LEDGER_UNBALANCED');
+        }
 
         // ── Caller hook: final intent state commits WITH the money ──
         if (onBeforeCommit) await onBeforeCommit(client, { transferId });
