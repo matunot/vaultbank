@@ -38,7 +38,7 @@
  */
 
 const { db, createNotification } = require('../config/database');
-const { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, postBalancedJournal } = require('./ledgerJournalService');
+const { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, changeVerifiedAvailableBalance, postBalancedJournal } = require('./ledgerJournalService');
 
 const PROBE_LOCK_TIMEOUT = '5s';
 const UNKEYED_READ_ATTEMPTS = 3;
@@ -272,22 +272,20 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
             }
         }
 
-        // Opening balances are unreconciled until externally verified. Only
-        // verified funds can leave this account through the native internal rail.
-        const verifiedDebit = await client.query(
-            `UPDATE vb_ledger_accounts
-                SET verified_available_balance = verified_available_balance - $3
-              WHERE account_id = $1 AND currency = $2 AND verified_available_balance >= $3
-              RETURNING id`,
-            [senderAccount.id, currency, amount]
-        );
-        if (!verifiedDebit.rows.length) {
-            await client.query('ROLLBACK');
-            return {
-                error: 'unverified_funds',
-                code: 'UNVERIFIED_FUNDS',
-                message: 'This account does not have enough externally verified funds for the transfer. Opening balances are not spendable until reconciled.',
-            };
+        // Opening snapshots remain unverified. Only externally verified funds
+        // can leave the account through the native internal rail.
+        try {
+            await changeVerifiedAvailableBalance(client, senderAccount.id, String(amount), 'debit');
+        } catch (error) {
+            if (error && error.code === 'VB_LEDGER_VERIFIED_FUNDS_INSUFFICIENT') {
+                await client.query('ROLLBACK');
+                return {
+                    error: 'unverified_funds',
+                    code: 'UNVERIFIED_FUNDS',
+                    message: 'This account does not have enough externally verified funds for the transfer. Opening balances are not spendable until reconciled.',
+                };
+            }
+            throw error;
         }
 
         // ── Transfer record INSERT ──
@@ -380,6 +378,9 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
                 message: 'Recipient verified-funds ledger is not initialized; no transfer was committed.',
             };
         }
+
+        // Preserve verified-funds provenance for the receiving account.
+        await changeVerifiedAvailableBalance(client, recipientAccount.id, String(amount), 'credit');
 
         // ── Ledger rows (INSIDE the transaction — same client) ──
         await client.query(
