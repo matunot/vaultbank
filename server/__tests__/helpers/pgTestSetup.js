@@ -91,7 +91,7 @@ async function applySchema(pool) {
     try {
         await pool.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
     } catch (_) { /* may already exist or lack permissions */ }
-    const needed = ['007_real_banking_schema.sql', '008_credit_schema.sql', '009_transfer_idempotency.sql', '010_payout_idempotency.sql', '011_vbr_payment_intents.sql', '012_global_transfer_idempotency.sql'];
+    const needed = ['007_real_banking_schema.sql', '008_credit_schema.sql', '009_transfer_idempotency.sql', '010_payout_idempotency.sql', '011_vbr_payment_intents.sql', '012_global_transfer_idempotency.sql', '013_vaultbank_double_entry_ledger.sql'];
     for (const file of needed) {
         const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8')
             // 007 opens with DROP TABLE ... CASCADE (a one-time reset of the
@@ -156,6 +156,27 @@ async function seedTestData(pool, prefix) {
 
 async function cleanupTestData(pool, prefix) {
     // Clean up by prefix (safe: only removes test entities)
+    // Ledger journal is append-oriented in the application. Test cleanup
+    // removes only journals linked to this run's test users/accounts.
+    await pool.query(`
+        DELETE FROM vb_ledger_journals j
+         WHERE j.actor_user_id IN (SELECT id FROM users WHERE email LIKE $1)
+            OR j.source_id IN (SELECT id::text FROM accounts WHERE account_number LIKE $1)
+            OR j.source_id IN (
+                SELECT t.id::text FROM transfers t
+                JOIN accounts a ON a.id = t.from_account_id OR a.id = t.to_account_id
+                WHERE a.account_number LIKE $1
+            )
+            OR j.id IN (
+                SELECT e.journal_id FROM vb_ledger_entries e
+                JOIN vb_ledger_accounts la ON la.id = e.ledger_account_id
+                JOIN accounts a ON a.id = la.account_id
+                WHERE a.account_number LIKE $1
+            )
+    `, [`${prefix}-%`]);
+    await pool.query(`DELETE FROM vb_ledger_accounts WHERE account_id IN (
+        SELECT id FROM accounts WHERE account_number LIKE $1
+    )`, [`${prefix}-%`]);
     // payment_intents first — its transfer_id FK would block the transfers delete.
     await pool.query(`DELETE FROM payment_intents WHERE user_id IN (
         SELECT id FROM users WHERE email LIKE $1
