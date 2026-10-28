@@ -111,8 +111,7 @@ async function call(path, { method = 'get', body, user } = {}) {
 
 const ADMIN = { id: 'adm-1', role: 'admin' };
 
-function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ balance_before: '100.00', balance_after: '50.00', balance: '50.00' }], instructionRow = INSTRUCTION } = {})
-    const sqls = [];
+function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ balance_before: '100.00', balance_after: '50.00', balance: '50.00' }], instructionRow = INSTRUCTION } = {}) {\n    const sqls = [];
     CDB.db.query.mockImplementation(async (sql) => {
         sqls.push(String(sql));
         if (sql.includes('CREATE TABLE IF NOT EXISTS')) return { rows: [] };
@@ -120,7 +119,7 @@ function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ 
         if (sql.includes("INSERT INTO bank_deposit_instructions")) return { rows: [INSTRUCTION] };
         if (sql.includes("status = 'settling'")) return { rows: claimRows === undefined ? [] : claimRows };
         if (sql.includes('FROM transactions WHERE external_reference')) return { rows: ledgerRows };
-        if (sql.includes('balance = balance + $2')) return { rows: [{ balance_before: '100.00', balance_after: '250.00' }] };
+        if (sql.includes('balance = balance + $2')) return { rows: [{ balance_before: '100.00', balance_after: '200.00' }] };
         if (sql.includes('balance = balance - $2')) return { rows: debitRows };
         if (sql.includes("status = 'settled'")) return { rows: [Object.assign({}, instructionRow, { status: 'settled', settled_at: new Date().toISOString() })] };
         if (sql.includes("status = 'reversed'")) return { rows: [{ id: instructionRow.id || 'bd-1' }] };\n        if (sql.includes("status = 'reversal_required'")) return { rows: [{ id: instructionRow.id || 'bd-1' }] };\n        if (sql.includes("status = 'expired'")) return { rows: [] };
@@ -335,7 +334,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
             if (sql.includes('FROM bank_deposit_instructions')) {
                 return { rows: [Object.assign({}, INSTRUCTION, { status: 'settled', settlement_amount: '150.00', settlement_note: 'x' })] };
             }
-            if (sql.includes('balance = balance - $2')) return { rows: [{ balance: '10.00' }] };
+            if (sql.includes('balance = balance - $2')) return { rows: [{ balance_before: '160.00', balance_after: '10.00', balance: '10.00' }] };\n            if (sql.includes(\"status = 'reversed'\")) return { rows: [{ id: 'bd-1' }] };
             return { rows: [] };
         });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/reverse', {
@@ -345,7 +344,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         expect(res.body.reversed).toBe(true);
         expect(sqls.filter((s) => s.includes('balance = balance - $2'))).toHaveLength(1);
         const txn = CDB.createTransaction.mock.calls[0][0];
-        expect(txn.amount).toBe(-150);
+        expect(txn.amount).toBe('-150.00');
         expect(txn.type).toBe('adjustment');
     });
 
@@ -357,7 +356,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
             if (sql.includes('FROM bank_deposit_instructions')) {
                 return { rows: [Object.assign({}, INSTRUCTION, { status: 'settled', settlement_amount: '150.00', settlement_note: 'x' })] };
             }
-            if (sql.includes('balance = balance - $2')) return { rows: [] };
+            if (sql.includes('balance = balance - $2')) return { rows: [] };\n            if (sql.includes(\"status = 'reversal_required'\")) return { rows: [{ id: 'bd-1' }] };
             return { rows: [] };
         });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/reverse', {
