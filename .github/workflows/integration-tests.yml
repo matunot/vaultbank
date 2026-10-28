@@ -109,7 +109,7 @@ jobs:
 
       - name: Verify provider isolation and native-ledger fail-closed schema
         run: |
-          npx --yes jest@30.5.2 __tests__/cashfreeAdapters.test.js __tests__/inrSchemaFailClosed.test.js \
+          npx --yes jest@30.5.2 __tests__/cashfreeAdapters.test.js __tests__/inrSchemaFailClosed.test.js __tests__/inrRails.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --runInBand --testTimeout=60000 --verbose --forceExit
 
