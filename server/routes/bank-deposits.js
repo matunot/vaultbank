@@ -52,7 +52,8 @@ function receivingConfig() {
     const holder = (process['env'].VB_BANK_RECEIVING_HOLDER || '').trim();
     const details = (process['env'].VB_BANK_RECEIVING_DETAILS || '').trim();
     const currency = (process['env'].VB_BANK_RECEIVING_CURRENCY || 'USD').trim().toUpperCase();
-    const configured = enabled && bankName && holder && details;
+    const supportedCurrency = ['INR', 'USD'].includes(currency);
+    const configured = enabled && !!bankName && !!holder && !!details && supportedCurrency;
     return {
         enabled: !!configured,
         bankName: configured ? bankName : null,
@@ -60,6 +61,7 @@ function receivingConfig() {
         details: configured ? details : null,
         currency: configured ? currency : null,
         verification: 'manual',
+        reason: !enabled ? 'disabled-by-operator' : (!supportedCurrency ? 'unsupported-ledger-currency' : (!bankName || !holder || !details ? 'receiving-account-not-configured' : null)),
         expiryHours: EXPIRY_HOURS,
         minAmount: MIN_AMOUNT,
         maxAmount: MAX_AMOUNT,
