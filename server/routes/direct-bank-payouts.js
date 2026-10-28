@@ -566,7 +566,7 @@ router.post('/api/direct-bank-payouts/admin/requests/:id/refund', authenticateTo
       currency: 'INR',
       description: 'VaultBank native bank payout reservation refunded after bank evidence review',
       actorUserId: req.user.id,
-      metadata: { evidenceNote, reason: 'bank statement confirms no transfer was sent' },
+      metadata: { evidenceNote: note, reason: 'bank statement confirms no transfer was sent' },
       entries: [
         { systemCode: 'OUTBOUND_PAYOUTS_PAYABLE', side: 'debit', amount: String(payout.amount) },
         { accountId: payout.account_id, side: 'credit', amount: String(payout.amount) },
