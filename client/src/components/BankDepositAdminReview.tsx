@@ -73,7 +73,7 @@ export function BankDepositAdminReview() {
       setError('Enter the actual positive settlement amount from the statement.');
       return;
     }
-    if (!window.confirm('Confirm only after the actual incoming credit is visible in the receiving bank statement. This will credit the customer's VaultBank account. Continue?')) return;
+    if (!window.confirm('Confirm only after the actual incoming credit is visible in the receiving bank statement. This will credit the customer’s VaultBank account. Continue?')) return;
     setBusyId(item.id);
     setError('');
     setNotice('');
@@ -100,7 +100,7 @@ export function BankDepositAdminReview() {
       setError('Add a note explaining the statement review and why the transfer was not received (at least 10 characters).');
       return;
     }
-    if (!window.confirm('Mark this instruction as not received? This closes the instruction without crediting the customer's account.')) return;
+    if (!window.confirm('Mark this instruction as not received? This closes the instruction without crediting the customer’s account.')) return;
     setBusyId(item.id);
     setError('');
     setNotice('');
