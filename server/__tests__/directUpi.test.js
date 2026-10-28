@@ -8,6 +8,17 @@ jest.mock('../config/database', () => ({
   createAuditLog: jest.fn(),
 }));
 
+jest.mock('../services/ledgerJournalService', () => ({
+  ensureVaultLedgerSchema: jest.fn().mockResolvedValue(undefined),
+  ensureCustomerLedgerAccount: jest.fn().mockResolvedValue({ id: 'ledger-account-1', currency: 'INR', accountId: 'account-inr-1' }),
+  postBalancedJournal: jest.fn().mockResolvedValue({ journalId: 'journal-1', replay: false }),
+  toMinorUnits: (value) => {
+    const input = String(value == null ? '' : value).trim();
+    if (!/^\d+(?:\.\d{1,2})?$/.test(input)) throw new Error('invalid amount');
+    const parts = input.split('.');
+    return BigInt(parts[0]) * 100n + BigInt((parts[1] || '').padEnd(2, '0') || '0');
+  },
+}));
 jest.mock('../middleware/auth', () => ({
   authenticateToken: (req, res, next) => {
     if (!req.user) req.user = { id: 'user-1', role: 'admin' };
