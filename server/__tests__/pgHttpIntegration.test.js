@@ -140,6 +140,22 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         return rows;
     }
 
+    async function getOwnedJournalRows(transferId) {
+        const { rows } = await pool.query(
+            `SELECT j.id AS journal_id, j.event_type, j.source_id, j.currency,
+                    e.side, e.amount::text AS amount, la.account_id, la.system_code
+             FROM vb_ledger_journals j
+             JOIN vb_ledger_entries e ON e.journal_id = j.id
+             JOIN vb_ledger_accounts la ON la.id = e.ledger_account_id
+             WHERE j.event_type = 'internal_transfer'
+               AND j.source_type = 'transfer'
+               AND j.source_id = $1
+             ORDER BY e.side`,
+            [String(transferId)]
+        );
+        return rows;
+    }
+
     // ── Test 1: Happy path — real HTTP transfer through the full Express pipeline ──
     test('real HTTP transfer: debits sender, credits recipient, creates ledger rows + transfer record', async () => {
         if (!pool) return;
@@ -182,6 +198,25 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         // ── Parameter bug regression: reference_id must be the transfer UUID, not a name ──
         expect(outRow.reference_id).toBe(transferId);
         expect(inRow.reference_id).toBe(transferId);
+
+        // The VaultBank-owned ledger must contain exactly one balanced journal
+        // for this transfer, independent of the user-facing transaction history.
+        const journal = await getOwnedJournalRows(transferId);
+        expect(journal).toHaveLength(2);
+        expect(new Set(journal.map((entry) => entry.journal_id)).size).toBe(1);
+        expect(new Set(journal.map((entry) => entry.event_type))).toEqual(new Set(['internal_transfer']));
+        expect(new Set(journal.map((entry) => entry.currency))).toEqual(new Set(['USD']));
+        expect(journal.filter((entry) => entry.side === 'debit')).toHaveLength(1);
+        expect(journal.filter((entry) => entry.side === 'credit')).toHaveLength(1);
+        expect(journal.find((entry) => entry.side === 'debit').account_id).toBe(alice.id);
+        expect(journal.find((entry) => entry.side === 'credit').account_id).toBe(bob.id);
+        expect(journal.reduce((sum, entry) => sum + Number(entry.amount), 0)).toBe(500);
+        expect(journal.every((entry) => entry.source_id === transferId)).toBe(true);
+
+        const verifiedSender = await pool.query('SELECT verified_available_balance FROM vb_ledger_accounts WHERE account_id = $1', [alice.id]);
+        const verifiedRecipient = await pool.query('SELECT verified_available_balance FROM vb_ledger_accounts WHERE account_id = $1', [bob.id]);
+        expect(Number(verifiedSender.rows[0].verified_available_balance)).toBe(750);
+        expect(Number(verifiedRecipient.rows[0].verified_available_balance)).toBe(1250);
 
         // ── Parameter bug regression: counterparty fields must hold the correct data ──
         expect(outRow.counterparty_name).toBe(bob.account_name); // sender row → recipient account is counterparty
@@ -241,6 +276,11 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         const transferId = successes[0].body.transfer.id;
         const ledger = await getLedgerRows(transferId);
         expect(ledger).toHaveLength(2);
+        const journal = await getOwnedJournalRows(transferId);
+        expect(journal).toHaveLength(2);
+        expect(journal.filter((entry) => entry.side === 'debit')).toHaveLength(1);
+        expect(journal.filter((entry) => entry.side === 'credit')).toHaveLength(1);
+        expect(journal.reduce((sum, entry) => sum + Number(entry.amount), 0)).toBe(200);
 
         // Cleanup
         await pool.query('DELETE FROM transactions WHERE reference_id = $1', [transferId]);
