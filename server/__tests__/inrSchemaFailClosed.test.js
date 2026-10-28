@@ -191,25 +191,25 @@ describe('schemaReadiness utility', () => {
     });
 
     test('missing unique index is not ready and names the index in a note', async () => {
-        const result = await checkSchema(fakeDb({ missingIndex: 'payout_idempotency_user_key' }));
+        const result = await checkSchema(fakeDb({ missingIndex: 'vb_ledger_customer_account_uq' }));
         expect(result.ready).toBe(false);
-        expect(result.indexes.payout_idempotency_user_key).toBe(false);
-        expect(result.notes.join(' ')).toContain('payout_idempotency_user_key');
+        expect(result.indexes.vb_ledger_customer_account_uq).toBe(false);
+        expect(result.notes.join(' ')).toContain('vb_ledger_customer_account_uq');
     });
 
     test('same-named non-unique idempotency index is not ready', async () => {
-        const result = await checkSchema(fakeDb({ nonUniqueIndex: 'payout_idempotency_user_key' }));
+        const result = await checkSchema(fakeDb({ nonUniqueIndex: 'vb_ledger_customer_account_uq' }));
         expect(result.ready).toBe(false);
         expect(result.indexes.payout_idempotency_user_key).toBe(true);
-        expect(result.indexUnique.payout_idempotency_user_key).toBe(false);
+        expect(result.indexUnique.vb_ledger_customer_account_uq).toBe(false);
         expect(result.notes.join(' ')).toContain('not unique');
     });
 
-    test('missing lazy collections table is not ready but explains that it is created on first use', async () => {
-        const result = await checkSchema(fakeDb({ missingTable: 'virtual_accounts' }));
+    test('missing native ledger entry table blocks readiness', async () => {
+        const result = await checkSchema(fakeDb({ missingTable: 'vb_ledger_entries' }));
         expect(result.ready).toBe(false);
-        expect(result.tables.virtual_accounts).toBe(false);
-        expect(result.notes.join(' ')).toContain('created lazily');
+        expect(result.tables.vb_ledger_entries).toBe(false);
+        expect(result.notes.join(' ')).toContain('vb_ledger_entries');
     });
 
     test('missing required column is not ready', async () => {
