@@ -20,6 +20,7 @@ jest.mock('../config/database', () => ({
     isDemo: false,
     findUserById: jest.fn(),
     findAccountByUserId: jest.fn(),
+    findAccountByUserIdAndCurrency: jest.fn(),
     createTransaction: jest.fn(),
     createNotification: jest.fn(),
     createAuditLog: jest.fn(),
@@ -143,6 +144,7 @@ function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ 
 beforeEach(() => {
     jest.clearAllMocks();
     CDB.findAccountByUserId.mockResolvedValue({ id: 'acc-1', user_id: 'u-1', balance: '100.00', currency: 'USD' });
+    CDB.findAccountByUserIdAndCurrency.mockResolvedValue({ id: 'acc-1', user_id: 'u-1', balance: '100.00', currency: 'USD', status: 'active' });
     CDB.createTransaction.mockResolvedValue({ id: 'tx-1' });
     CDB.createNotification.mockResolvedValue({ id: 'n-1' });
     CDB.createAuditLog.mockResolvedValue({ id: 'a-1' });
@@ -174,6 +176,36 @@ describe('receiving-account configuration gates everything', () => {
         expect(createRes.code).toBe(403);
         expect(createRes.body.code).toBe('CUSTOMER_VERIFICATION_REQUIRED');
         expect(CDB.db.query).not.toHaveBeenCalled();
+    });
+
+    test('instructions resolve an active account in the configured receiving currency', async () => {
+        configure();
+        process.env.VB_BANK_RECEIVING_CURRENCY = 'INR';
+        CDB.findAccountByUserIdAndCurrency.mockResolvedValue({
+            id: 'acc-inr', user_id: 'u-1', balance: '100.00', currency: 'INR', status: 'active',
+        });
+        const sqls = scriptDb();
+        const res = await call('/api/bank-deposits/instructions', {
+            method: 'post',
+            body: { amount: 100 },
+        });
+        expect(res.code).toBeNull();
+        expect(res.body.success).toBe(true);
+        expect(CDB.findAccountByUserIdAndCurrency).toHaveBeenCalledWith('u-1', 'INR');
+        expect(sqls.some((sql) => sql.includes('INSERT INTO bank_deposit_instructions'))).toBe(true);
+    });
+
+    test('does not create a deposit instruction when no account exists in the receiving currency', async () => {
+        configure();
+        CDB.findAccountByUserIdAndCurrency.mockResolvedValue(null);
+        const sqls = scriptDb();
+        const res = await call('/api/bank-deposits/instructions', {
+            method: 'post',
+            body: { amount: 100 },
+        });
+        expect(res.code).toBe(409);
+        expect(res.body.code).toBe('CURRENCY_ACCOUNT_REQUIRED');
+        expect(sqls.some((sql) => sql.includes('INSERT INTO bank_deposit_instructions'))).toBe(false);
     });
 
     test('unconfigured: config reports disabled, exposes NO account details', async () => {
