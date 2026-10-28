@@ -33,6 +33,12 @@ jest.mock('../config/database', () => ({
     createAuditLog: jest.fn(),
     findUserByEmail: jest.fn(),
 }));
+jest.mock('../services/ledgerJournalService', () => ({
+    ensureVaultLedgerSchema: jest.fn().mockResolvedValue(undefined),
+    ensureCustomerLedgerAccount: jest.fn().mockResolvedValue({ id: 'customer-ledger' }),
+    postBalancedJournal: jest.fn().mockResolvedValue({ journalId: 'journal-test', replay: false }),
+    toMinorUnits: jest.fn((value) => BigInt(String(value).replace('.', '').padEnd(3, '0'))),
+}));
 jest.mock('../middleware/auth', () => ({
     authenticateToken: (req, res, next) => { req.user = { id: 'u-111', full_name: 'Sender' }; next(); },
     generateToken: () => 't',
