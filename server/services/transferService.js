@@ -381,7 +381,7 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
         const toMinorUnits = (value) => {
             const normalized = String(value);
             const [whole, fraction = ''] = normalized.split('.');
-            if (!/^\\d+$/.test(whole) || !/^\\d*$/.test(fraction) || fraction.length > 2) {
+            if (!/^[0-9]+$/.test(whole) || !/^[0-9]*$/.test(fraction) || fraction.length > 2) {
                 throw new Error('CORE_LEDGER_INVALID_AMOUNT');
             }
             return (BigInt(whole) * 100n) + BigInt((fraction + '00').slice(0, 2));
