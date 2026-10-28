@@ -338,7 +338,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
                 return { rows: [Object.assign({}, INSTRUCTION, { status: 'settled', settlement_amount: '150.00', settlement_note: 'x' })] };
             }
             if (sql.includes('balance = balance - $2')) return { rows: [{ balance_before: '160.00', balance_after: '10.00', balance: '10.00' }] };
-            if (sql.includes(\"status = 'reversed'\")) return { rows: [{ id: 'bd-1' }] };
+            if (sql.includes("status = 'reversed'")) return { rows: [{ id: 'bd-1' }] };
             return { rows: [] };
         });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/reverse', {
@@ -361,7 +361,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
                 return { rows: [Object.assign({}, INSTRUCTION, { status: 'settled', settlement_amount: '150.00', settlement_note: 'x' })] };
             }
             if (sql.includes('balance = balance - $2')) return { rows: [] };
-            if (sql.includes(\"status = 'reversal_required'\")) return { rows: [{ id: 'bd-1' }] };
+            if (sql.includes("status = 'reversal_required'")) return { rows: [{ id: 'bd-1' }] };
             return { rows: [] };
         });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/reverse', {
