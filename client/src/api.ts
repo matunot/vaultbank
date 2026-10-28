@@ -373,6 +373,42 @@ export const api = {
     return request<ApiResponse>(`api/bank-deposits/instructions/${id}`);
   },
 
+  async bankDepositInstructions(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/bank-deposits/instructions');
+  },
+
+  async cancelBankDepositInstruction(id: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/bank-deposits/instructions/${encodeURIComponent(id)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  async bankDepositAdminInstructions(status = 'pending'): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/bank-deposits/admin/instructions?status=${encodeURIComponent(status)}`);
+  },
+
+  async verifyBankDepositInstruction(id: string, data: { settlementAmount: string; externalTxnRef: string; note: string }): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/bank-deposits/admin/instructions/${encodeURIComponent(id)}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async failBankDepositInstruction(id: string, note: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/bank-deposits/admin/instructions/${encodeURIComponent(id)}/fail`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+  },
+
+  async reverseBankDepositInstruction(id: string, note: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/bank-deposits/admin/instructions/${encodeURIComponent(id)}/reverse`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+  },
+
   // VaultBank-owned Direct UPI rail (QR is generated locally by the server; settlement is statement-verified).
   async directUpiConfig(): Promise<ApiResponse> {
     return request<ApiResponse>('api/direct-upi/config');
