@@ -107,7 +107,7 @@ jobs:
       - name: Run production database safety tests
         run: npx --yes jest@30.5.2 __tests__/databaseProductionSafety.test.js --runInBand --testPathIgnorePatterns /node_modules/
 
-      - name: Verify VaultBank-native provider registry and ledger readiness
+      - name: Verify provider isolation and native-ledger fail-closed schema
         run: |
           npx --yes jest@30.5.2 __tests__/cashfreeAdapters.test.js __tests__/inrSchemaFailClosed.test.js \
             --testPathIgnorePatterns /node_modules/ \
