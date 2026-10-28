@@ -89,7 +89,7 @@ async function call(path, { method = 'get', body, user } = {}) {
     const res = mkRes();
     const req = {
         method: method.toUpperCase(),
-        user: user || { id: 'u-1', role: 'user' },
+        user: user || { id: 'u-1', role: 'user', email_verified: true, kyc_status: 'verified' },
         ip: '127.0.0.1',
         headers: {},
         body: body || {},
@@ -153,6 +153,24 @@ beforeEach(() => {
 });
 
 describe('receiving-account configuration gates everything', () => {
+    test('unverified customers cannot retrieve receiving details or create deposit instructions', async () => {
+        configure();
+        const configRes = await call('/api/bank-deposits/config', {
+            user: { id: 'u-unverified', role: 'user', email_verified: false, kyc_status: 'pending' },
+        });
+        expect(configRes.code).toBe(403);
+        expect(configRes.body.code).toBe('CUSTOMER_VERIFICATION_REQUIRED');
+
+        const createRes = await call('/api/bank-deposits/instructions', {
+            method: 'post',
+            body: { amount: 100 },
+            user: { id: 'u-unverified', role: 'user', email_verified: true, kyc_status: 'pending' },
+        });
+        expect(createRes.code).toBe(403);
+        expect(createRes.body.code).toBe('CUSTOMER_VERIFICATION_REQUIRED');
+        expect(CDB.db.query).not.toHaveBeenCalled();
+    });
+
     test('unconfigured: config reports disabled, exposes NO account details', async () => {
         const res = await call('/api/bank-deposits/config');
         expect(res.code).toBe(200);
