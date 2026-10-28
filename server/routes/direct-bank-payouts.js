@@ -14,7 +14,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
-const { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, postBalancedJournal } = require('../services/ledgerJournalService');
+const { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, changeVerifiedAvailableBalance, postBalancedJournal } = require('../services/ledgerJournalService');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { db, findUserById, createNotification, createAuditLog } = require('../config/database');
 
@@ -292,6 +292,16 @@ router.post('/api/direct-bank-payouts/requests', authenticateToken, requireVerif
     await client.query('BEGIN');
     try {
       await ensureCustomerLedgerAccount(client, account.id);
+      try {
+        await changeVerifiedAvailableBalance(client, account.id, String(amount), 'debit');
+      } catch (error) {
+        if (error && error.code === 'VB_LEDGER_VERIFIED_FUNDS_INSUFFICIENT') {
+          const unverified = new Error('Insufficient externally verified spendable INR funds.');
+          unverified.code = 'DIRECT_PAYOUT_UNVERIFIED_FUNDS';
+          throw unverified;
+        }
+        throw error;
+      }
       const claim = await client.query(
         "INSERT INTO direct_bank_payout_requests " +
         "(user_id, account_id, request_reference, idempotency_key, amount, currency, beneficiary_name, destination_account_encrypted, destination_fingerprint, destination_account_masked, destination_ifsc, status) " +
@@ -344,6 +354,9 @@ router.post('/api/direct-bank-payouts/requests', authenticateToken, requireVerif
       });
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch (_) {}
+      if (error && error.code === 'DIRECT_PAYOUT_UNVERIFIED_FUNDS') {
+        return res.status(400).json({ success: false, code: error.code, message: error.message });
+      }
       if (error && error.code === 'DIRECT_PAYOUT_INSUFFICIENT_FUNDS') {
         return res.status(400).json({ success: false, code: error.code, message: error.message });
       }
@@ -534,7 +547,16 @@ router.post('/api/direct-bank-payouts/admin/requests/:id/refund', authenticateTo
     await ensureCustomerLedgerAccount(client, payout.account_id);
     const refundExternalRef = payout.request_reference + '-REFUND';
     const seen = await client.query('SELECT id FROM transactions WHERE external_reference = $1 LIMIT 1', [refundExternalRef]);
-    if (!seen.rows.length) {
+    if (seen.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        success: false,
+        code: 'DIRECT_PAYOUT_REFUND_RECONCILIATION_REQUIRED',
+        message: 'A legacy refund record already exists. No additional balance change was made; reconcile this payout before retrying.',
+      });
+    }
+    await changeVerifiedAvailableBalance(client, payout.account_id, String(payout.amount), 'credit');
+    {
       const refund = await client.query(
         "UPDATE accounts SET balance = balance + $2, available_balance = available_balance + $2 WHERE id = $1 AND user_id = $3 AND currency = 'INR' RETURNING (balance - $2) AS balance_before, balance AS balance_after",
         [payout.account_id, Number(payout.amount), payout.user_id]
