@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Building2, CheckCircle2, Copy, Loader2, RefreshCw, ShieldCheck, XCircle } from 'lucide-react';
+import { AlertTriangle, Building2, CheckCircle2, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '../api';
 
 interface BankDepositConfig {
@@ -72,7 +72,7 @@ export function BankTransferDepositPanel() {
         api.bankDepositConfig(),
         api.bankDepositInstructions(),
       ]);
-      setConfig(configResult as BankDepositConfig);
+      setConfig(configResult as unknown as BankDepositConfig);
       setInstructions(Array.isArray(historyResult.instructions) ? historyResult.instructions : []);
     } catch (err) {
       const apiErr = err as ApiErrorLike;
