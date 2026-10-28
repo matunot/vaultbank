@@ -13,7 +13,7 @@ const express = require('express');
 const crypto = require('crypto');
 const QRCode = require('qrcode');
 const router = express.Router();
-const { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, postBalancedJournal } = require('../services/ledgerJournalService');
+const { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, changeVerifiedAvailableBalance, postBalancedJournal } = require('../services/ledgerJournalService');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { db, createNotification, createAuditLog } = require('../config/database');
 
@@ -452,6 +452,7 @@ router.post('/api/direct-upi/admin/intents/:id/verify', authenticateToken, requi
     }
 
     await ensureCustomerLedgerAccount(client, intent.account_id);
+    await changeVerifiedAvailableBalance(client, intent.account_id, String(intent.amount), 'credit');
     const accountResult = await client.query(
       "UPDATE accounts SET balance = balance + $2, available_balance = available_balance + $2 " +
       "WHERE id = $1 AND user_id = $3 AND currency = 'INR' AND status = 'active' " +
