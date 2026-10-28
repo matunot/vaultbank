@@ -272,22 +272,6 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
             }
         }
 
-        // Opening snapshots remain unverified. Only externally verified funds
-        // can leave the account through the native internal rail.
-        try {
-            await changeVerifiedAvailableBalance(client, senderAccount.id, String(amount), 'debit');
-        } catch (error) {
-            if (error && error.code === 'VB_LEDGER_VERIFIED_FUNDS_INSUFFICIENT') {
-                await client.query('ROLLBACK');
-                return {
-                    error: 'unverified_funds',
-                    code: 'UNVERIFIED_FUNDS',
-                    message: 'This account does not have enough externally verified funds for the transfer. Opening balances are not spendable until reconciled.',
-                };
-            }
-            throw error;
-        }
-
         // ── Transfer record INSERT ──
         const trResult = await client.query(
             `INSERT INTO transfers (from_account_id, to_account_id, from_user_id, to_user_id,
@@ -379,7 +363,24 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
             };
         }
 
-        // Preserve verified-funds provenance for the receiving account.
+        // Opening snapshots remain unverified. Only externally verified funds
+        // can leave the account through the native internal rail.
+        try {
+            await changeVerifiedAvailableBalance(client, senderAccount.id, String(amount), 'debit');
+        } catch (error) {
+            if (error && error.code === 'VB_LEDGER_VERIFIED_FUNDS_INSUFFICIENT') {
+                await client.query('ROLLBACK');
+                return {
+                    error: 'unverified_funds',
+                    code: 'UNVERIFIED_FUNDS',
+                    message: 'This account does not have enough externally verified funds for the transfer. Opening balances are not spendable until reconciled.',
+                };
+            }
+            throw error;
+        }
+
+        // Preserve verified-funds provenance on the receiving account. Both
+        // changes commit with the account updates or are rolled back together.
         await changeVerifiedAvailableBalance(client, recipientAccount.id, String(amount), 'credit');
 
         // ── Ledger rows (INSIDE the transaction — same client) ──
