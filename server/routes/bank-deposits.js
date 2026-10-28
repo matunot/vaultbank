@@ -296,7 +296,7 @@ router.post('/api/bank-deposits/instructions/:id/cancel', authenticateToken, asy
 // ============================================================
 // GET /api/bank-deposits/admin/instructions — review queue (admin)
 // ============================================================
-router.get('/api/bank-deposits/admin/instructions', requireAdmin, async (req, res) => {
+router.get('/api/bank-deposits/admin/instructions', authenticateToken, requireAdmin, async (req, res) => {
     try {
         await ensureTables();
         await sweepExpired();
@@ -324,7 +324,7 @@ router.get('/api/bank-deposits/admin/instructions', requireAdmin, async (req, re
 // POST /api/bank-deposits/admin/instructions/:id/verify (admin)
 // The ONLY credit path. Admin asserts authentic bank-statement evidence.
 // ============================================================
-router.post('/api/bank-deposits/admin/instructions/:id/verify', requireAdmin, async (req, res) => {
+router.post('/api/bank-deposits/admin/instructions/:id/verify', authenticateToken, requireAdmin, async (req, res) => {
     let client = null;
     try {
         const settlementText = String(req.body && req.body.settlementAmount != null ? req.body.settlementAmount : '').trim();
@@ -511,7 +511,7 @@ router.post('/api/bank-deposits/admin/instructions/:id/verify', requireAdmin, as
 // POST /api/bank-deposits/admin/instructions/:id/fail (admin)
 // Transfer never arrived / bounced — closes the instruction, NO credit.
 // ============================================================
-router.post('/api/bank-deposits/admin/instructions/:id/fail', requireAdmin, async (req, res) => {
+router.post('/api/bank-deposits/admin/instructions/:id/fail', authenticateToken, requireAdmin, async (req, res) => {
     try {
         const note = String(req.body.note || '').trim() || 'Marked failed by admin review.';
         await ensureTables();
@@ -540,7 +540,7 @@ router.post('/api/bank-deposits/admin/instructions/:id/fail', requireAdmin, asyn
 // Compensating guarded debit for a settled deposit (chargeback/recall).
 // Never deletes ledger history; never forces a negative balance.
 // ============================================================
-router.post('/api/bank-deposits/admin/instructions/:id/reverse', requireAdmin, async (req, res) => {
+router.post('/api/bank-deposits/admin/instructions/:id/reverse', authenticateToken, requireAdmin, async (req, res) => {
     let client = null;
     let needsReview = false;
     let instruction = null;
