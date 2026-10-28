@@ -21,7 +21,7 @@ const SYSTEM_ACCOUNTS = Object.freeze({
     BANK_SETTLEMENT_ASSET: { type: 'settlement_asset', label: 'External bank settlement clearing' },
 });
 
-function toMinorUnits(value) {
+function toMinorUnits(value, { allowZero = false } = {}) {
     const s = String(value == null ? '' : value).trim();
     if (!/^\d+(?:\.\d{1,2})?$/.test(s)) {
         const error = new Error('Ledger amounts must be positive decimal strings with at most two fractional digits.');
@@ -30,7 +30,7 @@ function toMinorUnits(value) {
     }
     const [whole, fraction = ''] = s.split('.');
     const units = BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0') || '0');
-    if (units <= 0n) {
+    if (units < 0n || (!allowZero && units === 0n)) {
         const error = new Error('Ledger entry amounts must be greater than zero.');
         error.code = 'VB_LEDGER_AMOUNT_INVALID';
         throw error;
@@ -183,7 +183,7 @@ async function ensureCustomerLedgerAccount(client, accountId) {
 
     // Account-row locking serializes first-use initialization with concurrent
     // deposits, withdrawals and internal transfers.
-    if (inserted.rows.length && toMinorUnits(String(account.balance || '0.00')) > 0n) {
+    if (inserted.rows.length && toMinorUnits(String(account.balance || '0.00'), { allowZero: true }) > 0n) {
         const openingAmount = String(account.balance);
         const systemAccount = await getSystemLedgerAccount(client, 'OPENING_BALANCE_OFFSET', currency);
         const journal = await client.query(
