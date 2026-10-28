@@ -35,7 +35,7 @@ const STATEMENT_REF_RE = /^[A-Za-z0-9-]{8,120}$/;
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const {
     db,
-    findAccountByUserId,
+    findAccountByUserIdAndCurrency,
     createTransaction,
     createNotification,
     createAuditLog,
@@ -197,16 +197,20 @@ router.post('/api/bank-deposits/instructions', authenticateToken, requireVerifie
         if (!(amount >= MIN_AMOUNT) || amount > MAX_AMOUNT) {
             return res.status(400).json({ success: false, message: `Amount must be between ${cfg.currency} ${MIN_AMOUNT} and ${cfg.currency} ${MAX_AMOUNT}.` });
         }
-        const account = await findAccountByUserId(req.user.id);
-        if (!account) {
-            return res.status(404).json({ success: false, message: 'No account found.' });
-        }
-        const currency = String(req.body.currency || account.currency).toUpperCase();
-        if (currency !== String(account.currency).toUpperCase()) {
-            return res.status(400).json({ success: false, message: 'Currency not supported for this account.' });
-        }
+        // Resolve an account in the receiving rail's actual currency; never
+        // silently use the customer's primary account (which may be USD while
+        // the configured receiving account accepts INR, or vice versa).
+        const currency = String(req.body.currency || cfg.currency).toUpperCase();
         if (currency !== cfg.currency) {
             return res.status(400).json({ success: false, message: `This receiving account accepts ${cfg.currency} transfers only.` });
+        }
+        const account = await findAccountByUserIdAndCurrency(req.user.id, currency);
+        if (!account) {
+            return res.status(409).json({
+                success: false,
+                code: 'CURRENCY_ACCOUNT_REQUIRED',
+                message: `Open an active ${currency} VaultBank account before creating this deposit instruction.`,
+            });
         }
         await ensureTables();
         await sweepExpired();
