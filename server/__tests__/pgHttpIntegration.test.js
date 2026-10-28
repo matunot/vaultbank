@@ -292,7 +292,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
     test('5 concurrent transfers of 300 vs 1000 available: exactly 3 succeed, never overspend', async () => {
         if (!pool) return;
         const alice = testData.accounts.alice_usd;
-        await pool.query('UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = $1', [alice.id]);
+        await setAccountBalances(alice.id, 1000);
 
         const results = await Promise.all(
             Array.from({ length: 5 }, (_, i) =>
@@ -401,7 +401,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         expect(parseFloat(final.balance)).toBe(500);
         expect(parseFloat(final.available_balance)).toBe(100);
         expect(parseFloat(final.held_balance)).toBe(400);
-        await pool.query('UPDATE accounts SET balance = 1000, available_balance = 1000, held_balance = 0 WHERE id = $1', [alice.id]);
+        await setAccountBalances(alice.id, 1000);
     });
 
     // ── Test 9: Parameter bug regression — reference_id is the transfer UUID ──
