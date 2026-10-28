@@ -24,6 +24,17 @@ jest.mock('../config/database', () => ({
     createNotification: jest.fn(),
     createAuditLog: jest.fn(),
 }));
+jest.mock('../services/ledgerJournalService', () => ({
+    ensureVaultLedgerSchema: jest.fn().mockResolvedValue(undefined),
+    ensureCustomerLedgerAccount: jest.fn().mockResolvedValue({ id: 'ledger-account-1', currency: 'USD', accountId: 'acc-1' }),
+    postBalancedJournal: jest.fn().mockResolvedValue({ journalId: 'journal-1', replay: false }),
+    toMinorUnits: (value) => {
+        const input = String(value == null ? '' : value).trim();
+        if (!/^\\d+(?:\\.\\d{1,2})?$/.test(input)) throw new Error('invalid amount');
+        const parts = input.split('.');
+        return BigInt(parts[0]) * 100n + BigInt((parts[1] || '').padEnd(2, '0') || '0');
+    },
+}));
 jest.mock('../middleware/auth', () => ({
     // Faithful shapes: any user passes auth; only role 'admin' passes requireAdmin.
     authenticateToken: (req, res, next) => { if (!req.user) req.user = { id: 'u-1', role: 'user' }; next(); },
@@ -100,7 +111,7 @@ async function call(path, { method = 'get', body, user } = {}) {
 
 const ADMIN = { id: 'adm-1', role: 'admin' };
 
-function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ balance: '50.00' }] } = {}) {
+function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ balance_before: '100.00', balance_after: '50.00', balance: '50.00' }], instructionRow = INSTRUCTION } = {})
     const sqls = [];
     CDB.db.query.mockImplementation(async (sql) => {
         sqls.push(String(sql));
@@ -111,11 +122,11 @@ function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ 
         if (sql.includes('FROM transactions WHERE external_reference')) return { rows: ledgerRows };
         if (sql.includes('balance = balance + $2')) return { rows: [{ balance_before: '100.00', balance_after: '250.00' }] };
         if (sql.includes('balance = balance - $2')) return { rows: debitRows };
-        if (sql.includes("status = 'settled'")) return { rows: [] };
-        if (sql.includes("status = 'expired'")) return { rows: [] };
+        if (sql.includes("status = 'settled'")) return { rows: [Object.assign({}, instructionRow, { status: 'settled', settled_at: new Date().toISOString() })] };
+        if (sql.includes("status = 'reversed'")) return { rows: [{ id: instructionRow.id || 'bd-1' }] };\n        if (sql.includes("status = 'reversal_required'")) return { rows: [{ id: instructionRow.id || 'bd-1' }] };\n        if (sql.includes("status = 'expired'")) return { rows: [] };
         if (sql.includes("status = 'failed'")) return { rows: [Object.assign({}, INSTRUCTION, { status: 'failed' })] };
         if (sql.includes("status = 'cancelled'")) return { rows: [INSTRUCTION] };
-        if (sql.includes('FROM bank_deposit_instructions')) return { rows: [INSTRUCTION] };
+        if (sql.includes('FROM bank_deposit_instructions')) return { rows: [instructionRow] };
         return { rows: [] };
     });
     return sqls;
@@ -128,6 +139,14 @@ beforeEach(() => {
     CDB.createNotification.mockResolvedValue({ id: 'n-1' });
     CDB.createAuditLog.mockResolvedValue({ id: 'a-1' });
     CDB.db.query.mockResolvedValue({ rows: [] });
+    CDB.db.getClient.mockImplementation(async () => ({
+        query: (sql, params) => CDB.db.query(sql, params),
+        release: jest.fn(),
+    }));
+    const ledger = require('../services/ledgerJournalService');
+    ledger.ensureVaultLedgerSchema.mockResolvedValue(undefined);
+    ledger.ensureCustomerLedgerAccount.mockResolvedValue({ id: 'ledger-account-1', currency: 'USD', accountId: 'acc-1' });
+    ledger.postBalancedJournal.mockResolvedValue({ journalId: 'journal-1', replay: false });
 });
 
 describe('receiving-account configuration gates everything', () => {
@@ -252,7 +271,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         configure();
         const sqls = scriptDb({ claimRows: [Object.assign({}, INSTRUCTION, { status: 'settling' })] });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/verify', {
-            method: 'post', body: { settlementAmount: 150, note: 'statement line 42, wire from First Test Bank' }, user: ADMIN,
+            method: 'post', body: { settlementAmount: '100.00', note: 'statement line 42, wire from First Test Bank', externalTxnRef: 'UTR-TEST-0001' }, user: ADMIN,
         });
         expect(res.code).toBe(200);
         expect(res.body.credited).toBe(true);
@@ -261,7 +280,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         expect(CDB.createTransaction).toHaveBeenCalledTimes(1);
         const txn = CDB.createTransaction.mock.calls[0][0];
         expect(txn.type).toBe('deposit');
-        expect(txn.amount).toBe(150);
+        expect(txn.amount).toBe('100.00');
         expect(txn.external_reference).toBe('VB-BD-TEST-0001');
         expect(txn.metadata.manual_verification).toBe(true);
         expect(sqls.some((s) => s.includes("status = 'settled'"))).toBe(true);
@@ -273,7 +292,7 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
         configure();
         const sqls = scriptDb({ claimRows: [] });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/verify', {
-            method: 'post', body: { settlementAmount: 150, note: 'statement line 42 again' }, user: ADMIN,
+            method: 'post', body: { settlementAmount: '100.00', note: 'statement line 42 again', externalTxnRef: 'UTR-TEST-0001' }, user: ADMIN,
         });
         expect(res.code).toBe(409);
         expect(sqls.some((s) => s.includes('balance = balance + $2'))).toBe(false);
@@ -287,14 +306,13 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
             ledgerRows: [{ id: 'tx-already' }],
         });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/verify', {
-            method: 'post', body: { settlementAmount: 150, note: 'retry after crash — ledger row exists' }, user: ADMIN,
+            method: 'post', body: { settlementAmount: '100.00', note: 'retry after crash — ledger row exists', externalTxnRef: 'UTR-TEST-0001' }, user: ADMIN,
         });
-        expect(res.code).toBe(200);
-        expect(res.body.credited).toBe(false);
-        expect(res.body.duplicate).toBe(true);
+        expect(res.code).toBe(409);
+        expect(res.body.code).toBe('BANK_DEPOSIT_RECONCILIATION_REQUIRED');
         expect(sqls.filter((s) => s.includes('balance = balance + $2'))).toHaveLength(0);
         expect(CDB.createTransaction).not.toHaveBeenCalled();
-        expect(sqls.some((s) => s.includes("status = 'settled'"))).toBe(true);
+        expect(sqls.some((s) => s.includes("status = 'settled'"))).toBe(false);
     });
 
     test('failed instruction: pending -> failed, NO credit, user notified', async () => {
