@@ -104,6 +104,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run complete backend unit suite
+        run: npm test -- --runInBand
+
       - name: Run production database safety tests
         run: npx --yes jest@30.5.2 __tests__/databaseProductionSafety.test.js --runInBand --testPathIgnorePatterns /node_modules/
 
