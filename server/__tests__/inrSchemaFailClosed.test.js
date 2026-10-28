@@ -108,7 +108,7 @@ describe('schema checks are fail-closed', () => {
         jest.resetModules();
         const CDB = require('../config/database');
         const cashfree = require('../payouts/cashfree');
-        CDB.findUserById.mockResolvedValue({ id: 'u-1', full_name: 'A', email: 'a@example.com', phone: '9876543210' });
+        CDB.findUserById.mockResolvedValue({ id: 'u-1', full_name: 'Alex Sample', email: 'a@example.com', phone: '9876543210' });
         CDB.db.query.mockImplementation(async (sql) => {
             if (sql.includes('to_regclass')) return { rows: [{ ready: false }] };
             if (sql.includes('FROM accounts WHERE user_id')) return { rows: [INR_ACCOUNT] };
