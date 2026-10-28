@@ -47,6 +47,20 @@ const MAX_AMOUNT = 100000;
 const MAX_OPEN = 3;
 
 // Receiving-account configuration (env only — never invented, never logged).
+// Customer deposit instructions and receiving details are limited to verified
+// customers. Admins retain access for the controlled pilot and reconciliation.
+function requireVerifiedDepositCustomerOrAdmin(req, res, next) {
+    if (req.user && ['admin', 'super_admin'].includes(req.user.role)) return next();
+    if (!req.user || req.user.email_verified !== true || req.user.kyc_status !== 'verified') {
+        return res.status(403).json({
+            success: false,
+            code: 'CUSTOMER_VERIFICATION_REQUIRED',
+            message: 'Verify your email and complete identity verification before receiving real-money deposit instructions.',
+        });
+    }
+    return next();
+}
+
 function receivingConfig() {
     const enabled = process['env'].VB_BANK_DEPOSIT_ENABLED === 'true';
     const bankName = (process['env'].VB_BANK_RECEIVING_BANK_NAME || '').trim();
@@ -140,7 +154,7 @@ async function audit(userId, action, resourceId, details, req) {
 // ============================================================
 // GET /api/bank-deposits/config — is the rail configured? (auth)
 // ============================================================
-router.get('/api/bank-deposits/config', authenticateToken, async (req, res) => {
+router.get('/api/bank-deposits/config', authenticateToken, requireVerifiedDepositCustomerOrAdmin, async (req, res) => {
     try {
         const cfg = receivingConfig();
         if (!cfg.enabled) {
@@ -169,7 +183,7 @@ router.get('/api/bank-deposits/config', authenticateToken, async (req, res) => {
 // ============================================================
 // POST /api/bank-deposits/instructions — create a deposit instruction
 // ============================================================
-router.post('/api/bank-deposits/instructions', authenticateToken, async (req, res) => {
+router.post('/api/bank-deposits/instructions', authenticateToken, requireVerifiedDepositCustomerOrAdmin, async (req, res) => {
     try {
         const cfg = receivingConfig();
         if (!cfg.enabled) {
