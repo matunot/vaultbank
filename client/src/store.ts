@@ -61,11 +61,11 @@ export function useAppStore() {
   const initialAvailable = storedAccount?.availableBalance ?? initialBalance;
   const [balance, setBalance] = useState<number>(initialBalance);
   const [available, setAvailable] = useState<number>(initialAvailable);
-  const [cards, setCards] = useState<Card[]>(initialCards);
-  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
-  const [goals, setGoals] = useState<Goal[]>(initialGoals);
-  const [budget, setBudget] = useState<BudgetCategory[]>(initialBudget);
-  const [investments, setInvestments] = useState<Investment[]>(initialInvestments);
+  const [cards, setCards] = useState<Card[]>(import.meta.env.DEV ? initialCards : []);
+  const [transactions, setTransactions] = useState<Transaction[]>(import.meta.env.DEV ? initialTransactions : []);
+  const [goals, setGoals] = useState<Goal[]>(import.meta.env.DEV ? initialGoals : []);
+  const [budget, setBudget] = useState<BudgetCategory[]>(import.meta.env.DEV ? initialBudget : []);
+  const [investments, setInvestments] = useState<Investment[]>(import.meta.env.DEV ? initialInvestments : []);
   const [transferLoading, setTransferLoading] = useState(false);
   // REAL issued cards - hydrate the classic cards UI from the Stripe
   // Issuing backend so it shows your actual issued cards.
