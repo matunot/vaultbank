@@ -30,7 +30,7 @@ jest.mock('../services/ledgerJournalService', () => ({
     postBalancedJournal: jest.fn().mockResolvedValue({ journalId: 'journal-1', replay: false }),
     toMinorUnits: (value) => {
         const input = String(value == null ? '' : value).trim();
-        if (!/^\\d+(?:\\.\\d{1,2})?$/.test(input)) throw new Error('invalid amount');
+        if (!/^\d+(?:\.\d{1,2})?$/.test(input)) throw new Error('invalid amount');
         const parts = input.split('.');
         return BigInt(parts[0]) * 100n + BigInt((parts[1] || '').padEnd(2, '0') || '0');
     },
@@ -111,7 +111,8 @@ async function call(path, { method = 'get', body, user } = {}) {
 
 const ADMIN = { id: 'adm-1', role: 'admin' };
 
-function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ balance_before: '100.00', balance_after: '50.00', balance: '50.00' }], instructionRow = INSTRUCTION } = {}) {\n    const sqls = [];
+function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ balance_before: '100.00', balance_after: '50.00', balance: '50.00' }], instructionRow = INSTRUCTION } = {}) {
+    const sqls = [];
     CDB.db.query.mockImplementation(async (sql) => {
         sqls.push(String(sql));
         if (sql.includes('CREATE TABLE IF NOT EXISTS')) return { rows: [] };
@@ -122,7 +123,9 @@ function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ 
         if (sql.includes('balance = balance + $2')) return { rows: [{ balance_before: '100.00', balance_after: '200.00' }] };
         if (sql.includes('balance = balance - $2')) return { rows: debitRows };
         if (sql.includes("status = 'settled'")) return { rows: [Object.assign({}, instructionRow, { status: 'settled', settled_at: new Date().toISOString() })] };
-        if (sql.includes("status = 'reversed'")) return { rows: [{ id: instructionRow.id || 'bd-1' }] };\n        if (sql.includes("status = 'reversal_required'")) return { rows: [{ id: instructionRow.id || 'bd-1' }] };\n        if (sql.includes("status = 'expired'")) return { rows: [] };
+        if (sql.includes("status = 'reversed'")) return { rows: [{ id: instructionRow.id || 'bd-1' }] };
+        if (sql.includes("status = 'reversal_required'")) return { rows: [{ id: instructionRow.id || 'bd-1' }] };
+        if (sql.includes("status = 'expired'")) return { rows: [] };
         if (sql.includes("status = 'failed'")) return { rows: [Object.assign({}, INSTRUCTION, { status: 'failed' })] };
         if (sql.includes("status = 'cancelled'")) return { rows: [INSTRUCTION] };
         if (sql.includes('FROM bank_deposit_instructions')) return { rows: [instructionRow] };
@@ -334,7 +337,8 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
             if (sql.includes('FROM bank_deposit_instructions')) {
                 return { rows: [Object.assign({}, INSTRUCTION, { status: 'settled', settlement_amount: '150.00', settlement_note: 'x' })] };
             }
-            if (sql.includes('balance = balance - $2')) return { rows: [{ balance_before: '160.00', balance_after: '10.00', balance: '10.00' }] };\n            if (sql.includes(\"status = 'reversed'\")) return { rows: [{ id: 'bd-1' }] };
+            if (sql.includes('balance = balance - $2')) return { rows: [{ balance_before: '160.00', balance_after: '10.00', balance: '10.00' }] };
+            if (sql.includes(\"status = 'reversed'\")) return { rows: [{ id: 'bd-1' }] };
             return { rows: [] };
         });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/reverse', {
@@ -356,7 +360,8 @@ describe('admin verification is the ONLY credit path — exactly once', () => {
             if (sql.includes('FROM bank_deposit_instructions')) {
                 return { rows: [Object.assign({}, INSTRUCTION, { status: 'settled', settlement_amount: '150.00', settlement_note: 'x' })] };
             }
-            if (sql.includes('balance = balance - $2')) return { rows: [] };\n            if (sql.includes(\"status = 'reversal_required'\")) return { rows: [{ id: 'bd-1' }] };
+            if (sql.includes('balance = balance - $2')) return { rows: [] };
+            if (sql.includes(\"status = 'reversal_required'\")) return { rows: [{ id: 'bd-1' }] };
             return { rows: [] };
         });
         const res = await call('/api/bank-deposits/admin/instructions/bd-1/reverse', {
