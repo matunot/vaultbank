@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS vb_ledger_journals (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     event_type TEXT NOT NULL CHECK (event_type IN (
         'opening_balance', 'internal_transfer', 'deposit_settled',
-        'bank_deposit_settled', 'payout_reserved', 'payout_settled', 'payout_refund'
+        'bank_deposit_settled', 'deposit_reversed', 'payout_reserved', 'payout_settled', 'payout_refund'
     )),
     source_type TEXT NOT NULL,
     source_id TEXT NOT NULL,
