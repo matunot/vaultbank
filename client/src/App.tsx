@@ -10,6 +10,7 @@ import Header from './components/Header';
 import MarketTicker from './components/MarketTicker';
 import DashboardSection from './components/DashboardSection';
 import ErrorBoundary from './components/ErrorBoundary';
+import PreviewOnlyNotice from './components/PreviewOnlyNotice';
 import { TransferModal, DepositModal, PayBillModal, ConvertModal, WireModal, MobileModal, TradeModal, WithdrawModal } from './components/Modals';
 import VbPayModal from './components/VbPayModal';
 import { useAppStore } from './store';
@@ -236,19 +237,19 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                 <ErrorBoundary>
                   <Suspense fallback={<SectionLoader />}>
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
-                    {active === 'vault' && <VaultSection />}
-                    {active === 'swiss' && <SwissSection />}
+                    {active === 'vault' && (import.meta.env.DEV ? <VaultSection /> : <PreviewOnlyNotice title="Vaults are a development preview" message="Vault balances and sample rates are not connected to persistent account storage. This page is unavailable on production accounts until its ledger-backed functionality is implemented." />)}
+                    {active === 'swiss' && (import.meta.env.DEV ? <SwissSection /> : <PreviewOnlyNotice title="Swiss banking is not connected" message="The development view is illustrative only. No Swiss bank account, banking partnership, or deposit-protection arrangement is offered through this section." />)}
                     {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} />}
                     {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
-                    {active === 'invest' && <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} />}
+                    {active === 'invest' && (import.meta.env.DEV ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
 {active === 'pay' && <VbPaySection />}
                     {active === 'credit' && <CreditSection />}
 
-                    {active === 'loans' && <DebtsSection />}
-                    {active === 'budget' && <BudgetSection />}
+                    {active === 'loans' && (import.meta.env.DEV ? <DebtsSection /> : <PreviewOnlyNotice title="Loan marketplace is not live" message="The example credit score, debts, rates, and offers are development-only data. VaultBank has no authorized lender connected in production, so no loan offer or approval is available here." />)}
+                    {active === 'budget' && (import.meta.env.DEV ? <BudgetSection /> : <PreviewOnlyNotice title="Budget tools are a development preview" message="The current budget figures are example data, not your personal spending history. Live transaction-linked budgets are not connected yet." />)}
                     {active === 'send' && <TransferSection />}
                     {active === 'history' && <HistorySection />}
-                    {active === 'rewards' && <RewardsSection />}
+                    {active === 'rewards' && (import.meta.env.DEV ? <RewardsSection /> : <PreviewOnlyNotice title="Rewards program is not live yet" message="The development preview contains sample points and benefits. Production rewards, interest rates, and fee waivers are not being promised by this screen." />)}
                     {active === 'security' && <SecuritySection />}
                   </Suspense>
                 </ErrorBoundary>
@@ -261,7 +262,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass">
               <Shield className="w-3.5 h-3.5 text-amber-500" />
               <span className="text-[10px] tracking-widest font-semibold text-white/30">
-                END-TO-END ENCRYPTED Â· FDIC INSURED Â· 256-BIT SSL
+                LIVE FEATURES ARE LABELED BY AVAILABILITY
               </span>
             </div>
           </motion.div>
