@@ -30,7 +30,17 @@ function sandboxRefusedInProduction(mode) {
     return String(process['env']['NODE_ENV'] || '').trim().toLowerCase() === 'production' && mode !== 'live';
 }
 
+// The production deployment defaults to VaultBank-native rails. The legacy
+// third-party payout adapter remains in the repository for isolated tests,
+// but is unavailable in production unless an operator explicitly opts out of
+// native-only mode. This also neutralizes stale provider env vars.
+function nativeRailsOnly() {
+    return String(process['env']['NODE_ENV'] || '').trim().toLowerCase() === 'production'
+        && String(process['env']['VB_NATIVE_RAILS_ONLY'] == null ? 'true' : process['env']['VB_NATIVE_RAILS_ONLY']).trim().toLowerCase() !== 'false';
+}
+
 function activePayoutProvider() {
+    if (nativeRailsOnly()) return null;
     const name = selectedName();
     if (!name) return null;
     const adapter = providers[name];
@@ -52,6 +62,7 @@ function payoutAvailability() {
         reconciliation: 'pull-status-api',
         currency: 'INR',
     };
+    if (nativeRailsOnly()) return { ...base, reason: 'native-rails-only' };
     const name = selectedName();
     if (!name) {
         return { ...base, reason: 'no-provider-selected' };
