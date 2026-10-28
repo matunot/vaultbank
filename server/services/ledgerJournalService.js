@@ -234,6 +234,48 @@ async function resolveEntryAccount(client, entry, currency) {
     return { id: account.id, canonical: 'system:' + String(entry.systemCode).toUpperCase() };
 }
 
+function formatMinorUnits(units) {
+    return String(units / 100n) + '.' + String(units % 100n).padStart(2, '0');
+}
+
+async function verifyExistingJournal(client, journalId, currency, resolved) {
+    const header = await client.query(
+        'SELECT id, currency FROM vb_ledger_journals WHERE id = $1 LIMIT 1 FOR UPDATE',
+        [journalId]
+    );
+    const journal = header.rows[0];
+    if (!journal) {
+        const error = new Error('VaultBank journal idempotency outcome is unknown.');
+        error.code = 'VB_LEDGER_OUTCOME_UNKNOWN';
+        throw error;
+    }
+    const { rows } = await client.query(
+        `SELECT e.side, e.amount::text AS amount, la.account_id, la.system_code
+           FROM vb_ledger_entries e
+           JOIN vb_ledger_accounts la ON la.id = e.ledger_account_id
+          WHERE e.journal_id = $1`,
+        [journalId]
+    );
+    const expected = resolved.map(e => ({
+        side: e.side,
+        amount: e.amount,
+        account_id: e.canonical.startsWith('account:') ? e.canonical.slice(8) : null,
+        system_code: e.canonical.startsWith('system:') ? e.canonical.slice(7) : null,
+    })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    const actual = rows.map(e => ({
+        side: e.side,
+        amount: String(e.amount),
+        account_id: e.account_id == null ? null : String(e.account_id),
+        system_code: e.system_code == null ? null : String(e.system_code),
+    })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
+    if (String(journal.currency).toUpperCase() !== currency || JSON.stringify(actual) !== JSON.stringify(expected)) {
+        const error = new Error('VaultBank journal source was already posted with different material entries.');
+        error.code = 'VB_LEDGER_IDEMPOTENCY_CONFLICT';
+        throw error;
+    }
+    return { journalId: journal.id, replay: true };
+}
+
 async function postBalancedJournal(client, input) {
     if (!schemaReady) {
         const error = new Error('VaultBank ledger schema must be initialized before posting.');
@@ -271,7 +313,7 @@ async function postBalancedJournal(client, input) {
         if (side === 'debit') debitTotal += minorUnits;
         else creditTotal += minorUnits;
         const account = await resolveEntryAccount(client, entry, currency);
-        resolved.push({ ledgerAccountId: account.id, canonical: account.canonical, side, amount, minorUnits: minorUnits.toString() });
+        resolved.push({ ledgerAccountId: account.id, canonical: account.canonical, side, amount: formatMinorUnits(minorUnits), minorUnits: minorUnits.toString() });
     }
     if (debitTotal !== creditTotal || new Set(resolved.map(e => e.ledgerAccountId)).size < 2) {
         const error = new Error('VaultBank journal must balance across at least two distinct ledger accounts.');
@@ -285,33 +327,7 @@ async function postBalancedJournal(client, input) {
         key
     );
     if (existing.rows.length) {
-        const journal = existing.rows[0];
-        const { rows } = await client.query(
-            `SELECT e.side, e.amount::text AS amount, la.account_id, la.system_code
-               FROM vb_ledger_entries e
-               JOIN vb_ledger_accounts la ON la.id = e.ledger_account_id
-              WHERE e.journal_id = $1
-              ORDER BY e.side, COALESCE(la.account_id::text, la.system_code), e.amount::text`,
-            [journal.id]
-        );
-        const expected = resolved.map(e => ({
-            side: e.side,
-            amount: e.amount,
-            account_id: e.canonical.startsWith('account:') ? e.canonical.slice(8) : null,
-            system_code: e.canonical.startsWith('system:') ? e.canonical.slice(7) : null,
-        })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
-        const actual = rows.map(e => ({
-            side: e.side,
-            amount: String(e.amount),
-            account_id: e.account_id == null ? null : String(e.account_id),
-            system_code: e.system_code == null ? null : String(e.system_code),
-        })).sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b)));
-        if (String(journal.currency).toUpperCase() !== currency || JSON.stringify(actual) !== JSON.stringify(expected)) {
-            const error = new Error('VaultBank journal source was already posted with different material entries.');
-            error.code = 'VB_LEDGER_IDEMPOTENCY_CONFLICT';
-            throw error;
-        }
-        return { journalId: journal.id, replay: true };
+        return verifyExistingJournal(client, existing.rows[0].id, currency, resolved);
     }
 
     const inserted = await client.query(
@@ -323,8 +339,8 @@ async function postBalancedJournal(client, input) {
         [eventType, sourceType, sourceId, currency, String(input.description || eventType), input.actorUserId || null, JSON.stringify(input.metadata || {})]
     );
     if (!inserted.rows.length) {
-        // A concurrent transaction won the idempotency claim. The unique
-        // constraint serializes this write; read the winner, then replay-check.
+        // A concurrent transaction won the source idempotency claim. Compare
+        // the winning journal's complete entries, never line count alone.
         const { rows } = await client.query(
             'SELECT id FROM vb_ledger_journals WHERE event_type = $1 AND source_type = $2 AND source_id = $3 LIMIT 1',
             key
@@ -334,18 +350,7 @@ async function postBalancedJournal(client, input) {
             error.code = 'VB_LEDGER_OUTCOME_UNKNOWN';
             throw error;
         }
-        const { rows: priorLines } = await client.query(
-            `SELECT e.side, e.amount::text AS amount, la.account_id, la.system_code
-               FROM vb_ledger_entries e JOIN vb_ledger_accounts la ON la.id = e.ledger_account_id
-              WHERE e.journal_id = $1`,
-            [rows[0].id]
-        );
-        if (priorLines.length !== resolved.length) {
-            const error = new Error('VaultBank journal source already exists with different material entries.');
-            error.code = 'VB_LEDGER_IDEMPOTENCY_CONFLICT';
-            throw error;
-        }
-        return { journalId: rows[0].id, replay: true };
+        return verifyExistingJournal(client, rows[0].id, currency, resolved);
     }
 
     const journalId = inserted.rows[0].id;
