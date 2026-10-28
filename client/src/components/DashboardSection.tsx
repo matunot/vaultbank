@@ -137,12 +137,12 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal, userName 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <Section delay={0.3}>{import.meta.env.DEV ? <SavingsGoals goals={store.goals} onAddToGoal={store.addToGoal} /> : <PreviewOnlyNotice title="Savings goals are not connected yet" message="Example goals are shown only in local development. Goal balances are not linked to your account ledger." />}</Section>
         <Section delay={0.35}>{import.meta.env.DEV ? <BudgetPanel budget={store.budget} /> : <PreviewOnlyNotice title="Budget tracking is a preview" message="The budget widget uses sample values in local development and is not yet connected to your verified transaction history." />}</Section>
-        <Section delay={0.4}><CurrencyConverter /></Section>
+        <Section delay={0.4}>{import.meta.env.DEV ? <CurrencyConverter /> : <PreviewOnlyNotice title="Currency conversion is an estimate only" message="The local development converter uses example rates. It does not provide a live FX quote or execute a currency exchange." />}</Section>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
         <div className="lg:col-span-2">
-          <Section delay={0.45}><CardsPanel cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /></Section>
+          <Section delay={0.45}>{import.meta.env.DEV || store.cards.length > 0 ? <CardsPanel cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /> : <PreviewOnlyNotice title="No issued cards are linked yet" message="Only cards confirmed by the issuing provider will appear here. Example cards are limited to local development." />}</Section>
         </div>
         <Section delay={0.5}>{import.meta.env.DEV ? <InvestmentsPanel /> : <PreviewOnlyNotice title="Portfolio holdings are not connected" message="Sample holdings and market movements are shown only in local development. No live investments are represented here." />}</Section>
         <Section delay={0.55}>{import.meta.env.DEV ? <CalendarEvents /> : <PreviewOnlyNotice title="Calendar is a preview" message="Sample dates and bills are shown only in local development. No real bill schedule is linked yet." />}</Section>
