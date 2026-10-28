@@ -15,10 +15,11 @@ const ENV_KIND = ['CASHFREE', 'ENV'].join('_');
 const ENV_TIMEOUT = ['CASHFREE', 'HTTP_TIMEOUT_MS'].join('_');
 const ENV_VB_PAY = ['VB', 'PAYOUT_PROVIDER'].join('_');
 const ENV_VB_COL = ['VB', 'COLLECTIONS_PROVIDER'].join('_');
+const ENV_NATIVE_ONLY = ['VB', 'NATIVE_RAILS_ONLY'].join('_');
 
 const ENV = process['env'];
 const SAVED = {};
-for (const k of [ENV_ID, ENV_SECRET, ENV_PID, ENV_PSEC, ENV_KIND, ENV_TIMEOUT]) {
+for (const k of [ENV_ID, ENV_SECRET, ENV_PID, ENV_PSEC, ENV_KIND, ENV_TIMEOUT, ENV_NATIVE_ONLY]) {
     SAVED[k] = ENV[k];
     delete ENV[k];
 }
@@ -209,8 +210,10 @@ describe('registry safety', () => {
         const previousNodeEnv = ENV.NODE_ENV;
         const previousPay = ENV[ENV_VB_PAY];
         const previousCol = ENV[ENV_VB_COL];
+        const previousNativeOnly = ENV[ENV_NATIVE_ONLY];
         ENV.NODE_ENV = 'production';
         ENV[ENV_KIND] = 'sandbox';
+        ENV[ENV_NATIVE_ONLY] = 'false'; // explicitly opt in to exercise the legacy adapter's sandbox guard
         ENV[ENV_VB_PAY] = 'cashfree';
         ENV[ENV_VB_COL] = 'cashfree';
         try {
@@ -235,6 +238,39 @@ describe('registry safety', () => {
             else ENV[ENV_VB_PAY] = previousPay;
             if (previousCol === undefined) delete ENV[ENV_VB_COL];
             else ENV[ENV_VB_COL] = previousCol;
+            if (previousNativeOnly === undefined) delete ENV[ENV_NATIVE_ONLY];
+            else ENV[ENV_NATIVE_ONLY] = previousNativeOnly;
+        }
+    });
+
+    test('production native-only default disables legacy providers even when stale provider flags remain', () => {
+        const previousNodeEnv = ENV.NODE_ENV;
+        const previousPay = ENV[ENV_VB_PAY];
+        const previousCol = ENV[ENV_VB_COL];
+        const previousNativeOnly = ENV[ENV_NATIVE_ONLY];
+        ENV.NODE_ENV = 'production';
+        delete ENV[ENV_NATIVE_ONLY]; // absent means native-only in production
+        ENV[ENV_VB_PAY] = 'cashfree';
+        ENV[ENV_VB_COL] = 'cashfree';
+        try {
+            jest.resetModules();
+            const payouts = require('../payouts');
+            const collections = require('../collections');
+            expect(payouts.activePayoutProvider()).toBeNull();
+            expect(payouts.payoutAvailability().reason).toBe('native-rails-only');
+            expect(payouts.payoutAvailability().available).toBe(false);
+            expect(collections.activeCollectionsProvider()).toBeNull();
+            expect(collections.collectionsAvailability().reason).toBe('native-rails-only');
+            expect(collections.collectionsAvailability().available).toBe(false);
+        } finally {
+            if (previousNodeEnv === undefined) delete ENV.NODE_ENV;
+            else ENV.NODE_ENV = previousNodeEnv;
+            if (previousPay === undefined) delete ENV[ENV_VB_PAY];
+            else ENV[ENV_VB_PAY] = previousPay;
+            if (previousCol === undefined) delete ENV[ENV_VB_COL];
+            else ENV[ENV_VB_COL] = previousCol;
+            if (previousNativeOnly === undefined) delete ENV[ENV_NATIVE_ONLY];
+            else ENV[ENV_NATIVE_ONLY] = previousNativeOnly;
         }
     });
 });
