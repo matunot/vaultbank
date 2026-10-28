@@ -47,6 +47,26 @@ jest.mock('../config/database', () => ({
     createNotification: jest.fn(),
     createAuditLog: jest.fn(),
 }));
+// This suite tests route/transaction behavior with a scripted DB. The
+// first-party ledger schema and journal itself are covered by real PostgreSQL
+// integration tests, so isolate this unit suite from runtime migration DDL.
+jest.mock('../services/ledgerJournalService', () => ({
+    ensureVaultLedgerSchema: jest.fn().mockResolvedValue(undefined),
+    ensureCustomerLedgerAccount: jest.fn().mockImplementation(async (_client, accountId) => ({
+        id: 'test-ledger-' + String(accountId),
+        accountId,
+        currency: 'INR',
+    })),
+    changeVerifiedAvailableBalance: jest.fn().mockResolvedValue({ verified_available_balance: '1000.00' }),
+    postBalancedJournal: jest.fn().mockResolvedValue({ journalId: 'test-journal', replay: false }),
+    toMinorUnits: (value) => {
+        const input = String(value == null ? '' : value).trim();
+        if (!/^\\d+(?:\\.\\d{1,2})?$/.test(input)) throw new Error('invalid amount');
+        const parts = input.split('.');
+        return BigInt(parts[0]) * 100n + BigInt((parts[1] || '').padEnd(2, '0') || '0');
+    },
+}));
+
 jest.mock('../middleware/auth', () => ({
     authenticateToken: (req, res, next) => { if (!req.user) req.user = { id: 'u-1', role: 'user' }; next(); },
     requireAdmin: (req, res, next) => {
