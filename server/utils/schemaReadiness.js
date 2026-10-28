@@ -19,6 +19,7 @@ const REQUIRED_MIGRATIONS = [
     '010_payout_idempotency.sql',
     '011_vbr_payment_intents.sql',
     '012_global_transfer_idempotency.sql',
+    '013_vaultbank_double_entry_ledger.sql',
 ];
 
 const REQUIRED_TABLES = [
@@ -31,6 +32,10 @@ const REQUIRED_TABLES = [
     'payout_requests',
     'virtual_accounts',
     'collection_events',
+    'vb_ledger_bootstrap',
+    'vb_ledger_accounts',
+    'vb_ledger_journals',
+    'vb_ledger_entries',
 ];
 
 const REQUIRED_INDEXES = [
@@ -40,6 +45,12 @@ const REQUIRED_INDEXES = [
     'payout_idempotency_user_key',
     'virtual_accounts_provider_va_uidx',
     'collection_events_provider_event_id_uidx',
+    'vb_ledger_customer_account_uq',
+    'vb_ledger_system_code_currency_uq',
+    'vb_ledger_journals_source_idx',
+    'vb_ledger_journals_currency_created_idx',
+    'vb_ledger_entries_journal_idx',
+    'vb_ledger_entries_account_idx',
 ];
 
 // Presence alone is not enough for the idempotency arbiter indexes: a
@@ -51,6 +62,8 @@ const UNIQUE_INDEXES = [
     'payout_idempotency_user_key',
     'virtual_accounts_provider_va_uidx',
     'collection_events_provider_event_id_uidx',
+    'vb_ledger_customer_account_uq',
+    'vb_ledger_system_code_currency_uq',
 ];
 
 const REQUIRED_COLUMNS = {
@@ -61,6 +74,10 @@ const REQUIRED_COLUMNS = {
     payout_requests: ['id', 'user_id', 'account_id', 'transfer_id', 'idempotency_key', 'bene_id', 'amount', 'currency', 'status'],
     virtual_accounts: ['provider', 'provider_virtual_account_id', 'user_id', 'account_id', 'status'],
     collection_events: ['provider', 'event_id', 'status', 'amount', 'currency', 'virtual_account_id', 'utr'],
+    vb_ledger_bootstrap: ['singleton_id', 'cutover_at', 'opening_balance_reconciled'],
+    vb_ledger_accounts: ['id', 'account_id', 'system_code', 'currency', 'account_type', 'verified_available_balance'],
+    vb_ledger_journals: ['id', 'event_type', 'source_type', 'source_id', 'currency', 'state'],
+    vb_ledger_entries: ['id', 'journal_id', 'ledger_account_id', 'side', 'amount'],
 };
 
 async function checkSchema(db) {
