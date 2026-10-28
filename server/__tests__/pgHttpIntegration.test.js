@@ -125,6 +125,19 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         return rows;
     }
 
+    async function getOwnedJournalRows(transferId) {
+        const { rows } = await pool.query(
+            `SELECT l.entry_type, l.amount, l.balance_after, l.account_id, l.user_id,
+                    t.currency, t.reference_id
+             FROM ledger l
+             JOIN transactions t ON t.id = l.transaction_id
+             WHERE t.reference_id = $1
+             ORDER BY l.entry_type`,
+            [transferId]
+        );
+        return rows;
+    }
+
     // ── Test 1: Happy path — real HTTP transfer through the full Express pipeline ──
     test('real HTTP transfer: debits sender, credits recipient, creates ledger rows + transfer record', async () => {
         if (!pool) return;
@@ -180,6 +193,24 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         expect(parseFloat(outRow.balance_after)).toBe(750);
         expect(parseFloat(inRow.balance_after)).toBe(1250);
 
+        // VaultBank-owned double-entry journal: two postings, same currency,
+        // same transfer reference, equal debit and credit totals.
+        const journal = await getOwnedJournalRows(transferId);
+        expect(journal).toHaveLength(2);
+        const debitEntry = journal.find((entry) => entry.entry_type === 'debit');
+        const creditEntry = journal.find((entry) => entry.entry_type === 'credit');
+        expect(debitEntry).toBeDefined();
+        expect(creditEntry).toBeDefined();
+        expect(debitEntry.account_id).toBe(alice.id);
+        expect(creditEntry.account_id).toBe(bob.id);
+        expect(debitEntry.currency).toBe('USD');
+        expect(creditEntry.currency).toBe('USD');
+        expect(debitEntry.reference_id).toBe(transferId);
+        expect(creditEntry.reference_id).toBe(transferId);
+        expect(parseFloat(debitEntry.amount)).toBe(250);
+        expect(parseFloat(creditEntry.amount)).toBe(250);
+        expect(parseFloat(debitEntry.amount)).toBe(parseFloat(creditEntry.amount));
+
         // Transfer record
         const { rows: trRows } = await pool.query('SELECT * FROM transfers WHERE id = $1', [transferId]);
         expect(trRows[0].status).toBe('completed');
@@ -226,6 +257,11 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         const transferId = successes[0].body.transfer.id;
         const ledger = await getLedgerRows(transferId);
         expect(ledger).toHaveLength(2);
+        const journal = await getOwnedJournalRows(transferId);
+        expect(journal).toHaveLength(2);
+        expect(journal.filter((entry) => entry.entry_type === 'debit')).toHaveLength(1);
+        expect(journal.filter((entry) => entry.entry_type === 'credit')).toHaveLength(1);
+        expect(journal.reduce((sum, entry) => sum + Number(entry.amount), 0)).toBe(200);
 
         // Cleanup
         await pool.query('DELETE FROM transactions WHERE reference_id = $1', [transferId]);
