@@ -205,8 +205,12 @@ async function executeAtomicTransfer({ userId, senderAccount, recipientAccount, 
 
         // Every account is mapped before its balance changes; first-use accounts
         // receive a one-time opening snapshot in this same transaction.
-        await ensureCustomerLedgerAccount(client, senderAccount.id);
-        await ensureCustomerLedgerAccount(client, recipientAccount.id);
+        // Lock both account rows in a deterministic order to prevent
+        // deadlocks when two users transfer to each other concurrently.
+        const accountIds = [...new Set([senderAccount.id, recipientAccount.id].map(String))].sort();
+        for (const accountId of accountIds) {
+            await ensureCustomerLedgerAccount(client, accountId);
+        }
 
         // ── Idempotency claim ──
         if (idempotencyKey) {
