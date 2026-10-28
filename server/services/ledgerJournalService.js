@@ -211,6 +211,52 @@ async function ensureCustomerLedgerAccount(client, accountId) {
     return { id: customerLedgerAccount.id, currency, accountId: account.id };
 }
 
+/**
+ * Track funds whose external receipt has been independently verified.
+ * This is a spendability/provenance guard separate from the accounting journal:
+ * an opening snapshot never increases this value. Call inside the same
+ * PostgreSQL transaction as the corresponding balance change and journal.
+ */
+async function changeVerifiedAvailableBalance(client, accountId, amount, direction) {
+    const minor = toMinorUnits(String(amount));
+    const canonicalAmount = String(minor / 100n) + '.' + String(minor % 100n).padStart(2, '0');
+    if (!['credit', 'debit'].includes(direction)) {
+        const error = new Error('Verified funds change must be credit or debit.');
+        error.code = 'VB_LEDGER_VERIFIED_FUNDS_DIRECTION_INVALID';
+        throw error;
+    }
+
+    const sql = direction === 'credit'
+        ? `UPDATE vb_ledger_accounts
+              SET verified_available_balance = verified_available_balance + $2
+            WHERE account_id = $1
+            RETURNING id, currency, verified_available_balance::text AS verified_available_balance`
+        : `UPDATE vb_ledger_accounts
+              SET verified_available_balance = verified_available_balance - $2
+            WHERE account_id = $1 AND verified_available_balance >= $2
+            RETURNING id, currency, verified_available_balance::text AS verified_available_balance`;
+    const { rows } = await client.query(sql, [accountId, canonicalAmount]);
+    if (rows.length) return rows[0];
+
+    const { rows: mapped } = await client.query(
+        'SELECT id, currency FROM vb_ledger_accounts WHERE account_id = $1 LIMIT 1',
+        [accountId]
+    );
+    if (!mapped.length) {
+        const error = new Error('Customer ledger mapping is not initialized for verified-funds tracking.');
+        error.code = 'VB_LEDGER_ACCOUNT_NOT_INITIALIZED';
+        throw error;
+    }
+    if (direction === 'debit') {
+        const error = new Error('Externally verified available funds are insufficient.');
+        error.code = 'VB_LEDGER_VERIFIED_FUNDS_INSUFFICIENT';
+        throw error;
+    }
+    const error = new Error('Verified-funds credit did not update the customer ledger.');
+    error.code = 'VB_LEDGER_VERIFIED_FUNDS_UPDATE_FAILED';
+    throw error;
+}
+
 async function resolveEntryAccount(client, entry, currency) {
     if (entry.accountId) {
         const { rows } = await client.query(
@@ -363,4 +409,4 @@ async function postBalancedJournal(client, input) {
     return { journalId, replay: false };
 }
 
-module.exports = { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, postBalancedJournal, toMinorUnits };
+module.exports = { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, changeVerifiedAvailableBalance, postBalancedJournal, toMinorUnits };
