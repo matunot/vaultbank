@@ -155,6 +155,28 @@ describe('card program request tracking', () => {
     expect(res.body.code).toBe('CARD_REVIEW_INVALID');
     expect(database.db.query).not.toHaveBeenCalled();
   });
+
+  test('blocks issuer review until both email and KYC verification are persisted', async () => {
+    database.db.query.mockImplementation(async (sql) => {
+      if (String(sql).includes('SELECT u.email_verified')) {
+        return { rows: [{ email_verified: true, kyc_status: 'pending' }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    const res = await callRoute('/api/admin/card-program/requests/:id/status', 'patch', {
+      user: { id: 'admin-1', role: 'admin' },
+      params: { id: '41' },
+      body: { status: 'under_review', note: 'Prepare request for issuer review' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.code).toBe('CUSTOMER_VERIFICATION_REQUIRED');
+    expect(database.db.query).not.toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE card_program_requests'),
+      expect.anything(),
+    );
+  });
 });
 
 describe('loan application tracking', () => {
@@ -214,5 +236,27 @@ describe('loan application tracking', () => {
     expect(res.statusCode).toBe(400);
     expect(res.body.code).toBe('LOAN_REVIEW_INVALID');
     expect(database.db.query).not.toHaveBeenCalled();
+  });
+
+  test('blocks loan review until email and KYC verification are persisted', async () => {
+    database.db.query.mockImplementation(async (sql) => {
+      if (String(sql).includes('SELECT u.email_verified')) {
+        return { rows: [{ email_verified: true, kyc_status: 'pending' }], rowCount: 1 };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    const res = await callRoute('/api/admin/loan-applications/:id/status', 'patch', {
+      user: { id: 'admin-1', role: 'admin' },
+      params: { id: '73' },
+      body: { status: 'under_review', note: 'Review financial application' },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.body.code).toBe('CUSTOMER_VERIFICATION_REQUIRED');
+    expect(database.db.query).not.toHaveBeenCalledWith(
+      expect.stringContaining('UPDATE loan_applications'),
+      expect.anything(),
+    );
   });
 });
