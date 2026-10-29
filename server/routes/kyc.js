@@ -81,15 +81,35 @@ router.put(
     async (req, res) => {
         const { id } = req.params;
         try {
+            // Approve the document and persist the user's KYC state in the same
+            // SQL statement. Native fiat customer rails read users.kyc_status;
+            // updating only kyc_documents left approved users blocked forever.
             const result = await query(
-                `UPDATE kyc_documents SET status = 'approved', reviewed_at = NOW(), reviewer_id = $1 WHERE id = $2 RETURNING id, status, reviewed_at`,
+                `WITH approved_doc AS (
+                    UPDATE kyc_documents
+                       SET status = 'approved', reviewed_at = NOW(), reviewer_id = $1
+                     WHERE id = $2
+                 RETURNING id, user_id, status, reviewed_at
+                ), updated_user AS (
+                    UPDATE users
+                       SET kyc_status = 'verified'
+                     WHERE id = (SELECT user_id FROM approved_doc)
+                 RETURNING id
+                )
+                SELECT d.id, d.status, d.reviewed_at,
+                       (u.id IS NOT NULL) AS user_verified
+                  FROM approved_doc d
+                  LEFT JOIN updated_user u ON TRUE`,
                 [req.user.id, id]
             );
-            if (result.rowCount === 0) {
+            if (result.rows.length === 0) {
                 return res.status(404).json({ success: false, message: 'KYC document not found.' });
             }
-            // Also mark user as verified in demoStore if applicable (no-op for real DB)
-            return res.status(200).json({ success: true, data: result.rows[0] });
+            if (result.rows[0].user_verified !== true) {
+                throw new Error('KYC document was updated but its user verification state could not be persisted.');
+            }
+            const { user_verified, ...document } = result.rows[0];
+            return res.status(200).json({ success: true, data: document, kycStatus: 'verified' });
         } catch (error) {
             console.error('KYC approve error:', error);
             return res.status(500).json({ success: false, message: 'Failed to approve KYC document.' });
