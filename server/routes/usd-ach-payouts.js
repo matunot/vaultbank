@@ -320,8 +320,20 @@ function batchConfirmedNotSent(batch) {
   return !!batch && batch.status === 'rejected';
 }
 
+function decryptBatchFile(row) {
+  const fileContent = decryptSecret(row.encrypted_file_content);
+  const expectedHash = String(row.file_sha256 || '').toLowerCase();
+  const actualHash = crypto.createHash('sha256').update(fileContent, 'ascii').digest('hex');
+  if (!/^[0-9a-f]{64}$/.test(expectedHash) || actualHash !== expectedHash || /[^\\x00-\\x7F]/.test(fileContent)) {
+    const error = new Error('Stored ACH file integrity check failed.');
+    error.code = 'USD_ACH_FILE_HASH_MISMATCH';
+    throw error;
+  }
+  return fileContent;
+}
+
 async function returnBatchPayload(row, replay = false) {
-  const fileContent = row.status === 'file_generated' ? decryptSecret(row.encrypted_file_content) : null;
+  const fileContent = row.status === 'file_generated' ? decryptBatchFile(row) : null;
   return {
     success: true,
     replay,
@@ -636,7 +648,7 @@ router.get('/api/usd-ach/admin/batches/:id/file', authenticateToken, requireAdmi
     if (row.status !== 'file_generated') {
       return res.status(409).json({ success: false, code: 'USD_ACH_BATCH_NOT_EXPORTABLE', message: 'This ACH batch is rejected or already reconciled and can no longer be downloaded.' });
     }
-    return res.status(200).json({ success: true, batch: serializeBatch(row), fileContent: decryptSecret(row.encrypted_file_content) });
+    return res.status(200).json({ success: true, batch: serializeBatch(row), fileContent: decryptBatchFile(row) });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Could not reload the ACH file.' });
   }
