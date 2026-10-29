@@ -39,6 +39,7 @@ const collectionsRegistry = require('../collections');
 const payoutsRegistry = require('../payouts');
 const directUpiRoutes = require('./direct-upi');
 const directBankPayoutRoutes = require('./direct-bank-payouts');
+const usdAchPayoutRoutes = require('./usd-ach-payouts');
 
 const router = express.Router();
 const { denyLegacyProviderRail } = require('../middleware/nativeOnlyPolicy');
@@ -72,11 +73,16 @@ router.get('/api/payments/readiness', (req, res) => {
         const payouts = payoutsRegistry.payoutAvailability();
         const directUpi = directUpiRoutes.readiness();
         const directBankPayout = directBankPayoutRoutes.readiness();
+        const usdAch = usdAchPayoutRoutes.readiness();
         return res.status(200).json({
             success: true,
             nativeOnly,
             rails: {
                 usd: {
+                    achFileExport: usdAch.available,
+                    achCustomerAccessEnabled: usdAch.customerAccessEnabled,
+                    achFileExportReason: usdAch.reason,
+                    achAutomaticTransfer: false,
                     cardStripe: stripeConfigured,
                     paypal: paypalKeysPresent,
                     paypalMode,
