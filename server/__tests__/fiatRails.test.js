@@ -338,3 +338,76 @@ describe('getAvailableMethods hides provider-less demo rails in production', () 
         }
     });
 });
+
+
+describe('production native-only policy blocks all legacy provider money routes', () => {
+    const priorNodeEnv = process.env.NODE_ENV;
+    afterEach(() => {
+        if (priorNodeEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = priorNodeEnv;
+    });
+
+    test('generic provider transfer is blocked before provider or ledger calls', async () => {
+        process.env.NODE_ENV = 'production';
+        const res = await callRoute('/api/payments/transfer', {
+            body: { amount: 10, currency: 'USD', method: 'paypal', to: 'recipient' },
+        });
+        expect(res.code).toBe(503);
+        expect(res.body.code).toBe('LEGACY_PROVIDER_RAIL_DISABLED');
+        expect(paypalAdapter.createPaymentIntent).not.toHaveBeenCalled();
+        expect(ledger.upsertPayment).not.toHaveBeenCalled();
+    });
+
+    test('PayPal initiate and capture endpoints are disabled even if credentials are supplied', async () => {
+        process.env.NODE_ENV = 'production';
+        process.env[PP_CLIENT] = 'fixture-client';
+        process.env[PP_SECRET] = 'fixture-secret';
+        const initiate = await callRoute('/api/payments/paypal/initiate', { body: { amount: 10 } });
+        const success = await callRoute('/api/payments/paypal/success', { body: { paymentId: 'ORDER-1' } });
+        expect(initiate.code).toBe(503);
+        expect(success.code).toBe(503);
+        expect(initiate.body.code).toBe('LEGACY_PROVIDER_RAIL_DISABLED');
+        expect(success.body.code).toBe('LEGACY_PROVIDER_RAIL_DISABLED');
+        expect(paypalAdapter.createPaymentIntent).not.toHaveBeenCalled();
+        expect(paypalAdapter.capturePayment).not.toHaveBeenCalled();
+        expect(CDB.db.query).not.toHaveBeenCalled();
+        expect(CDB.createTransaction).not.toHaveBeenCalled();
+    });
+
+    test('provider webhooks are rejected before signature checks or database writes', async () => {
+        process.env.NODE_ENV = 'production';
+        const res = await callRoute('/api/payments/webhook/:provider', {
+            params: { provider: 'paypal' },
+            body: captureEvent('u-1:acc-1'),
+            headers: { 'paypal-transmission-id': 't1' },
+        });
+        expect(res.code).toBe(503);
+        expect(res.body.code).toBe('LEGACY_PROVIDER_RAIL_DISABLED');
+        expect(paypalAdapter.verifyWebhookSignature).not.toHaveBeenCalled();
+        expect(ledger.recordWebhookEvent).not.toHaveBeenCalled();
+        expect(CDB.db.query).not.toHaveBeenCalled();
+    });
+
+    test('Stripe initiate and provider status routes are disabled in production', async () => {
+        process.env.NODE_ENV = 'production';
+        const initiate = await callRoute('/api/payments/stripe/initiate', { body: { amount: 10 } });
+        const status = await callRoute('/api/payments/status/:id', {
+            params: { id: 'provider-order-1' },
+            query: { method: 'stripe' },
+        }, false);
+        expect(initiate.code).toBe(503);
+        expect(status.code).toBe(503);
+        expect(initiate.body.code).toBe('LEGACY_PROVIDER_RAIL_DISABLED');
+        expect(status.body.code).toBe('LEGACY_PROVIDER_RAIL_DISABLED');
+    });
+
+    test('provider engine exposes no external methods and rejects creation/webhooks in production', async () => {
+        process.env.NODE_ENV = 'production';
+        expect(engine.getAvailableMethods({ currency: 'USD' })).toEqual([]);
+        expect(() => engine.getProvider('paypal')).toThrow(expect.objectContaining({ code: 'LEGACY_PROVIDER_RAIL_DISABLED', statusCode: 503 }));
+        await expect(engine.verifyWebhook('paypal', { body: {} })).rejects.toMatchObject({
+            code: 'LEGACY_PROVIDER_RAIL_DISABLED',
+            statusCode: 503,
+        });
+    });
+});
