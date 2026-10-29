@@ -6,10 +6,11 @@
  *        (default: the live single-origin deployment)
  *
  * Checks, with exact printed evidence per check:
- *   1. GET  /health     -> 200, status ok, authProbe ok (auth surface sane)
- *   2. GET  /           -> the SPA shell is served (HTML)
- *   3. POST /api/providers/nium/webhook with no key -> 401 fail-closed.
- *      A 404 here means an OLD build without the provider route.
+ *   1. GET  /health     -> 200, status ok, authProbe ok (liveness)
+ *   2. GET  /ready      -> 200, database connected (PostgreSQL readiness)
+ *   3. GET  /           -> the SPA shell is served (HTML)
+ *   4. GET  /api/payments/readiness -> truthful, non-secret rail state.
+ *   5. POST /api/providers/nium/webhook without credentials -> 401 fail-closed.
  *
  * Exit: 0 all pass · 1 any failure.
  */
@@ -34,6 +35,14 @@ async function main() {
         mark('health', healthOk, 'HTTP ' + h.status + ' authProbe=' + body.authProbe + ' uptime=' + Math.round((body.uptime || 0) / 1000) + 's');
         if (!healthOk) ok = false;
     } catch (e) { mark('health', false, e.message); ok = false; }
+
+    try {
+        const r = await fetchWithTimeout(base + '/ready');
+        const body = await r.json();
+        const databaseOk = r.status === 200 && body.status === 'ready' && body.database === 'connected';
+        mark('PostgreSQL readiness', databaseOk, 'HTTP ' + r.status + ' database=' + String(body.database || 'unknown'));
+        if (!databaseOk) ok = false;
+    } catch (e) { mark('PostgreSQL readiness', false, e.message); ok = false; }
 
     try {
         const s = await fetchWithTimeout(base + '/');
