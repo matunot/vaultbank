@@ -64,7 +64,10 @@ router.get('/api/payments/readiness', (req, res) => {
         const paypalKeysPresent = !nativeOnly && paypalDeposits.missingPayPalKeys().length === 0;
         const paypalInfo = paypalDeposits.paypalConfigInfo();
         const paypalMode = nativeOnly ? 'disabled-native-only' : (paypalKeysPresent ? (paypalInfo.mode === 'live' ? 'live-unverified' : 'sandbox') : 'not-configured');
-        const bankConfigured = !!(bankDeposits.receivingConfig && bankDeposits.receivingConfig().enabled);
+        // Receiving details are currency-scoped. Never let an INR-only
+        // receiving account make USD bank instructions appear available (or vice versa).
+        const usdBankConfigured = !!(bankDeposits.receivingConfig && bankDeposits.receivingConfig('USD').enabled);
+        const inrBankConfigured = !!(bankDeposits.receivingConfig && bankDeposits.receivingConfig('INR').enabled);
         const collections = collectionsRegistry.collectionsAvailability();
         const payouts = payoutsRegistry.payoutAvailability();
         const directUpi = directUpiRoutes.readiness();
@@ -77,7 +80,7 @@ router.get('/api/payments/readiness', (req, res) => {
                     cardStripe: stripeConfigured,
                     paypal: paypalKeysPresent,
                     paypalMode,
-                    bankTransferInstructions: bankConfigured,
+                    bankTransferInstructions: usdBankConfigured,
                     internalTransfers: true,
                     externalWithdrawals: false, // honest: no USD payout rail exists today
                 },
@@ -92,6 +95,7 @@ router.get('/api/payments/readiness', (req, res) => {
                     directBankPayoutsAutoTransfer: directBankPayout.autoTransfer,
                     directBankPayoutsEncryptionKeyReady: directBankPayout.encryptionKeyReady,
                     directBankPayoutsReason: directBankPayout.reason,
+                    bankTransferInstructions: inrBankConfigured,
                     collections: collections.available,
                     collectionsProvider: collections.available ? collections.provider : null,
                     collectionsConfigured: collections.configured,
