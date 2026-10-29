@@ -40,7 +40,7 @@ jobs:
 
       # Render has autoDeploy=yes on main. Always run a blocking public verification;
       # don't silently skip the check just because an optional deploy-hook secret is absent.
-      - name: Verify Render deployment (health + SPA + fail-closed webhook)
+      - name: Verify Render deployment (health + PostgreSQL readiness + SPA + fail-closed rails)
         if: success()
         timeout-minutes: 7
         shell: bash
@@ -55,7 +55,7 @@ jobs:
             status=$(curl -sS -o /tmp/render-health.json -w "%{http_code}" --max-time 10 "$RENDER_BASE_URL/health" || true)
             if [ "$status" = "200" ]; then
               if node scripts/verify-deploy.js "$RENDER_BASE_URL"; then
-                echo "✅ Render health, SPA shell, and webhook fail-closed checks passed."
+                echo "✅ Render health, PostgreSQL readiness, SPA shell, and fail-closed rail checks passed."
                 exit 0
               fi
               echo "Health responded 200 but full deployment verification is not ready yet."
