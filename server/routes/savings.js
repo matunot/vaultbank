@@ -18,6 +18,7 @@ const {
   createAuditLog,
 } = require('../config/database');
 const { executeAtomicTransfer, notifyTransferCompletion } = require('../services/transferService');
+const { ensureInrWalletIndex } = require('../services/inrWalletIndexService');
 
 const CURRENCIES = new Set(['USD', 'INR']);
 const IDEMPOTENCY_RE = /^[A-Za-z0-9._:-]{8,100}$/;
@@ -89,6 +90,11 @@ router.post('/api/savings/accounts', authenticateToken, async (req, res) => {
   }
 
   try {
+    if (currency === 'INR') {
+      // The INR wallet's uniqueness guard must be scoped to non-savings
+      // accounts before a savings vault in the same currency is created.
+      await ensureInrWalletIndex();
+    }
     const account = await createAccount(req.user.id, 'savings', currency);
     try {
       await createAuditLog({

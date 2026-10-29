@@ -36,7 +36,7 @@ const BudgetSection = lazy(() => import('./components/BudgetSection'));
 const TransferSection = lazy(() => import('./components/TransferSection'));
 const HistorySection = lazy(() => import('./components/HistorySection'));
 const RewardsSection = lazy(() => import('./components/RewardsSection'));
-const SecuritySection = lazy(() => import('./components/SecuritySection'));
+const VerificationSection = lazy(() => import('./components/VerificationSection'));
 
 // Loading fallback
 const SectionLoader = () => (
@@ -279,7 +279,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                     {active === 'send' && <TransferSection />}
                     {active === 'history' && <HistorySection />}
                     {active === 'rewards' && (import.meta.env.DEV ? <RewardsSection /> : <PreviewOnlyNotice title="Rewards program is not live yet" message="The development preview contains sample points and benefits. Production rewards, interest rates, and fee waivers are not being promised by this screen." />)}
-                    {active === 'security' && <SecuritySection />}
+                    {active === 'security' && <VerificationSection />}
                   </Suspense>
                 </ErrorBoundary>
               </motion.div>

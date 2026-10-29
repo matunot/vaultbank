@@ -19,6 +19,7 @@ jest.mock('../middleware/auth', () => ({
 
 jest.mock('../middleware/rateLimiter', () => ({
   authStrictLimiter: (_req, _res, next) => next(),
+  applicationLimiter: (_req, _res, next) => next(),
 }));
 
 const database = require('../config/database');

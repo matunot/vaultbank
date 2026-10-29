@@ -67,6 +67,23 @@ const transferLimiter = rateLimit({
 });
 
 /**
+ * Product application submission limiter. Card and loan applications are not
+ * credential endpoints, so they must not share the strict auth bucket with
+ * login and email verification.
+ */
+const applicationLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+        success: false,
+        message: 'Too many application requests. Please wait a minute before trying again.',
+        retryAfter: 60
+    }
+});
+
+/**
  * Signup rate limiter
  */
 const signupLimiter = rateLimit({
@@ -100,6 +117,7 @@ module.exports = {
     generalLimiter,
     authLimiter,
     authStrictLimiter,
+    applicationLimiter,
     transferLimiter,
     signupLimiter,
     adminLimiter

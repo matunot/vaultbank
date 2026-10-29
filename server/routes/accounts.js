@@ -25,6 +25,7 @@ const {
     isDemo,
     demoStore,
 } = require('../config/database');
+const { ensureInrWalletIndex } = require('../services/inrWalletIndexService');
 
 // ============================================================
 // GET /api/account — Get user's primary account
@@ -421,7 +422,7 @@ router.post('/api/account/open-inr', authenticateToken, async (req, res) => {
     try {
         if (isDemo) {
             // Demo platform: in-memory store (db.query throws in demo).
-            const dupe = demoStore.accounts.find((a) => a.user_id === req.user.id && a.currency === 'INR');
+            const dupe = demoStore.accounts.find((a) => a.user_id === req.user.id && a.currency === 'INR' && a.account_type !== 'savings');
             if (dupe) {
                 return res.status(409).json({ success: true, already: true, account: dupe, message: 'You already have an INR account.' });
             }
@@ -436,17 +437,20 @@ router.post('/api/account/open-inr', authenticateToken, async (req, res) => {
         if (!account) {
             return res.status(404).json({ success: false, message: 'No account found.' });
         }
-        // Race guard: a partial unique index guarantees one INR account per
-        // user even under concurrent open requests.
+        // Race guard: one INR wallet per user. Savings vaults are separate
+        // accounts and are deliberately excluded from this uniqueness rule.
         try {
-            await db.query(
-                "CREATE UNIQUE INDEX IF NOT EXISTS accounts_one_inr_per_user ON accounts (user_id) WHERE currency = 'INR'"
-            );
+            await ensureInrWalletIndex();
         } catch (idxErr) {
-            console.warn('INR unique index ensure skipped:', idxErr.message);
+            console.error('INR wallet index ensure failed:', idxErr && idxErr.code ? idxErr.code : idxErr.message);
+            return res.status(503).json({
+                success: false,
+                code: 'INR_WALLET_SCHEMA_NOT_READY',
+                message: 'The INR wallet could not be opened safely right now. No account was created.',
+            });
         }
         const { rows: existing } = await db.query(
-            "SELECT id, account_number, currency, balance FROM accounts WHERE user_id = $1 AND currency = 'INR' LIMIT 1",
+            "SELECT id, account_number, currency, balance FROM accounts WHERE user_id = $1 AND currency = 'INR' AND account_type <> 'savings' LIMIT 1",
             [req.user.id]
         );
         if (existing.length > 0) {
@@ -459,7 +463,7 @@ router.post('/api/account/open-inr', authenticateToken, async (req, res) => {
             // Unique-index race lost to a concurrent request — treat as already open.
             if (String(e.message || '').includes('accounts_one_inr_per_user') || String(e.message || '').includes('duplicate key')) {
                 const { rows: raced } = await db.query(
-                    "SELECT id, account_number, currency, balance FROM accounts WHERE user_id = $1 AND currency = 'INR' LIMIT 1",
+                    "SELECT id, account_number, currency, balance FROM accounts WHERE user_id = $1 AND currency = 'INR' AND account_type <> 'savings' LIMIT 1",
                     [req.user.id]
                 );
                 if (raced.length > 0) {

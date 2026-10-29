@@ -32,6 +32,7 @@ const anomaliesRoutes = require('./routes/anomalies');
 const directUpiRoutes = require('./routes/direct-upi');
 const directBankPayoutRoutes = require('./routes/direct-bank-payouts');
 const productApplicationRoutes = require('./routes/product-applications');
+const kycRoutes = require('./routes/kyc');
 
 // Import middleware
 const { generalLimiter } = require('./middleware/rateLimiter');
@@ -214,6 +215,7 @@ app.use('/', require('./routes/external-payouts'));
 app.use('/', directUpiRoutes);
 app.use('/', directBankPayoutRoutes);
 app.use('/', productApplicationRoutes);
+app.use('/', kycRoutes);
 app.use('/', require('./vbr'));
 app.use('/', require('./routes/usdc-deposits'));
 

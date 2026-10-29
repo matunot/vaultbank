@@ -63,8 +63,9 @@ function buildUrl(endpoint: string): string {
 
 async function request<T = any>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('vaultbank_token');
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...((options.headers as Record<string, string>) || {}),
   };
   if (token) {
@@ -190,6 +191,54 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ token }),
     });
+  },
+
+  async getKycStatus(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/kyc');
+  },
+
+  async uploadKycDocument(file: File, documentType: string): Promise<ApiResponse> {
+    const body = new FormData();
+    body.append('documentType', documentType);
+    body.append('document', file, file.name);
+    return request<ApiResponse>('api/kyc', {
+      method: 'POST',
+      body,
+    });
+  },
+
+  async getAdminKycQueue(status: 'pending' | 'approved' | 'rejected' | 'all' = 'pending'): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/admin/kyc?status=${encodeURIComponent(status)}`);
+  },
+
+  async approveKycDocument(id: string, note = ''): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/kyc/${encodeURIComponent(id)}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify({ note }),
+    });
+  },
+
+  async rejectKycDocument(id: string, note: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/kyc/${encodeURIComponent(id)}/reject`, {
+      method: 'PUT',
+      body: JSON.stringify({ note }),
+    });
+  },
+
+  async downloadKycDocument(id: string): Promise<Blob> {
+    const token = localStorage.getItem('vaultbank_token');
+    const response = await fetch(buildUrl(`api/kyc/${encodeURIComponent(id)}/file`), {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!response.ok) {
+      let message = 'Could not load the identity document.';
+      try {
+        const data = await response.json();
+        if (data?.message) message = data.message;
+      } catch { /* keep the generic message */ }
+      throw new ApiError(message, response.status);
+    }
+    return response.blob();
   },
 
   async getAccounts(): Promise<ApiResponse> {

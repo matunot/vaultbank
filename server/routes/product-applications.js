@@ -3,7 +3,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
-const { authStrictLimiter } = require('../middleware/rateLimiter');
+const { applicationLimiter } = require('../middleware/rateLimiter');
 const { db, isDemo, createAuditLog } = require('../config/database');
 
 const KEY_RE = /^[A-Za-z0-9._:-]{8,100}$/;
@@ -57,7 +57,18 @@ function loanDto(row, admin = false) {
 
 async function audit(req, action, type, id, details) {
   try {
-    await createAuditLog({ userId: req.user.id, action, resourceType: type, resourceId: String(id), details, ipAddress: req.ip, userAgent: req.headers['user-agent'] });
+    // card_program_requests and loan_applications use BIGSERIAL ids, while
+    // audit_logs.resource_id is UUID. Store the numeric application id in
+    // details instead of writing an invalid UUID (which failed silently).
+    await createAuditLog({
+      userId: req.user.id,
+      action,
+      resourceType: type,
+      resourceId: null,
+      details: { ...details, requestId: String(id) },
+      ipAddress: req.ip,
+      userAgent: req.headers['user-agent'],
+    });
   } catch (error) {
     console.warn('Product application audit write failed:', error && error.code ? error.code : 'audit-error');
   }
@@ -73,7 +84,7 @@ function parseAmount(value, currency) {
   return amount.toFixed(2);
 }
 
-router.get('/api/card-program/requests', authenticateToken, authStrictLimiter, async (req, res) => {
+router.get('/api/card-program/requests', authenticateToken, applicationLimiter, async (req, res) => {
   try {
     await ensureSchema();
     const result = await db.query('SELECT * FROM card_program_requests WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50', [req.user.id]);
@@ -84,7 +95,7 @@ router.get('/api/card-program/requests', authenticateToken, authStrictLimiter, a
   }
 });
 
-router.post('/api/card-program/requests', authenticateToken, authStrictLimiter, async (req, res) => {
+router.post('/api/card-program/requests', authenticateToken, applicationLimiter, async (req, res) => {
   const key = readKey(req, res);
   if (!key) return;
   const type = String((req.body && req.body.cardType) || '').trim().toLowerCase();
@@ -120,7 +131,7 @@ router.post('/api/card-program/requests', authenticateToken, authStrictLimiter, 
   }
 });
 
-router.get('/api/loan-applications', authenticateToken, authStrictLimiter, async (req, res) => {
+router.get('/api/loan-applications', authenticateToken, applicationLimiter, async (req, res) => {
   try {
     await ensureSchema();
     const result = await db.query('SELECT * FROM loan_applications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 50', [req.user.id]);
@@ -131,7 +142,7 @@ router.get('/api/loan-applications', authenticateToken, authStrictLimiter, async
   }
 });
 
-router.post('/api/loan-applications', authenticateToken, authStrictLimiter, async (req, res) => {
+router.post('/api/loan-applications', authenticateToken, applicationLimiter, async (req, res) => {
   const key = readKey(req, res);
   if (!key) return;
   const currency = String((req.body && req.body.currency) || '').trim().toUpperCase();
@@ -169,7 +180,7 @@ router.post('/api/loan-applications', authenticateToken, authStrictLimiter, asyn
   }
 });
 
-router.get('/api/admin/card-program/requests', authenticateToken, requireAdmin, authStrictLimiter, async (req, res) => {
+router.get('/api/admin/card-program/requests', authenticateToken, requireAdmin, applicationLimiter, async (req, res) => {
   try {
     await ensureSchema();
     const result = await db.query("SELECT r.*, u.full_name, u.email, u.email_verified, u.kyc_status FROM card_program_requests r JOIN users u ON u.id = r.user_id WHERE r.status <> 'closed' ORDER BY r.created_at ASC LIMIT 100");
@@ -180,7 +191,7 @@ router.get('/api/admin/card-program/requests', authenticateToken, requireAdmin, 
   }
 });
 
-router.patch('/api/admin/card-program/requests/:id/status', authenticateToken, requireAdmin, authStrictLimiter, async (req, res) => {
+router.patch('/api/admin/card-program/requests/:id/status', authenticateToken, requireAdmin, applicationLimiter, async (req, res) => {
   const status = String((req.body && req.body.status) || '').trim().toLowerCase();
   const note = String((req.body && req.body.note) || '').trim();
   if (!CARD_STATUSES.includes(status) || status === 'received' || note.length < 10 || note.length > 500) {
@@ -213,7 +224,7 @@ router.patch('/api/admin/card-program/requests/:id/status', authenticateToken, r
   }
 });
 
-router.get('/api/admin/loan-applications', authenticateToken, requireAdmin, authStrictLimiter, async (req, res) => {
+router.get('/api/admin/loan-applications', authenticateToken, requireAdmin, applicationLimiter, async (req, res) => {
   try {
     await ensureSchema();
     const result = await db.query("SELECT a.*, u.full_name, u.email, u.email_verified, u.kyc_status FROM loan_applications a JOIN users u ON u.id = a.user_id WHERE a.status NOT IN ('closed','declined') ORDER BY a.created_at ASC LIMIT 100");
@@ -224,7 +235,7 @@ router.get('/api/admin/loan-applications', authenticateToken, requireAdmin, auth
   }
 });
 
-router.patch('/api/admin/loan-applications/:id/status', authenticateToken, requireAdmin, authStrictLimiter, async (req, res) => {
+router.patch('/api/admin/loan-applications/:id/status', authenticateToken, requireAdmin, applicationLimiter, async (req, res) => {
   const status = String((req.body && req.body.status) || '').trim().toLowerCase();
   const note = String((req.body && req.body.note) || '').trim();
   if (!LOAN_STATUSES.includes(status) || status === 'received' || note.length < 10 || note.length > 500) {

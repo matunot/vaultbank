@@ -250,3 +250,14 @@ vaultbank/
 ---
 
 *Created: 2026-08-12 | Last updated: 2026-09-14 | Never forget: read this first, update it often.*
+
+---
+
+## 2026-10-28 — customer journey closure (VaultBank-owned rails)
+
+- Identity verification is now real and mounted: `server/routes/kyc.js` targets the 007 schema (`document_type`, `document_url`, `submitted_at`, `reviewed_by`, `review_notes`). Bytes live in PostgreSQL (`014_kyc_document_files.sql`) because Render disk is ephemeral. Upload requires a verified email; only an admin approval sets `users.kyc_status = 'verified'` (single atomic CTE). Admin queue + customer history exist in the API and UI.
+- Customer UI: `VerificationSection` replaces the demo `SecuritySection` on the Security tab; `KycAdminReview` sits with the other admin review queues. Both call the real API; neither invents verification state.
+- Savings bug fixed: `accounts_one_inr_per_user` was `UNIQUE (user_id) WHERE currency='INR'`, which blocked INR savings vaults for anyone with an INR wallet. `015_scope_inr_wallet_unique_index.sql` scopes it to non-savings accounts (`server/services/inrWalletIndexService.js` self-applies it at runtime).
+- Audit bug fixed: card/loan application ids are BIGSERIAL but `audit_logs.resource_id` is UUID; the numeric id now goes in `details.requestId` with `resourceId: null`.
+- Card/loan routes moved off `authStrictLimiter` to `applicationLimiter` (10/min) so a normal verified journey cannot 429 itself.
+- Still blocked on real-world partners only: card issuance (issuer/BIN sponsor), lending (RBI-registered lender + funded facility), external bank/UPI settlement. See `docs/cards-and-lending-prerequisites.md`. No provider rails were reactivated.

@@ -398,12 +398,16 @@ const findAccountByUserIdAndCurrency = async (userId, currency) => {
     const wanted = String(currency || '').trim().toUpperCase();
     if (!wanted) return null;
     if (isDemo) {
-        return demoStore.accounts.find(a => a.user_id === userId && String(a.currency).toUpperCase() === wanted && a.status === 'active') || null;
+        const matches = demoStore.accounts.filter(a => a.user_id === userId && String(a.currency).toUpperCase() === wanted && a.status === 'active');
+        return matches.find(a => a.account_type !== 'savings') || matches[0] || null;
     }
     try {
         await db.ensureConnection();
         const { rows } = await db.query(
-            "SELECT * FROM accounts WHERE user_id = $1 AND currency = $2 AND status = 'active' ORDER BY created_at ASC LIMIT 1",
+            `SELECT * FROM accounts
+              WHERE user_id = $1 AND currency = $2 AND status = 'active'
+              ORDER BY CASE WHEN account_type = 'savings' THEN 1 ELSE 0 END, created_at ASC
+              LIMIT 1`,
             [userId, wanted]
         );
         return rows[0] || null;

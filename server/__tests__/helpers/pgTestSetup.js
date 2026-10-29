@@ -91,7 +91,7 @@ async function applySchema(pool) {
     try {
         await pool.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
     } catch (_) { /* may already exist or lack permissions */ }
-    const needed = ['007_real_banking_schema.sql', '008_credit_schema.sql', '009_transfer_idempotency.sql', '010_payout_idempotency.sql', '011_vbr_payment_intents.sql', '012_global_transfer_idempotency.sql', '013_vaultbank_double_entry_ledger.sql'];
+    const needed = ['007_real_banking_schema.sql', '008_credit_schema.sql', '009_transfer_idempotency.sql', '010_payout_idempotency.sql', '011_vbr_payment_intents.sql', '012_global_transfer_idempotency.sql', '013_vaultbank_double_entry_ledger.sql', '014_kyc_document_files.sql', '015_scope_inr_wallet_unique_index.sql'];
     for (const file of needed) {
         const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8')
             // 007 opens with DROP TABLE ... CASCADE (a one-time reset of the
