@@ -14,6 +14,7 @@ import { DirectBankPayoutModal } from './DirectBankPayoutModal';
 import { DirectBankPayoutAdminReview } from './DirectBankPayoutAdminReview';
 import { BankTransferDepositPanel } from './BankTransferDepositPanel';
 import { BankDepositAdminReview } from './BankDepositAdminReview';
+import UsdAchPayoutPanel from './UsdAchPayoutPanel';
 import ProductApplicationsAdminReview from './ProductApplicationsAdminReview';
 
 /** A real registered VaultBank user (from the backend directory). */
@@ -27,7 +28,7 @@ interface Recipient {
 type Currency = 'USD' | 'INR';
 
 interface RailsReadiness {
-  usd: { cardStripe: boolean; paypal: boolean; bankTransferInstructions: boolean; internalTransfers: boolean; externalWithdrawals: boolean };
+  usd: { cardStripe: boolean; paypal: boolean; bankTransferInstructions: boolean; internalTransfers: boolean; externalWithdrawals: boolean; achFileExport?: boolean; achCustomerAccessEnabled?: boolean; achFileExportReason?: string; achAutomaticTransfer?: boolean };
   inr: { directUpi: boolean; directUpiProvider?: string; directUpiVerification?: string; directUpiCustomerAccessEnabled?: boolean; directUpiAutoCredit?: boolean; directBankPayouts: boolean; directBankPayoutsProvider?: string; directBankPayoutsAutoTransfer?: boolean; directBankPayoutsCustomerAccessEnabled?: boolean; directBankPayoutsReason?: string; bankTransferInstructions?: boolean; collections: boolean; collectionsProvider: string | null; internalTransfers: boolean; payouts: boolean; payoutsProvider: string | null };
 }
 
@@ -316,9 +317,14 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       action: inrRail?.payouts ? () => setCurrency('INR') : undefined, actionLabel: 'Withdraw',
     },
     {
+      key: 'usdach', name: 'USD ACH File Export', desc: 'Bank-compatible credit file; file export is not settlement',
+      ready: usdRail ? usdRail.achFileExport : null, icon: Building2, color: '#64748b',
+      hint: usdRail?.achFileExport ? 'ODFI profile configured; operator upload and bank reconciliation still required' : 'Disabled — authorized ODFI profile and encryption key required',
+    },
+    {
       key: 'usdext', name: 'USD External Withdrawals', desc: 'Outbound USD to a bank account',
       ready: usdRail ? usdRail.externalWithdrawals : null, icon: Banknote, color: '#64748b',
-      hint: 'No authorized USD payout rail exists yet — kept honestly disabled',
+      hint: 'Automatic external USD settlement is not enabled',
     },
   ];
 
@@ -614,6 +620,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
 
       {/* VaultBank-owned bank-transfer instruction + manual statement reconciliation. */}
       <BankTransferDepositPanel />
+      <UsdAchPayoutPanel visible={currency === 'USD'} />
 
       {/* ── REAL rails readiness — no fake providers ── */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-panel rounded-3xl p-6">
