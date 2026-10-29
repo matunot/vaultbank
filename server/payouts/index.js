@@ -60,7 +60,7 @@ function payoutAvailability() {
         reconciliation: 'pull-status-api',
         currency: 'INR',
     };
-    if (nativeRailsOnly()) return { ...base, reason: 'native-rails-only' };
+    if (nativeRailsOnly()) return { ...base, reconciliation: 'not-applicable-native-only', reason: 'native-rails-only' };
     const name = selectedName();
     if (!name) {
         return { ...base, reason: 'no-provider-selected' };

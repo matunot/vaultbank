@@ -101,7 +101,7 @@ router.get('/api/payments/readiness', (req, res) => {
                     collectionsProviderLive: collections.providerLive,
                     collectionsLiveSettlementVerified: collections.liveSettlementVerified,
                     collectionsReason: collections.reason || null,
-                    collectionsWebhookPath: '/api/collections/webhook/cashfree',
+                    collectionsWebhookPath: nativeOnly ? null : '/api/collections/webhook/cashfree',
                     internalTransfers: true,
                     payouts: payouts.available,
                     payoutsProvider: payouts.available ? payouts.provider : null,
@@ -117,11 +117,19 @@ router.get('/api/payments/readiness', (req, res) => {
             },
             currencies: ['USD', 'INR'],
             readinessDefinitions: {
-                configured: 'provider selected and credentials present — NOT proof they are valid',
-                credentialValid: 'credentials accepted by a safe provider probe; the collections adapter has no probe, so it stays unverified in this integration',
-                webhookReady: 'a signature-verified inbound webhook route is mounted and the provider is configured; payouts are reconciled by the pull status API (no payout webhook is implemented in this integration)',
-                providerLive: 'production host + credentials accepted by a probe; never inferred from environment variables alone',
-                liveSettlementVerified: 'a real settled transaction has been observed; false until then',
+                configured: nativeOnly
+                    ? 'Third-party provider configuration is ignored in production; native routes expose their own readiness.'
+                    : 'Provider selected and credentials present — NOT proof they are valid',
+                credentialValid: nativeOnly
+                    ? 'Not applicable to native-only production; third-party credentials are ignored.'
+                    : 'Credentials accepted by a safe provider probe; collections credentials remain unverified without a probe.',
+                webhookReady: nativeOnly
+                    ? 'Legacy provider webhooks are disabled; native deposits and payouts use bank-statement reconciliation.'
+                    : 'A signature-verified provider webhook is mounted and configured; provider payouts use the status API.',
+                providerLive: nativeOnly
+                    ? 'Third-party providers are disabled in production.'
+                    : 'Production host + credentials accepted by a probe; never inferred from environment variables alone',
+                liveSettlementVerified: 'A real external settlement has been observed; false until then.',
             },
         });
     } catch (error) {
