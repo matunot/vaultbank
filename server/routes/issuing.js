@@ -18,7 +18,7 @@ const router = express.Router();
 const { denyLegacyProviderRail } = require('../middleware/nativeOnlyPolicy');
 
 // Card issuing is preview-only until a native issuer and settlement integration exist.
-router.use((req, res, next) => denyLegacyProviderRail(res) ? undefined : next());
+router.use('/api/issuing', (req, res, next) => denyLegacyProviderRail(res) ? undefined : next());
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const {
     db,
