@@ -209,14 +209,18 @@ router.get('/api/bank-deposits/config', authenticateToken, requireVerifiedDeposi
         }
         const cfg = receivingConfig(requestedCurrency || undefined);
         if (!cfg.enabled) {
+            // Never include account-holder or destination fields for a disabled rail.
             return res.status(200).json({
                 success: true,
-                ...cfg,
                 enabled: false,
+                currency: requestedCurrency || cfg.currency,
                 currencies: cfg.currencies || [],
+                verification: 'manual',
+                reason: cfg.reason,
                 minAmount: MIN_AMOUNT,
                 maxAmount: MAX_AMOUNT,
                 maxOpen: MAX_OPEN,
+                expiryHours: EXPIRY_HOURS,
             });
         }
         await ensureTables();
