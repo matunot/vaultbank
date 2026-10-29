@@ -6,8 +6,9 @@
  * provider is "requested" (any of its method IDs is enabled in env) and
  * the corresponding secret is missing or still a placeholder, we throw.
  *
- * Override: set `ALLOW_MOCK_IN_PRODUCTION=true` to permit mock mode
- * (useful for staging deploys with no real keys, never for real money).
+ * Native-only production installations can explicitly skip legacy-provider
+ * diagnostics while preserving `requireRealKey()` as a fail-closed call guard.
+ * `ALLOW_MOCK_IN_PRODUCTION` is a separate, discouraged legacy override.
  *
  * This module is intentionally side-effect free at import time: it
  * exports `validateProductionConfig()` which the server entry point
@@ -99,6 +100,14 @@ function validateProductionConfig(opts = {}) {
 
     if (!isProd) {
         return { ok: true, errors: [] };
+    }
+    // VaultBank production is intentionally locked to its native ledger and
+    // statement-reconciliation rails. Legacy providers are not offered as a
+    // production option, so missing legacy credentials are not actionable
+    // configuration errors. This affects diagnostics only: requireRealKey()
+    // still rejects a legacy-provider call if one is accidentally reached.
+    if (opts.nativeOnly === true) {
+        return { ok: true, errors: [], skipped: true, reason: 'native-only' };
     }
     if (allowMock) {
         if (!opts.silent) {
