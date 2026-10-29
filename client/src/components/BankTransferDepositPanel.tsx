@@ -209,7 +209,7 @@ export function BankTransferDepositPanel() {
                   onChange={(event) => changeCurrency(event.target.value)}
                   className="mt-1 block w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-white outline-none focus:border-cyan-400"
                 >
-                  {config.currencies.map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                  {(config.currencies || []).map((currency) => <option key={currency} value={currency}>{currency}</option>)}
                 </select>
               </label>
             )}
