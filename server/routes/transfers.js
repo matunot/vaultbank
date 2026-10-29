@@ -13,7 +13,7 @@ const { authenticateToken } = require('../middleware/auth');
 const { transferLimiter } = require('../middleware/rateLimiter');
 const { query, getClient, models } = require('../config/db');
 const db = require('../config/db');
-const { findUserByEmail } = require('../config/database');
+const { findUserByEmail, findUserById, findAccountByUserIdAndCurrency } = require('../config/database');
 const logger = require('../logger');
 const { totalTransfers, totalTransferVolume, setActiveUsers, setTotalBalance, anomalyTransfers } = require('../metrics');
 const { checkAnomaly } = require('../anomaly');
@@ -27,189 +27,188 @@ const router = express.Router();
  * POST /api/transfers
  * Create a new transfer with atomic MongoDB operations
  */
+/**
+ * POST /api/transfers
+ * VaultBank-native internal transfer. All balance changes are delegated to
+ * the shared atomic ledger service; this route must never debit or credit
+ * balances with independent SQL statements.
+ */
 router.post('/api/transfers', authenticateToken, transferLimiter, async (req, res) => {
-    const { amount, recipient, method, reason: transferReason } = req.body;
+    const { amount, recipient, method, reason: transferReason, currency = 'USD' } = req.body || {};
     const userId = req.user.id;
+    const requestedCurrency = String(currency || 'USD').trim().toUpperCase();
+    const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
 
-    // Basic validation
-    if (!amount || !recipient) {
+    if (!idempotencyKey || idempotencyKey.length < 8 || idempotencyKey.length > 100) {
         return res.status(400).json({
             success: false,
-            message: 'Amount and recipient are required.'
+            code: 'IDEMPOTENCY_KEY_REQUIRED',
+            message: 'Provide an Idempotency-Key (8–100 characters) and reuse it for retries of this transfer attempt.',
         });
     }
-
-    const transferAmount = parseFloat(amount);
-    if (isNaN(transferAmount) || transferAmount <= 0) {
+    if (recipient == null || String(recipient).trim() === '') {
+        return res.status(400).json({ success: false, message: 'A VaultBank recipient is required.' });
+    }
+    if (String(recipient) === String(userId)) {
+        return res.status(400).json({ success: false, code: 'SELF_TRANSFER_NOT_ALLOWED', message: 'Cannot transfer to your own account.' });
+    }
+    if (method && !['internal', 'vaultbank', 'vaultbank-internal'].includes(String(method).trim().toLowerCase())) {
         return res.status(400).json({
             success: false,
-            message: 'Invalid transfer amount.'
+            code: 'NATIVE_INTERNAL_ONLY',
+            message: 'This endpoint supports VaultBank-to-VaultBank internal transfers only. External bank transfers use a separate settlement rail.',
         });
     }
+    if (!['INR', 'USD'].includes(requestedCurrency)) {
+        return res.status(400).json({ success: false, code: 'UNSUPPORTED_CURRENCY', message: 'Use INR or USD for internal transfers.' });
+    }
+
+    // Parse the amount without binary floating-point rounding.
+    const rawAmount = typeof amount === 'number' ? String(amount) : String(amount == null ? '' : amount).trim();
+    if (rawAmount.length > 12 || !/^\d+(?:\.\d{1,2})?$/.test(rawAmount)) {
+        return res.status(400).json({ success: false, message: 'Amount must be positive and have at most two decimal places.' });
+    }
+    const [rawWhole, rawFraction = ''] = rawAmount.split('.');
+    const whole = BigInt(rawWhole);
+    const minor = whole * 100n + BigInt(rawFraction.padEnd(2, '0') || '0');
+    if (minor <= 0n) {
+        return res.status(400).json({ success: false, message: 'Amount must be greater than zero.' });
+    }
+    if (minor > 10000000n) {
+        return res.status(400).json({ success: false, message: 'Maximum single internal transfer is 100,000.00.' });
+    }
+    const normalizedAmount = `${whole.toString()}.${(rawFraction.padEnd(2, '0') || '00')}`;
 
     try {
-        await db.ensureConnection();
-
-        // Find sender and recipient
-        const sender = await db.User.findById(userId);
-        if (!sender) {
-            return res.status(404).json({ success: false, message: 'Sender not found.' });
-        }
-
-        const recipientUser = await db.User.findById(recipient);
+        const recipientUser = await findUserById(String(recipient));
         if (!recipientUser) {
-            return res.status(404).json({ success: false, message: 'Recipient not found.' });
+            return res.status(404).json({ success: false, code: 'RECIPIENT_NOT_FOUND', message: 'VaultBank recipient not found.' });
         }
 
-        // Check balance
-        const senderAccount = await db.Account.findOne({ user_id: userId });
+        const senderAccount = await findAccountByUserIdAndCurrency(userId, requestedCurrency);
         if (!senderAccount) {
-            return res.status(404).json({ success: false, message: 'Sender account not found.' });
+            return res.status(404).json({ success: false, code: 'SENDER_ACCOUNT_NOT_FOUND', message: `You do not have an active ${requestedCurrency} account.` });
         }
-        if (parseFloat(senderAccount.balance) < transferAmount) {
-            return res.status(400).json({
-                success: false,
-                message: 'Insufficient balance for this transfer.'
-            });
+        const recipientAccount = await findAccountByUserIdAndCurrency(recipientUser.id, requestedCurrency);
+        if (!recipientAccount) {
+            return res.status(404).json({ success: false, code: 'RECIPIENT_NOT_FOUND', message: `Recipient does not have an ${requestedCurrency} account.` });
         }
-
-        // Debit sender account using PostgreSQL UPDATE with condition
-        const debitResult = await db.query(
-            `UPDATE accounts 
-             SET balance = balance - $2, available_balance = available_balance - $2 
-             WHERE id = $1 AND balance >= $2 
-             RETURNING *`,
-            [senderAccount.id, transferAmount]
-        );
-
-        if (debitResult.rowCount === 0) {
-            return res.status(400).json({
-                success: false,
-                message: 'Insufficient balance for this transfer.'
-            });
+        if (String(senderAccount.id) === String(recipientAccount.id)) {
+            return res.status(400).json({ success: false, code: 'SELF_TRANSFER_NOT_ALLOWED', message: 'Cannot transfer to your own account.' });
         }
 
-        const updatedSenderAccount = debitResult.rows[0];
-
-        // Credit recipient
-        const recipientAccount = await db.Account.findOne({ user_id: recipient });
-        if (recipientAccount) {
-            await db.query(
-                `UPDATE accounts 
-                 SET balance = balance + $2, available_balance = available_balance + $2 
-                 WHERE id = $1`,
-                [recipientAccount.id, transferAmount]
-            );
-        }
-
-        // Create transfer record
-        const transfer = await db.Transfer.create({
-            from_account_id: senderAccount.id,
-            to_account_id: recipientAccount ? recipientAccount.id : null,
-            from_user_id: userId,
-            to_user_id: recipient,
-            amount: transferAmount,
-            currency: 'USD',
-            fee: 0,
-            transfer_type: method || 'internal',
-            status: 'completed',
-            description: transferReason || '',
-            reason: transferReason || '',
-            metadata: { method: method || 'internal' },
-        });
-
-        // Create transaction records for both sides
-        await db.Transaction.create({
-            account_id: senderAccount.id,
-            user_id: userId,
-            type: 'transfer_out',
-            status: 'completed',
-            amount: -transferAmount,
-            currency: 'USD',
-            balance_before: senderAccount.balance,
-            balance_after: updatedSenderAccount.balance,
-            description: transferReason || 'Transfer',
-            category: 'transfer',
-            reference_id: transfer.id,
-        });
-
-        if (recipientAccount) {
-            await db.Transaction.create({
-                account_id: recipientAccount.id,
-                user_id: recipient,
-                type: 'transfer_in',
-                status: 'completed',
-                amount: transferAmount,
-                currency: 'USD',
-                balance_before: recipientAccount.balance,
-                balance_after: parseFloat(recipientAccount.balance) + transferAmount,
-                description: transferReason || 'Transfer received',
-                category: 'transfer',
-                reference_id: transfer.id,
-            });
-        }
-
-        // Update Prometheus metrics
-        totalTransfers.inc();
-        totalTransferVolume.inc(transferAmount);
-
-        // Run anomaly detection
-        const { isAnomaly, reason } = checkAnomaly({
+        const { executeAtomicTransfer, notifyTransferCompletion } = require('../services/transferService');
+        const result = await executeAtomicTransfer({
             userId,
-            amount: transferAmount,
-            method: method || 'internal',
-            transactionId: transfer.id
+            senderAccount,
+            recipientAccount,
+            amount: normalizedAmount,
+            currency: requestedCurrency,
+            description: String(transferReason || 'Internal transfer').slice(0, 250),
+            idempotencyKey,
+            senderName: req.user.full_name,
         });
 
-        if (isAnomaly) {
-            anomalyTransfers.inc();
-            logger.warn('Anomaly detected on transfer', {
-                transferId: transfer.id,
+        if (result.replay) {
+            res.setHeader('Idempotent-Replay', 'true');
+            return res.status(200).json({
+                success: true,
+                replay: true,
+                transfer: { id: result.transferId, status: 'completed', currency: requestedCurrency },
+                message: 'Transfer already processed; returned the original result.',
+            });
+        }
+        if (result.ambiguous || result.code === 'TRANSFER_OUTCOME_UNKNOWN') {
+            return res.status(409).json({
+                success: false,
+                code: 'TRANSFER_OUTCOME_UNKNOWN',
+                message: 'Transfer outcome is not yet confirmed. Retry using the SAME Idempotency-Key; do not create a new key.',
+            });
+        }
+        if (result.error) {
+            const code = result.code || 'TRANSFER_FAILED';
+            const status = code === 'INSUFFICIENT_FUNDS' || code === 'UNVERIFIED_FUNDS' ||
+                code === 'SENDER_ACCOUNT_INACTIVE' || code === 'RECIPIENT_ACCOUNT_INACTIVE' ||
+                code === 'CURRENCY_MISMATCH' ? 400 :
+                code === 'SENDER_ACCOUNT_NOT_FOUND' || code === 'RECIPIENT_NOT_FOUND' ? 404 :
+                code === 'TRANSFER_IN_PROGRESS' || code === 'IDEMPOTENCY_CONFLICT' ? 409 :
+                code === 'COMMIT_FAILED' ? 500 : 400;
+            return res.status(status).json({ success: false, code, message: result.message || 'Transfer was not completed.' });
+        }
+
+        // Post-commit effects never make a committed transfer appear to fail.
+        let isAnomaly = false;
+        try {
+            totalTransfers.inc();
+            totalTransferVolume.inc(Number(normalizedAmount));
+            const anomaly = checkAnomaly({
                 userId,
-                amount: transferAmount,
-                reason
+                amount: Number(normalizedAmount),
+                method: 'internal',
+                transactionId: result.transferId,
             });
+            isAnomaly = !!(anomaly && anomaly.isAnomaly);
+            if (isAnomaly) {
+                anomalyTransfers.inc();
+                logger.warn('Anomaly detected on native transfer', {
+                    transferId: result.transferId,
+                    userId,
+                    reason: anomaly.reason,
+                });
+            }
+        } catch (sideEffectError) {
+            logger.warn('Native transfer monitoring side effect failed after commit.', { code: sideEffectError.code || 'monitoring_error' });
         }
 
-        // Audit log
-        await logAudit({
-            userId,
-            action: 'transfer_create',
-            category: 'transfer',
-            resourceId: transfer.id,
-            details: { amount: transferAmount, recipient, method, anomaly: isAnomaly },
-            ip: req.ip,
-            userAgent: req.headers['user-agent']
-        });
+        try {
+            await notifyTransferCompletion({
+                userId,
+                recipientAccount,
+                senderAccount,
+                amount: Number(normalizedAmount),
+                currency: requestedCurrency,
+                newSenderBalance: Number(result.newSenderBalance),
+                recipientBalance: Number(result.recipientBalance),
+            });
+        } catch (_) { /* transfer is already committed */ }
+
+        try {
+            await logAudit({
+                userId,
+                action: 'transfer_create',
+                category: 'transfer',
+                resourceId: result.transferId,
+                details: { currency: requestedCurrency, method: 'internal', isAnomaly },
+                ip: req.ip,
+                userAgent: req.headers['user-agent'],
+            });
+        } catch (_) { /* audit outage must not turn a committed transfer into a reported failure */ }
 
         return res.status(200).json({
             success: true,
             transfer: {
-                id: transfer.id,
-                amount: transferAmount,
-                method: method || 'internal',
-                reason: transferReason,
+                id: result.transferId,
+                amount: Number(normalizedAmount),
+                currency: requestedCurrency,
+                method: 'internal',
+                reason: transferReason || 'Internal transfer',
                 status: 'completed',
-                createdAt: transfer.created_at,
-                recipientId: recipient,
+                recipientId: recipientUser.id,
                 isAnomaly,
-                anomalyReason: reason
             },
+            newSenderBalance: result.newSenderBalance,
+            recipientBalance: result.recipientBalance,
         });
     } catch (error) {
-        console.error('Transfer error:', error);
+        logger.error('Native internal transfer request failed.', { code: error && error.code ? String(error.code) : 'internal_error' });
         return res.status(500).json({
             success: false,
-            message: 'Transfer failed. Please try again.',
-            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+            code: 'TRANSFER_REQUEST_FAILED',
+            message: 'Transfer request could not be completed. Retry with the SAME Idempotency-Key or check transfer history before trying again.',
         });
     }
 });
 
-/**
- * GET /api/transfers
- * Retrieve transfers for the authenticated user.
- */
 router.get('/api/transfers', authenticateToken, async (req, res) => {
     try {
         await db.ensureConnection();
