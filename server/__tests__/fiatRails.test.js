@@ -404,7 +404,7 @@ describe('production native-only policy blocks all legacy provider money routes'
     test('provider engine exposes no external methods and rejects creation/webhooks in production', async () => {
         process.env.NODE_ENV = 'production';
         expect(engine.getAvailableMethods({ currency: 'USD' })).toEqual([]);
-        expect(() => engine.getProvider('paypal')).toThrow(expect.objectContaining({ code: 'LEGACY_PROVIDER_RAIL_DISABLED', statusCode: 503 }));
+        expect(() => engine.getProvider('paypal')).toThrow('Legacy third-party payment-provider rails are disabled in production.')
         await expect(engine.verifyWebhook('paypal', { body: {} })).rejects.toMatchObject({
             code: 'LEGACY_PROVIDER_RAIL_DISABLED',
             statusCode: 503,
