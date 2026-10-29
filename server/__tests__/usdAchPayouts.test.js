@@ -11,6 +11,7 @@ jest.mock('../middleware/auth', () => ({
   authenticateToken: (req, res, next) => { if (!req.user) req.user = { id: 'user-1', role: 'admin' }; next(); },
   requireAdmin: (req, res, next) => { if (!req.user || !['admin','super_admin'].includes(req.user.role)) return res.status(403).json({ success: false, message: 'Admin access required.' }); next(); },
 }));
+const crypto = require('crypto');
 const CDB = require('../config/database');
 const ledger = require('../services/ledgerJournalService');
 const router = require('../routes/usd-ach-payouts');
@@ -21,6 +22,13 @@ afterAll(() => { for (const [key,value] of Object.entries(SAVED)) { if (value ==
 function enable({customerAccess=false}={}) {
   Object.assign(process.env,{VB_USD_ACH_EXPORT_ENABLED:'true',VB_USD_ACH_ENCRYPTION_KEY:'ab'.repeat(32),VB_USD_ACH_ODFI_ROUTING_NUMBER:'021000021',VB_USD_ACH_IMMEDIATE_ORIGIN:' 021000021',VB_USD_ACH_ODFI_NAME:'TEST ORIGINATING BANK',VB_USD_ACH_IMMEDIATE_ORIGIN_NAME:'VAULTBANK ACH EXPORT',VB_USD_ACH_COMPANY_NAME:'VAULTBANK',VB_USD_ACH_COMPANY_ID:'1234567890',VB_USD_ACH_ENTRY_DESCRIPTION:'PAYOUT'});
   if(customerAccess)process.env.VB_USD_ACH_CUSTOMER_ACCESS_ENABLED='true';
+}
+function encryptTestSecret(value) {
+  const key = Buffer.from(process.env.VB_USD_ACH_ENCRYPTION_KEY, 'hex');
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(value, 'utf8'), cipher.final()]);
+  return ['v1', iv.toString('hex'), cipher.getAuthTag().toString('hex'), encrypted.toString('hex')].join(':');
 }
 function mockResponse() { const res={statusCode:null,body:null};res.status=jest.fn(code=>{res.statusCode=code;return res;});res.json=jest.fn(body=>{res.body=body;return res;});return res; }
 async function call(path,options={}) {
@@ -65,5 +73,23 @@ describe('native USD ACH payout preparation',()=>{
   expect(ledger.changeVerifiedAvailableBalance).toHaveBeenCalledWith(client,'account-usd-1','25.00','debit');
   expect(ledger.postBalancedJournal).toHaveBeenCalledWith(client,expect.objectContaining({eventType:'payout_reserved',sourceType:'usd_ach_payout',currency:'USD'}));
   expect(res.body.request.destinationAccountNumber).toBeUndefined();expect(res.body.request.destinationAccountMasked).toBe('****2345');expect(client.release).toHaveBeenCalled();
+ });
+ test('verifies stored ACH file hash before an admin can download it',async()=>{
+  enable();
+  const fileContent='101 TEST NACHA FILE\\n';
+  const encryptedFileContent=encryptTestSecret(fileContent);
+  const row={id:'batch-1',batch_reference:'VBACH-BATCH-TEST',effective_date:'2026-10-30',file_creation_date:'2026-10-28',file_id_modifier:'A',file_sha256:crypto.createHash('sha256').update(fileContent,'ascii').digest('hex'),encrypted_file_content:encryptedFileContent, payout_count:1,total_amount:'25.00',status:'file_generated',created_at:new Date(),updated_at:new Date()};
+  CDB.db.query.mockImplementation(async(sql)=>String(sql).includes('SELECT * FROM usd_ach_payout_batches WHERE id = $1 LIMIT 1')?{rows:[row]}:{rows:[]});
+  const res=await call('/api/usd-ach/admin/batches/:id/file',{params:{id:'batch-1'}});
+  expect(res.statusCode).toBe(200);expect(res.body.fileContent).toBe(fileContent);
+ });
+ test('fails closed without exposing a tampered ACH file',async()=>{
+  enable();
+  const fileContent='101 TEST NACHA FILE\\n';
+  const encryptedFileContent=encryptTestSecret(fileContent);
+  const row={id:'batch-2',batch_reference:'VBACH-BATCH-TAMPER',effective_date:'2026-10-30',file_creation_date:'2026-10-28',file_id_modifier:'B',file_sha256:'0'.repeat(64),encrypted_file_content:encryptedFileContent,payout_count:1,total_amount:'25.00',status:'file_generated',created_at:new Date(),updated_at:new Date()};
+  CDB.db.query.mockImplementation(async(sql)=>String(sql).includes('SELECT * FROM usd_ach_payout_batches WHERE id = $1 LIMIT 1')?{rows:[row]}:{rows:[]});
+  const res=await call('/api/usd-ach/admin/batches/:id/file',{params:{id:'batch-2'}});
+  expect(res.statusCode).toBe(500);expect(res.body.fileContent).toBeUndefined();expect(res.body.message).toContain('Could not reload');
  });
 });
