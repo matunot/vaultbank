@@ -26,6 +26,8 @@ name: Integration Tests (PostgreSQL)
       - 'server/collections/**'
       - 'server/payouts/**'
       - 'server/services/**'
+      - 'server/payments/**'
+      - 'server/__tests__/paymentsSafety.test.js'
       - 'server/vbr/**'
       - 'server/config/**'
       - 'server/__tests__/databaseProductionSafety.test.js'
