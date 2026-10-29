@@ -21,6 +21,7 @@ const paymentsRoutes = require('./routes/payments');
 const amlRoutes = require('./routes/aml');
 const reportsRoutes = require('./routes/reports');
 const accountRoutes = require('./routes/accounts');
+const savingsRoutes = require('./routes/savings');
 const issuingRoutes = require('./routes/issuing');
 const stripePaymentRoutes = require('./routes/stripe-payments');
 const creditRoutes = require('./routes/credit');
@@ -195,6 +196,7 @@ app.use('/', reportsRoutes);
 
 // ─── Banking Account Routes (Real Banking) ──────────────────────────────────
 app.use('/', accountRoutes);
+app.use('/', savingsRoutes);
 app.use('/', issuingRoutes);
 app.use('/', creditRoutes);
 app.use('/', vbPayRoutes);

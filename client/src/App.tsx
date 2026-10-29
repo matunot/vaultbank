@@ -22,6 +22,7 @@ const CardsSection = lazy(() => import('./components/IssuingCardsSection'));
 const PaymentsSection = lazy(() => import('./components/PaymentsSection'));
 const InvestmentsSection = lazy(() => import('./components/InvestmentsSection'));
 const VaultSection = lazy(() => import('./components/VaultSection'));
+const SavingsAccountsSection = lazy(() => import('./components/SavingsAccountsSection'));
 const DebtsSection = lazy(() => import('./components/DebtsSection'));
 const CreditSection = lazy(() => import('./components/CreditSection'));
 const VbPaySection = lazy(() => import('./components/VbPaySection'));
@@ -237,7 +238,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                 <ErrorBoundary>
                   <Suspense fallback={<SectionLoader />}>
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
-                    {active === 'vault' && (import.meta.env.DEV ? <VaultSection /> : <PreviewOnlyNotice title="Vaults are a development preview" message="Vault balances and sample rates are not connected to persistent account storage. This page is unavailable on production accounts until its ledger-backed functionality is implemented." />)}
+                    {active === 'vault' && (import.meta.env.DEV ? <VaultSection /> : <SavingsAccountsSection />)}
                     {active === 'swiss' && (import.meta.env.DEV ? <SwissSection /> : <PreviewOnlyNotice title="Swiss banking is not connected" message="The development view is illustrative only. No Swiss bank account, banking partnership, or deposit-protection arrangement is offered through this section." />)}
                     {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} />}
                     {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
