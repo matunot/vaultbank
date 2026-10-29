@@ -174,8 +174,8 @@ export const api = {
   },
 
   async getProfile(): Promise<ApiResponse> {
-    // The canonical route is /api/profile; /api/auth/me is not mounted.
-    return request<ApiResponse>('api/profile');
+    // This authenticated endpoint returns the current persisted user and KYC/email-verification state.
+    return request<ApiResponse>('api/auth/me');
   },
 
   async requestEmailVerification(): Promise<ApiResponse> {
