@@ -59,8 +59,12 @@ async function call(path, body) {
     const layer = router.stack.find((l) => l.route && l.route.path === path && l.route.methods.post);
     if (!layer) throw new Error('route missing: POST ' + path);
     const res = mkRes();
-    layer.route.stack[0].handle(mkReq(body), res, () => {});
-    await layer.route.stack[layer.route.stack.length - 1].handle(mkReq(body), res);
+    const req = mkReq(body);
+    if (path === '/api/account/transfer') {
+        req.headers['idempotency-key'] = `account-money-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    layer.route.stack[0].handle(req, res, () => {});
+    await layer.route.stack[layer.route.stack.length - 1].handle(req, res);
     return res;
 }
 
