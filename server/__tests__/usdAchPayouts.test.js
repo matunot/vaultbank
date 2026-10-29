@@ -76,7 +76,7 @@ describe('native USD ACH payout preparation',()=>{
  });
  test('verifies stored ACH file hash before an admin can download it',async()=>{
   enable();
-  const fileContent='101 TEST NACHA FILE\\n';
+  const fileContent='101 TEST NACHA FILE' + String.fromCharCode(10);
   const encryptedFileContent=encryptTestSecret(fileContent);
   const row={id:'batch-1',batch_reference:'VBACH-BATCH-TEST',effective_date:'2026-10-30',file_creation_date:'2026-10-28',file_id_modifier:'A',file_sha256:crypto.createHash('sha256').update(fileContent,'ascii').digest('hex'),encrypted_file_content:encryptedFileContent, payout_count:1,total_amount:'25.00',status:'file_generated',created_at:new Date(),updated_at:new Date()};
   CDB.db.query.mockImplementation(async(sql)=>String(sql).includes('SELECT * FROM usd_ach_payout_batches WHERE id = $1 LIMIT 1')?{rows:[row]}:{rows:[]});
@@ -85,7 +85,7 @@ describe('native USD ACH payout preparation',()=>{
  });
  test('fails closed without exposing a tampered ACH file',async()=>{
   enable();
-  const fileContent='101 TEST NACHA FILE\\n';
+  const fileContent='101 TEST NACHA FILE' + String.fromCharCode(10);
   const encryptedFileContent=encryptTestSecret(fileContent);
   const row={id:'batch-2',batch_reference:'VBACH-BATCH-TAMPER',effective_date:'2026-10-30',file_creation_date:'2026-10-28',file_id_modifier:'B',file_sha256:'0'.repeat(64),encrypted_file_content:encryptedFileContent,payout_count:1,total_amount:'25.00',status:'file_generated',created_at:new Date(),updated_at:new Date()};
   CDB.db.query.mockImplementation(async(sql)=>String(sql).includes('SELECT * FROM usd_ach_payout_batches WHERE id = $1 LIMIT 1')?{rows:[row]}:{rows:[]});
