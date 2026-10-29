@@ -175,6 +175,20 @@ export const api = {
     return request<ApiResponse>('api/auth/me');
   },
 
+  async requestEmailVerification(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/auth/email-verification/request', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+  },
+
+  async confirmEmailVerification(token: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/auth/email-verification/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  },
+
   async getAccounts(): Promise<ApiResponse> {
     return request<ApiResponse>('api/accounts');
   },
