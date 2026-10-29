@@ -123,7 +123,7 @@ export default function ProductApplicationsAdminReview() {
     try {
       const result = await api.updateAdminCardProgramRequest(request.id, { status, note });
       if (!result.success) throw new Error(result.message || 'Could not update this card request.');
-      setMessage(`Card request #${request.id} updated to ${status.replaceAll('_', ' ')}.`);
+      setMessage(`Card request #${request.id} updated to ${status.replace(/_/g, ' ')}.`);
       setSelectedStatus((old) => ({ ...old, [`card:${request.id}`]: '' }));
       setNotes((old) => ({ ...old, [`card:${request.id}`]: '' }));
       await refresh();
@@ -151,7 +151,7 @@ export default function ProductApplicationsAdminReview() {
     try {
       const result = await api.updateAdminLoanApplication(application.id, { status, note });
       if (!result.success) throw new Error(result.message || 'Could not update this loan application.');
-      setMessage(`Loan application #${application.id} updated to ${status.replaceAll('_', ' ')}.`);
+      setMessage(`Loan application #${application.id} updated to ${status.replace(/_/g, ' ')}.`);
       setSelectedStatus((old) => ({ ...old, [`loan:${application.id}`]: '' }));
       setNotes((old) => ({ ...old, [`loan:${application.id}`]: '' }));
       await refresh();
@@ -205,7 +205,7 @@ export default function ProductApplicationsAdminReview() {
                           <p className={`mt-1 text-[10px] ${verified ? 'text-emerald-200' : 'text-amber-200'}`}><ShieldCheck size={12} className="mr-1 inline" />{verificationLabel(request.customer)}</p>
                           {request.reviewNote && <p className="mt-2 text-[11px] text-white/45">Last note: {request.reviewNote}</p>}
                         </div>
-                        <span className="w-fit rounded-full border border-cyan-300/20 bg-cyan-300/5 px-3 py-1.5 text-[10px] font-bold capitalize text-cyan-100">{request.status.replaceAll('_', ' ')}</span>
+                        <span className="w-fit rounded-full border border-cyan-300/20 bg-cyan-300/5 px-3 py-1.5 text-[10px] font-bold capitalize text-cyan-100">{request.status.replace(/_/g, ' ')}</span>
                       </div>
                       <div className="mt-4 grid gap-3 md:grid-cols-[200px_1fr_auto] md:items-end">
                         <div>
@@ -250,7 +250,7 @@ export default function ProductApplicationsAdminReview() {
                           <p className="mt-2 text-xs leading-relaxed text-white/50">Purpose: {application.purpose}</p>
                           {application.reviewNote && <p className="mt-2 text-[11px] text-white/45">Last note: {application.reviewNote}</p>}
                         </div>
-                        <span className="w-fit rounded-full border border-violet-300/20 bg-violet-300/5 px-3 py-1.5 text-[10px] font-bold capitalize text-violet-100">{application.status.replaceAll('_', ' ')}</span>
+                        <span className="w-fit rounded-full border border-violet-300/20 bg-violet-300/5 px-3 py-1.5 text-[10px] font-bold capitalize text-violet-100">{application.status.replace(/_/g, ' ')}</span>
                       </div>
                       <div className="mt-4 grid gap-3 md:grid-cols-[200px_1fr_auto] md:items-end">
                         <div>
