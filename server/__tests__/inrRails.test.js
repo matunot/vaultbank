@@ -144,7 +144,9 @@ async function call(router, path, { method = 'get', body, user, params = {}, hea
         method: method.toUpperCase(),
         user: user || { id: 'u-1', role: 'user' },
         ip: '127.0.0.1',
-        headers,
+        headers: Object.assign({}, headers, router === accountsRouter && path === '/api/account/transfer' && !headers['idempotency-key']
+            ? { 'idempotency-key': `inr-rails-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` }
+            : {}),
         body: body !== undefined ? body : {},
         params: pattern.includes(':id') ? Object.assign({ id: 'po-1' }, params) : params,
         query: {},
