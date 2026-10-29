@@ -249,7 +249,7 @@ async function ensureTables() {
       payout_count INTEGER NOT NULL CHECK (payout_count > 0),
       total_amount NUMERIC(15,2) NOT NULL CHECK (total_amount > 0),
       status TEXT NOT NULL DEFAULT 'file_generated'
-        CHECK (status IN ('file_generated','bank_confirmed','reconciled')),
+        CHECK (status IN ('file_generated','bank_confirmed','reconciled','rejected')),
       evidence_note TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -316,14 +316,20 @@ function getBatchFileModifier(usedModifiers) {
   return candidates.find((candidate) => !usedModifiers.has(candidate)) || null;
 }
 
+function batchConfirmedNotSent(batch) {
+  return !!batch && batch.status === 'rejected';
+}
+
 async function returnBatchPayload(row, replay = false) {
-  const fileContent = decryptSecret(row.encrypted_file_content);
+  const fileContent = row.status === 'file_generated' ? decryptSecret(row.encrypted_file_content) : null;
   return {
     success: true,
     replay,
     batch: serializeBatch(row),
     fileContent,
-    message: 'NACHA file generated only. VaultBank has not sent funds; upload only through your authorized ODFI process and reconcile official bank confirmation.',
+    message: row.status === 'file_generated'
+      ? 'NACHA file generated only. VaultBank has not sent funds; upload only through your authorized ODFI process and reconcile official bank confirmation.'
+      : 'This batch is no longer exportable. It has been rejected or reconciled; no fresh file was produced.',
   };
 }
 
@@ -526,7 +532,12 @@ router.post('/api/usd-ach/admin/batches', authenticateToken, requireAdmin, async
     await ensureVaultLedgerSchema();
     await ensureTables();
     const existingResult = await db.query('SELECT * FROM usd_ach_payout_batches WHERE created_by = $1 AND idempotency_key = $2 LIMIT 1', [req.user.id, idempotencyKey]);
-    if (existingResult.rows.length) return res.status(200).json(await returnBatchPayload(existingResult.rows[0], true));
+    if (existingResult.rows.length) {
+      if (existingResult.rows[0].status !== 'file_generated') {
+        return res.status(409).json({ success: false, code: 'USD_ACH_BATCH_ALREADY_RESOLVED', message: 'This batch is already resolved and cannot be re-exported.' });
+      }
+      return res.status(200).json(await returnBatchPayload(existingResult.rows[0], true));
+    }
     client = await db.getClient();
     await client.query('BEGIN');
     await client.query("SELECT pg_advisory_xact_lock(hashtext('vaultbank-usd-ach-export'))");
@@ -594,7 +605,7 @@ router.post('/api/usd-ach/admin/batches', authenticateToken, requireAdmin, async
     if (error && error.code === '23505') {
       try {
         const existing = await db.query('SELECT * FROM usd_ach_payout_batches WHERE created_by = $1 AND idempotency_key = $2 LIMIT 1', [req.user.id, idempotencyKey]);
-        if (existing.rows.length) return res.status(200).json(await returnBatchPayload(existing.rows[0], true));
+        if (existing.rows.length && existing.rows[0].status === 'file_generated') return res.status(200).json(await returnBatchPayload(existing.rows[0], true));
       } catch (_) {}
     }
     if (error && error.code === 'USD_ACH_BATCH_CONFLICT') return res.status(409).json({ success: false, code: error.code, message: error.message });
@@ -622,6 +633,9 @@ router.get('/api/usd-ach/admin/batches/:id/file', authenticateToken, requireAdmi
     const result = await db.query('SELECT * FROM usd_ach_payout_batches WHERE id = $1 LIMIT 1', [req.params.id]);
     if (!result.rows.length) return res.status(404).json({ success: false, message: 'ACH batch not found.' });
     const row = result.rows[0];
+    if (row.status !== 'file_generated') {
+      return res.status(409).json({ success: false, code: 'USD_ACH_BATCH_NOT_EXPORTABLE', message: 'This ACH batch is rejected or already reconciled and can no longer be downloaded.' });
+    }
     return res.status(200).json({ success: true, batch: serializeBatch(row), fileContent: decryptSecret(row.encrypted_file_content) });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Could not reload the ACH file.' });
@@ -655,6 +669,11 @@ router.post('/api/usd-ach/admin/requests/:id/settle', authenticateToken, require
     if (payout.status !== 'exported') {
       await client.query('ROLLBACK');
       return res.status(409).json({ success: false, code: 'USD_ACH_PAYOUT_NOT_EXPORTED', message: 'Only a payout in an exported ACH file can be settled.' });
+    }
+    const batchState = await client.query('SELECT status FROM usd_ach_payout_batches WHERE id = $1 FOR UPDATE', [payout.batch_id]);
+    if (!batchState.rows.length || batchState.rows[0].status !== 'file_generated') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, code: 'USD_ACH_BATCH_NOT_ACTIVE', message: 'The ACH batch was rejected or resolved; this payout cannot be settled from it.' });
     }
     if (String(payout.amount) !== settledAmount.amount) {
       await client.query('ROLLBACK');
@@ -692,7 +711,7 @@ router.post('/api/usd-ach/admin/requests/:id/settle', authenticateToken, require
       [payout.batch_id]
     );
     if (Number(remaining.rows[0].pending) === 0) {
-      await client.query("UPDATE usd_ach_payout_batches SET status='bank_confirmed', evidence_note=$2, updated_at=NOW() WHERE id=$1", [payout.batch_id, 'All entries individually reconciled; ' + evidenceNote]);
+      await client.query("UPDATE usd_ach_payout_batches SET status='reconciled', evidence_note=$2, updated_at=NOW() WHERE id=$1", [payout.batch_id, 'All entries individually reconciled; ' + evidenceNote]);
     }
     await client.query('COMMIT');
     await audit(req.user.id, 'usd_ach_payout_settled', payout.id, { requestReference: payout.request_reference, amount: settledAmount.amount, bankReference }, req);
@@ -731,6 +750,13 @@ router.post('/api/usd-ach/admin/requests/:id/refund', authenticateToken, require
     if (!['reserved','approved','exported'].includes(payout.status)) {
       await client.query('ROLLBACK');
       return res.status(409).json({ success: false, code: 'USD_ACH_REFUND_NOT_ALLOWED', message: 'This payout is already settled or cannot be refunded from its current status.' });
+    }
+    if (payout.status === 'exported') {
+      const batchState = await client.query('SELECT status FROM usd_ach_payout_batches WHERE id=$1 FOR UPDATE', [payout.batch_id]);
+      if (!batchConfirmedNotSent(batchState.rows[0])) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ success: false, code: 'USD_ACH_BATCH_REJECTION_REQUIRED', message: 'First mark the whole exported batch rejected using official evidence that the ODFI did not accept it; then refund individual entries.' });
+      }
     }
     await ensureCustomerLedgerAccount(client, payout.account_id);
     await changeVerifiedAvailableBalance(client, payout.account_id, String(payout.amount), 'credit');
@@ -788,6 +814,44 @@ router.post('/api/usd-ach/admin/requests/:id/refund', authenticateToken, require
     if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
     console.error('USD ACH payout refund failed:', error.message);
     return res.status(500).json({ success: false, message: 'Refund was not confirmed; check the ledger and bank evidence before retrying.' });
+  } finally { if (client) client.release(); }
+});
+
+router.post('/api/usd-ach/admin/batches/:id/reject', authenticateToken, requireAdmin, async (req, res) => {
+  const evidenceNote = String(req.body && req.body.evidenceNote || '').trim();
+  if (req.body.confirmedNotAccepted !== true || evidenceNote.length < 10 || evidenceNote.length > 500) {
+    return res.status(400).json({ success: false, code: 'USD_ACH_BATCH_REJECTION_EVIDENCE_REQUIRED', message: 'Confirm the ODFI rejected/did not accept this file and record the official evidence (10-500 characters).' });
+  }
+  let client;
+  try {
+    await ensureTables();
+    client = await db.getClient();
+    await client.query('BEGIN');
+    const selected = await client.query('SELECT * FROM usd_ach_payout_batches WHERE id=$1 FOR UPDATE', [req.params.id]);
+    const batch = selected.rows[0];
+    if (!batch) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ success: false, message: 'ACH batch not found.' });
+    }
+    if (batch.status !== 'file_generated') {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, code: 'USD_ACH_BATCH_NOT_REJECTABLE', message: 'Only a not-yet-reconciled generated batch can be marked rejected.' });
+    }
+    const changed = await client.query(
+      "UPDATE usd_ach_payout_batches SET status='rejected', evidence_note=$2, updated_at=NOW() WHERE id=$1 AND status='file_generated' RETURNING *",
+      [batch.id, evidenceNote]
+    );
+    if (!changed.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ success: false, code: 'USD_ACH_BATCH_STATE_CONFLICT', message: 'The batch was concurrently resolved.' });
+    }
+    await client.query('COMMIT');
+    await audit(req.user.id, 'usd_ach_batch_rejected', batch.id, { batchReference: batch.batch_reference, evidenceNote }, req);
+    return res.status(200).json({ success: true, batch: serializeBatch(changed.rows[0]), message: 'The file can no longer be downloaded. Refund individual reservations only after the ODFI confirms no entries were sent or accepted.' });
+  } catch (error) {
+    if (client) { try { await client.query('ROLLBACK'); } catch (_) {} }
+    console.error('USD ACH batch rejection failed:', error.message);
+    return res.status(500).json({ success: false, message: 'Could not record ACH batch rejection.' });
   } finally { if (client) client.release(); }
 });
 
