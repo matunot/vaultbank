@@ -13,6 +13,7 @@ name: Integration Tests (PostgreSQL)
       - 'server/routes/direct-bank-payouts.js'
       - 'server/routes/bank-deposits.js'
       - 'server/__tests__/directUpi.test.js'
+      - 'server/__tests__/directUpiPgIntegration.test.js'
       - 'server/__tests__/directBankPayouts.test.js'
       - 'server/__tests__/bankDeposits.test.js'
       - 'client/src/components/DirectUpiDepositModal.tsx'
@@ -171,6 +172,15 @@ jobs:
           npx --yes jest@30.5.2 __tests__/inrPgIntegration.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --testTimeout=180000 \
+            --verbose --forceExit
+        env:
+          TEST_DATABASE_URL: postgres://vaultbank:vaultbank_test_pw@localhost:5432/vaultbank_test
+
+      - name: Run Direct UPI settlement + internal INR transfer integration tests
+        run: |
+          npx --yes jest@30.5.2 __tests__/directUpiPgIntegration.test.js \
+            --testPathIgnorePatterns /node_modules/ \
+            --testTimeout=120000 \
             --verbose --forceExit
         env:
           TEST_DATABASE_URL: postgres://vaultbank:vaultbank_test_pw@localhost:5432/vaultbank_test
