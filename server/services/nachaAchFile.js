@@ -46,6 +46,16 @@ function numeric(value, length, label) {
   return text.padStart(length, '0');
 }
 
+// Unlike ordinary left-justified name fields, the immediate-origin field can
+// intentionally begin with a blank under the ODFI's file profile.
+function fixedRawText(value, length, label) {
+  const source = String(value == null ? '' : value).toUpperCase();
+  if (!source.trim()) throw new Error(label + ' is required.');
+  if (!/^[A-Z0-9 &.,/+\-]*$/.test(source)) throw new Error(label + ' contains characters not allowed by the configured ACH file profile.');
+  if (source.length > length) throw new Error(label + ' exceeds the ACH field length of ' + length + ' characters.');
+  return source.padEnd(length, ' ');
+}
+
 function record(parts) {
   const line = parts.join('');
   if (line.length !== 94 || /[^\x20-\x7E]/.test(line)) throw new Error('Generated ACH record must be 94 ASCII characters.');
@@ -88,7 +98,7 @@ function buildNachaCreditFile({ config, payouts, effectiveDate, fileIdModifier, 
     throw new Error('An ACH export must contain between 1 and ' + MAX_ENTRIES + ' payouts.');
   }
   const odfiRouting = requireAba(config.odfiRoutingNumber, 'ODFI routing number');
-  const immediateOrigin = safeText(config.immediateOrigin, 10, 'Immediate origin');
+  const immediateOrigin = fixedRawText(config.immediateOrigin, 10, 'Immediate origin');
   const odfiName = safeText(config.odfiName, 23, 'ODFI name');
   const immediateOriginName = safeText(config.immediateOriginName, 23, 'Immediate origin name');
   const companyName = safeText(config.companyName, 16, 'Originator company name');
