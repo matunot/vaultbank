@@ -79,29 +79,43 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   const [sendToast, setSendToast] = useState<{ name: string; amount: number } | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('deposit') === 'success') {
-      setDepositBanner('Deposit confirmed â€” REAL funds have been added to your account.');
+    const depositState = params.get('deposit');
+    if (!depositState) return;
+
+    // Production never treats a third-party checkout redirect as settlement
+    // proof. Legacy provider rails are disabled; only statement-reconciled
+    // native deposits can credit available funds.
+    if (import.meta.env.PROD && (depositState === 'success' || depositState === 'paypal-success')) {
       window.history.replaceState({}, '', window.location.pathname);
+      setDepositBanner('This legacy payment return is not proof of settlement. No funds were credited by this redirect; check verified VaultBank activity.');
       setTimeout(() => setDepositBanner(null), 8000);
-    } else if (params.get('deposit') === 'cancelled') {
-      setDepositBanner('Deposit cancelled — no money was moved.');
+      return;
+    }
+
+    if (depositState === 'cancelled') {
       window.history.replaceState({}, '', window.location.pathname);
+      setDepositBanner('Deposit cancelled — no money was moved.');
       setTimeout(() => setDepositBanner(null), 6000);
-    } else if (params.get('deposit') === 'paypal-success') {
+    } else if (depositState === 'success') {
+      // Development-only legacy flow; production is guarded above.
+      window.history.replaceState({}, '', window.location.pathname);
+      setDepositBanner('Deposit return received. Confirm settlement in the development test flow before treating it as credited.');
+      setTimeout(() => setDepositBanner(null), 8000);
+    } else if (depositState === 'paypal-success') {
+      // Development-only legacy capture; production is guarded above.
       const orderId = params.get('token') || '';
       window.history.replaceState({}, '', window.location.pathname);
       if (!orderId) {
         setDepositBanner('PayPal return missing order — no money was moved.');
         setTimeout(() => setDepositBanner(null), 6000);
       } else {
-        // Capture the approved PayPal order, then refresh balances everywhere.
         api.paypalCapture({ orderId })
           .then((r) => {
             setDepositBanner(r.success
-              ? 'PayPal deposit confirmed — REAL funds have been added to your account.'
-              : 'PayPal capture failed — no money was moved.');
+              ? 'Payment capture returned success in the development flow; verify the ledger before treating funds as available.'
+              : 'Payment capture failed — no money was moved.');
           })
-          .catch(() => setDepositBanner('PayPal capture failed — no money was moved.'))
+          .catch(() => setDepositBanner('Payment capture failed — no money was moved.'))
           .finally(() => {
             refreshBus.emit();
             setTimeout(() => setDepositBanner(null), 8000);
