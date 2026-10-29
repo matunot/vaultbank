@@ -1,4 +1,5 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { FormEvent } from 'react';
 import { ArrowDownLeft, ArrowUpRight, Loader2, Plus, RefreshCw, ShieldCheck, Wallet, X } from 'lucide-react';
 import { api } from '../api';
 
