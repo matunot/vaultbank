@@ -62,8 +62,8 @@ describe('VaultBank NACHA ACH credit file generator', () => {
     expect(rows[3].slice(1, 3)).toBe('32');
     expect(rows[2].slice(79, 94)).toBe('021000020000042');
     expect(rows[3].slice(79, 94)).toBe('021000020000043');
-    expect(rows[4].slice(5, 10)).toBe('000002');
-    expect(rows[5].slice(32, 44)).toBe('000000013549');
+    expect(rows[4].slice(4, 10)).toBe('000002');
+    expect(rows[5].slice(43, 55)).toBe('000000013549');
   });
 
   test('validates ABA checksum and exact cents without floating point', () => {
