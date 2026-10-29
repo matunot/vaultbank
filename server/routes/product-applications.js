@@ -4,13 +4,28 @@ const express = require('express');
 const router = express.Router();
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { applicationLimiter } = require('../middleware/rateLimiter');
-const { db, isDemo, createAuditLog } = require('../config/database');
+const { db, isDemo, createAuditLog, createNotification } = require('../config/database');
 
 const KEY_RE = /^[A-Za-z0-9._:-]{8,100}$/;
 const CURRENCIES = ['INR', 'USD'];
 const CARD_TYPES = ['debit', 'credit'];
 const CARD_STATUSES = ['needs_verification', 'received', 'under_review', 'waiting_for_issuer', 'closed'];
 const LOAN_STATUSES = ['needs_verification', 'received', 'under_review', 'funding_required', 'declined', 'closed'];
+const CARD_STATUS_LABELS = {
+    needs_verification: 'needs verification',
+    received: 'received',
+    under_review: 'under review',
+    waiting_for_issuer: 'waiting for an issuer connection',
+    closed: 'closed',
+};
+const LOAN_STATUS_LABELS = {
+    needs_verification: 'needs verification',
+    received: 'received',
+    under_review: 'under review',
+    funding_required: 'awaiting a funded lender',
+    declined: 'declined',
+    closed: 'closed',
+};
 let schemaReady = false;
 
 async function ensureSchema() {
@@ -71,6 +86,14 @@ async function audit(req, action, type, id, details) {
     });
   } catch (error) {
     console.warn('Product application audit write failed:', error && error.code ? error.code : 'audit-error');
+  }
+}
+
+async function notifyApplicant(userId, { title, message, metadata }) {
+  try {
+    await createNotification(userId, { type: 'info', title, message, metadata });
+  } catch (error) {
+    console.warn('Product application notification failed:', error && error.code ? error.code : 'notify-error');
   }
 }
 
@@ -217,6 +240,11 @@ router.patch('/api/admin/card-program/requests/:id/status', authenticateToken, r
     const result = await db.query("UPDATE card_program_requests SET status = $2, review_note = $3, reviewed_by = $4, updated_at = NOW() WHERE id = $1 AND status <> 'closed' RETURNING *", [req.params.id, status, note, req.user.id]);
     if (!result.rows.length) return res.status(404).json({ success: false, message: 'Open card request not found.' });
     await audit(req, 'card_program_request_reviewed', 'card_program_request', result.rows[0].id, { status });
+    await notifyApplicant(result.rows[0].user_id, {
+      title: 'Card request updated',
+      message: `Your card request is now ${CARD_STATUS_LABELS[status]}. ${note}`,
+      metadata: { requestId: result.rows[0].id, status },
+    });
     return res.status(200).json({ success: true, request: cardDto(result.rows[0]) });
   } catch (error) {
     console.error('Admin card review failed:', error && error.code ? error.code : 'update-error');
@@ -261,6 +289,11 @@ router.patch('/api/admin/loan-applications/:id/status', authenticateToken, requi
     const result = await db.query("UPDATE loan_applications SET status = $2, review_note = $3, reviewed_by = $4, updated_at = NOW() WHERE id = $1 AND status NOT IN ('closed','declined') RETURNING *", [req.params.id, status, note, req.user.id]);
     if (!result.rows.length) return res.status(404).json({ success: false, message: 'Open loan application not found.' });
     await audit(req, 'loan_application_reviewed', 'loan_application', result.rows[0].id, { status });
+    await notifyApplicant(result.rows[0].user_id, {
+      title: 'Loan application updated',
+      message: `Your loan application is now ${LOAN_STATUS_LABELS[status]}. ${note}`,
+      metadata: { applicationId: result.rows[0].id, status },
+    });
     return res.status(200).json({ success: true, application: loanDto(result.rows[0]) });
   } catch (error) {
     console.error('Admin loan review failed:', error && error.code ? error.code : 'update-error');

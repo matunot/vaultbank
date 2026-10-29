@@ -7,6 +7,7 @@ jest.mock('../config/database', () => ({
   },
   isDemo: false,
   createAuditLog: jest.fn(),
+  createNotification: jest.fn(),
 }));
 
 jest.mock('../middleware/auth', () => ({
@@ -66,6 +67,7 @@ beforeEach(() => {
   database.db.ensureConnection.mockResolvedValue(undefined);
   database.db.query.mockResolvedValue({ rows: [], rowCount: 0 });
   database.createAuditLog.mockResolvedValue({ id: 'audit-1' });
+  database.createNotification.mockResolvedValue({ id: 'notif-1' });
 });
 
 describe('card program request tracking', () => {
@@ -178,6 +180,43 @@ describe('card program request tracking', () => {
       expect.anything(),
     );
   });
+
+  test('notifies the applicant when an admin moves a verified request forward', async () => {
+    database.db.query.mockImplementation(async (sql) => {
+      if (String(sql).includes('SELECT u.email_verified')) {
+        return { rows: [{ email_verified: true, kyc_status: 'verified' }], rowCount: 1 };
+      }
+      if (String(sql).includes('UPDATE card_program_requests')) {
+        return {
+          rows: [{
+            id: '41',
+            user_id: 'user-9',
+            card_type: 'debit',
+            currency: 'INR',
+            status: 'waiting_for_issuer',
+            review_note: 'Issuer connection is not live yet',
+            created_at: '2026-10-29T00:00:00Z',
+            updated_at: '2026-10-29T00:00:00Z',
+          }],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+
+    const res = await callRoute('/api/admin/card-program/requests/:id/status', 'patch', {
+      user: { id: 'admin-1', role: 'admin' },
+      params: { id: '41' },
+      body: { status: 'waiting_for_issuer', note: 'Issuer connection is not live yet' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(database.createNotification).toHaveBeenCalledWith('user-9', expect.objectContaining({
+      title: 'Card request updated',
+      metadata: { requestId: '41', status: 'waiting_for_issuer' },
+    }));
+    expect(database.createNotification.mock.calls[0][1].message).toContain('waiting for an issuer connection');
+  });
 });
 
 describe('loan application tracking', () => {
@@ -259,5 +298,45 @@ describe('loan application tracking', () => {
       expect.stringContaining('UPDATE loan_applications'),
       expect.anything(),
     );
+  });
+
+  test('still saves a loan review when the applicant notification fails', async () => {
+    database.db.query.mockImplementation(async (sql) => {
+      if (String(sql).includes('SELECT u.email_verified')) {
+        return { rows: [{ email_verified: true, kyc_status: 'verified' }], rowCount: 1 };
+      }
+      if (String(sql).includes('UPDATE loan_applications')) {
+        return {
+          rows: [{
+            id: '73',
+            user_id: 'user-9',
+            amount: '10000.00',
+            currency: 'INR',
+            term_months: 12,
+            purpose: 'Repair a family home',
+            status: 'funding_required',
+            review_note: 'Ready once a funded lender is connected',
+            created_at: '2026-10-29T00:00:00Z',
+            updated_at: '2026-10-29T00:00:00Z',
+          }],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    });
+    database.createNotification.mockRejectedValue(Object.assign(new Error('notify down'), { code: 'NOTIFY_DOWN' }));
+
+    const res = await callRoute('/api/admin/loan-applications/:id/status', 'patch', {
+      user: { id: 'admin-1', role: 'admin' },
+      params: { id: '73' },
+      body: { status: 'funding_required', note: 'Ready once a funded lender is connected' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.application.status).toBe('funding_required');
+    expect(database.createNotification).toHaveBeenCalledWith('user-9', expect.objectContaining({
+      title: 'Loan application updated',
+      metadata: { applicationId: '73', status: 'funding_required' },
+    }));
   });
 });
