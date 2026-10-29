@@ -139,6 +139,12 @@ describe('production savings accounts backed by PostgreSQL', () => {
   });
 
   test('opens a zero-balance savings account only in a supported currency', async () => {
+    database.createAccount.mockResolvedValueOnce({
+      ...vault,
+      currency: 'INR',
+      balance: '0.00',
+      available_balance: '0.00',
+    });
     const { res } = await call(savingsRouter, '/api/savings/accounts', 'post', {
       body: { currency: 'INR' },
     });
@@ -147,8 +153,9 @@ describe('production savings accounts backed by PostgreSQL', () => {
     expect(database.createAccount).toHaveBeenCalledWith('user-1', 'savings', 'INR');
     expect(res.body.account).toMatchObject({
       id: 'account-vault',
-      currency: 'USD',
-      balance: 50,
+      currency: 'INR',
+      balance: 0,
+      availableBalance: 0,
     });
     expect(res.body.message).toContain('No funds or interest were added');
   });
