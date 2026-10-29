@@ -58,6 +58,12 @@ app.use(helmet({
     contentSecurityPolicy: false // Allow for development
 }));
 
+// Sensitive API payloads (auth tokens, balances, account details, transfers)
+// must not be stored by browsers or shared/intermediate caches.
+const { privateApiHeaders } = require('./middleware/privateApiHeaders');
+app.use('/api', privateApiHeaders);
+
+
 // ─── CORS Configuration ─────────────────────────────────────────────────────
 // Production accepts only the canonical VaultBank origin plus explicitly
 // approved origins from VB_CORS_ALLOWED_ORIGINS. Local/dev remains convenient.
