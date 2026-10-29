@@ -25,6 +25,7 @@ const {
 } = require('../config/database');
 const { authenticateToken, generateToken } = require('../middleware/auth');
 const { authLimiter, signupLimiter } = require('../middleware/rateLimiter');
+const { sendVerificationForUser } = require('../services/emailVerificationService');
 
 // Fail closed in production - see middleware/auth.js for the rationale.
 const JWT_SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production'
@@ -92,6 +93,21 @@ const handleSignup = async (req, res) => {
         // Create user (this also auto-creates a bank account)
         const user = await createUser({ email, password, fullName, phone });
 
+        // Send a one-time, 30-minute email verification link when SMTP is
+        // configured. Signup remains available if delivery is not configured,
+        // but customer fiat rails stay gated on the persisted verification flag.
+        let verificationEmailSent = false;
+        try {
+            const verification = await sendVerificationForUser({
+                userId: user.id,
+                email: user.email,
+                requestIp: req.ip,
+            });
+            verificationEmailSent = verification.sent === true;
+        } catch (verificationError) {
+            console.warn('Signup email verification unavailable:', verificationError && verificationError.code ? verificationError.code : 'verification-error');
+        }
+
         // Generate JWT token
         const token = generateToken(user);
 
@@ -121,7 +137,10 @@ const handleSignup = async (req, res) => {
 
         res.status(201).json({
             success: true,
-            message: 'Account created successfully!',
+            message: verificationEmailSent
+                ? 'Account created. Check your email to verify your address before using customer fiat rails.'
+                : 'Account created. Email verification is required before customer fiat rails can be used; request a verification link from your account when email delivery is configured.',
+            verificationEmailSent,
             token,
             user: {
                 id: user.id,
