@@ -101,7 +101,7 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
     });
 
     // Helper: make a real HTTP POST to /api/account/transfer
-    function postTransfer(body, headers = {}) {
+    function postTransfer(body, headers = { 'idempotency-key': `httpit-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` }) {
         const agent = request(app)
             .post('/api/account/transfer')
             .set('Authorization', `Bearer ${authToken}`)
@@ -155,6 +155,25 @@ describeIfDb('HTTP handler integration: real Express app + real middleware + rea
         );
         return rows;
     }
+
+    test('rejects missing idempotency key before changing either balance', async () => {
+        if (!pool) return;
+        const alice = testData.accounts.alice_usd;
+        const bob = testData.accounts.bob_usd;
+        await setAccountBalances([alice.id, bob.id], 1000);
+
+        const response = await postTransfer({
+            recipientEmail: `${testPrefix}-bob@test.invalid`,
+            amount: 10,
+            currency: 'USD',
+            description: 'missing idempotency key regression',
+        }, {});
+
+        expect(response.status).toBe(400);
+        expect(response.body.code).toBe('IDEMPOTENCY_KEY_REQUIRED');
+        expect(parseFloat((await getAccount(alice.id)).balance)).toBe(1000);
+        expect(parseFloat((await getAccount(bob.id)).balance)).toBe(1000);
+    });
 
     // ── Test 1: Happy path — real HTTP transfer through the full Express pipeline ──
     test('real HTTP transfer: debits sender, credits recipient, creates ledger rows + transfer record', async () => {
