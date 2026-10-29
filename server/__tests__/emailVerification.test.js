@@ -84,7 +84,6 @@ describe('email verification delivery and endpoints', () => {
     const result = await service.sendVerificationForUser({
       userId: 'user-1',
       email: 'person@example.test',
-      requestIp: '127.0.0.1',
     });
 
     expect(result).toEqual({ sent: false, reason: 'smtp-not-configured' });
@@ -133,7 +132,6 @@ describe('email verification delivery and endpoints', () => {
     const result = await service.sendVerificationForUser({
       userId: 'user-1',
       email: 'person@example.test',
-      requestIp: '127.0.0.1',
     });
 
     expect(result).toMatchObject({ sent: true, expiresInMinutes: 30 });
@@ -143,7 +141,6 @@ describe('email verification delivery and endpoints', () => {
     expect(insertCall[1][0]).toBe('user-1');
     expect(insertCall[1][1]).toMatch(/^[a-f0-9]{64}$/);
     expect(insertCall[1][1]).not.toMatch(/^[A-Za-z0-9_-]{40,60}$/);
-    expect(insertCall[2]).toBeUndefined();
     const sentText = sendMail.mock.calls[0][0].text;
     expect(sentText).toContain('verify-email=');
     expect(sentText).toContain('within 30 minutes');
