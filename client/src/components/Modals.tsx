@@ -288,7 +288,10 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
 }
 
 export function DepositModal({ isOpen, onClose }: ModalProps) {
-  const [mode, setMode] = useState<'inr' | 'bank' | 'card' | 'instant' | 'paypal' | 'usdc'>('inr');
+  // Production exposes only VaultBank-native manual bank instructions here.
+  // Direct UPI lives in Payments; third-party collection and card/PayPal routes
+  // remain development-only and must not appear in the production deposit flow.
+  const [mode, setMode] = useState<'inr' | 'bank' | 'card' | 'instant' | 'paypal' | 'usdc'>(import.meta.env.PROD ? 'bank' : 'inr');
   const [usdc, setUsdc] = useState<{ address: string; network: string; qr: string | null } | null>(null);
   const [usdcTestnet, setUsdcTestnet] = useState(false);
   const [usdcChecking, setUsdcChecking] = useState(false);
@@ -504,16 +507,18 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
 
         {/* Only the supported fiat receive choices are shown. Card providers and crypto remain paused. */}
         <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={() => { setMode('inr'); setInrDetails(null); setStatus('idle'); setErrorMsg(''); }}
-            className={`p-3 rounded-xl border text-left transition-colors ${
-              mode === 'inr' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
-            }`}
-          >
-            <p className="text-xs font-bold text-white flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> INR bank account</p>
-            <p className="text-[9px] text-white/40 mt-1">Cashfree-issued receiving details</p>
-          </button>
+          {!import.meta.env.PROD && (
+            <button
+              type="button"
+              onClick={() => { setMode('inr'); setInrDetails(null); setStatus('idle'); setErrorMsg(''); }}
+              className={`p-3 rounded-xl border text-left transition-colors ${
+                mode === 'inr' ? 'bg-emerald-500/10 border-emerald-500/40' : 'bg-white/5 border-white/10 hover:border-white/20'
+              }`}
+            >
+              <p className="text-xs font-bold text-white flex items-center gap-1.5"><Building2 className="w-3.5 h-3.5" /> Legacy INR receiving (development only)</p>
+              <p className="text-[9px] text-white/40 mt-1">Unavailable in native-only production</p>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => { setMode('bank'); setBankInstr(null); setStatus('idle'); setErrorMsg(''); }}
@@ -559,7 +564,7 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
             {!bankCfg && <p className="text-xs text-white/40 text-center py-4">Checking bank transfer availability…</p>}
             {bankCfg && !bankCfg.enabled && (
               <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-[11px] text-amber-300 font-bold text-center leading-relaxed">
-                Bank transfers are not set up yet — a verified receiving account isn't configured. Please use another rail for now.
+                Manual bank instructions are not configured yet. No funds were moved. For INR, open Payments and choose VaultBank Direct UPI when it is available for your verified account.
               </div>
             )}
             {bankCfg && bankCfg.enabled && !bankInstr && (
