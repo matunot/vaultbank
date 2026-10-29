@@ -16,7 +16,6 @@ const router = express.Router();
 const { ensureVaultLedgerSchema, ensureCustomerLedgerAccount, changeVerifiedAvailableBalance, postBalancedJournal } = require('../services/ledgerJournalService');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { db, createNotification, createAuditLog } = require('../config/database');
-const bankStatementReferenceRegistry = require('../services/bankStatementReferenceRegistry');
 
 const CURRENCY = 'INR';
 const MIN_AMOUNT_PAISE = 100;
@@ -406,7 +405,6 @@ router.post('/api/direct-upi/admin/intents/:id/verify', authenticateToken, requi
   try {
     await ensureVaultLedgerSchema();
     await ensureSchema();
-    await bankStatementReferenceRegistry.ensureBankSettlementReferenceRegistry();
     client = await db.getClient();
     await client.query('BEGIN');
     const result = await client.query(
@@ -454,11 +452,6 @@ router.post('/api/direct-upi/admin/intents/:id/verify', authenticateToken, requi
       throw error;
     }
 
-    await bankStatementReferenceRegistry.claimBankStatementReference(client, {
-      currency: 'INR', bankReference: bankUtr, sourceType: 'direct_upi_deposit',
-      sourceId: String(intent.id), accountId: String(intent.account_id),
-      userId: String(intent.user_id), amount: String(intent.amount), adminId: String(req.user.id),
-    });
     await ensureCustomerLedgerAccount(client, intent.account_id);
     await changeVerifiedAvailableBalance(client, intent.account_id, String(intent.amount), 'credit');
     const accountResult = await client.query(

@@ -758,6 +758,41 @@ export const api = {
     return request<ApiResponse>('api/usdc/withdraw', { method: 'POST', body: JSON.stringify(data) });
   },
 
+  // Native USD ACH preparation. A generated NACHA file is not settlement proof.
+  async usdAchAvailability(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usd-ach/availability');
+  },
+  async createUsdAchPayout(data: { amount: string; beneficiaryName: string; routingNumber: string; accountNumber: string; accountType: 'checking' | 'savings'; authorizationAccepted: boolean }, idempotencyKey: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usd-ach/payouts', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(data) });
+  },
+  async usdAchPayoutRequests(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usd-ach/payouts');
+  },
+  async usdAchAdminRequests(status = 'reserved'): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usd-ach/admin/requests?status=' + encodeURIComponent(status));
+  },
+  async approveUsdAchPayout(id: string, note: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usd-ach/admin/requests/' + encodeURIComponent(id) + '/approve', { method: 'POST', body: JSON.stringify({ note }) });
+  },
+  async createUsdAchBatch(data: { requestIds: string[]; effectiveDate: string }, idempotencyKey: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usd-ach/admin/batches', { method: 'POST', headers: { 'Idempotency-Key': idempotencyKey }, body: JSON.stringify(data) });
+  },
+  async usdAchAdminBatches(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usd-ach/admin/batches');
+  },
+  async usdAchAdminBatchFile(id: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usd-ach/admin/batches/' + encodeURIComponent(id) + '/file');
+  },
+  async rejectUsdAchBatch(id: string, evidenceNote: string, confirmedNotAccepted: boolean): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usd-ach/admin/batches/' + encodeURIComponent(id) + '/reject', { method: 'POST', body: JSON.stringify({ evidenceNote, confirmedNotAccepted }) });
+  },
+  async settleUsdAchPayout(id: string, data: { settlementAmount: string; bankReference: string; evidenceNote: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usd-ach/admin/requests/' + encodeURIComponent(id) + '/settle', { method: 'POST', body: JSON.stringify(data) });
+  },
+  async refundUsdAchPayout(id: string, evidenceNote: string, bankConfirmedNotSent: boolean): Promise<ApiResponse> {
+    return request<ApiResponse>('api/usd-ach/admin/requests/' + encodeURIComponent(id) + '/refund', { method: 'POST', body: JSON.stringify({ evidenceNote, bankConfirmedNotSent }) });
+  },
+
   async healthCheck(): Promise<ApiResponse> {
     return request<ApiResponse>('health');
   },
