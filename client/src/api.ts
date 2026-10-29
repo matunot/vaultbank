@@ -17,6 +17,8 @@ interface AuthResponse {
     full_name?: string;
     fullName?: string;
     role?: string;
+    emailVerified?: boolean;
+    kycStatus?: string;
   };
   account?: {
     id: string;
@@ -172,7 +174,8 @@ export const api = {
   },
 
   async getProfile(): Promise<ApiResponse> {
-    return request<ApiResponse>('api/auth/me');
+    // The canonical route is /api/profile; /api/auth/me is not mounted.
+    return request<ApiResponse>('api/profile');
   },
 
   async requestEmailVerification(): Promise<ApiResponse> {
