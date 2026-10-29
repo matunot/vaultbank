@@ -150,6 +150,7 @@ const handleSignup = async (req, res) => {
                 role: user.role,
                 subscription: user.subscription,
                 kycStatus: user.kyc_status,
+                emailVerified: user.email_verified === true,
                 createdAt: user.created_at
             },
             account: account ? {
