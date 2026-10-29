@@ -21,6 +21,8 @@ import { refreshBus } from './refreshBus';
 
 // Lazy load heavy sections
 const CardsSection = lazy(() => import('./components/IssuingCardsSection'));
+const CardProgramSection = lazy(() => import('./components/CardProgramSection'));
+const LoanApplicationSection = lazy(() => import('./components/LoanApplicationSection'));
 const PaymentsSection = lazy(() => import('./components/PaymentsSection'));
 const InvestmentsSection = lazy(() => import('./components/InvestmentsSection'));
 const VaultSection = lazy(() => import('./components/VaultSection'));
@@ -252,13 +254,13 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
                     {active === 'vault' && (import.meta.env.DEV ? <VaultSection /> : <SavingsAccountsSection />)}
                     {active === 'swiss' && (import.meta.env.DEV ? <SwissSection /> : <PreviewOnlyNotice title="Swiss banking is not connected" message="The development view is illustrative only. No Swiss bank account, banking partnership, or deposit-protection arrangement is offered through this section." />)}
-                    {active === 'cards' && <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} />}
+                    {active === 'cards' && (import.meta.env.DEV ? <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /> : <CardProgramSection />)}
                     {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
                     {active === 'invest' && (import.meta.env.DEV ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
 {active === 'pay' && <VbPaySection />}
-                    {active === 'credit' && <CreditSection />}
+                    {active === 'credit' && (import.meta.env.DEV ? <CreditSection /> : <CardProgramSection defaultCardType="credit" />)}
 
-                    {active === 'loans' && (import.meta.env.DEV ? <DebtsSection /> : <PreviewOnlyNotice title="Loan marketplace is not live" message="The example credit score, debts, rates, and offers are development-only data. VaultBank has no authorized lender connected in production, so no loan offer or approval is available here." />)}
+                    {active === 'loans' && (import.meta.env.DEV ? <DebtsSection /> : <LoanApplicationSection />)}
                     {active === 'budget' && (import.meta.env.DEV ? <BudgetSection /> : <PreviewOnlyNotice title="Budget tools are a development preview" message="The current budget figures are example data, not your personal spending history. Live transaction-linked budgets are not connected yet." />)}
                     {active === 'send' && <TransferSection />}
                     {active === 'history' && <HistorySection />}
