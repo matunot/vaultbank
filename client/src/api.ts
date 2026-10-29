@@ -248,6 +248,34 @@ export const api = {
     });
   },
 
+  async getAdminCardProgramRequests(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/admin/card-program/requests');
+  },
+
+  async updateAdminCardProgramRequest(
+    id: string,
+    data: { status: string; note: string },
+  ): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/admin/card-program/requests/${encodeURIComponent(id)}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getAdminLoanApplications(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/admin/loan-applications');
+  },
+
+  async updateAdminLoanApplication(
+    id: string,
+    data: { status: string; note: string },
+  ): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/admin/loan-applications/${encodeURIComponent(id)}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
   async fetchAccount(): Promise<ApiResponse> {
     return request<ApiResponse>('api/account');
   },

@@ -14,6 +14,7 @@ import { DirectBankPayoutModal } from './DirectBankPayoutModal';
 import { DirectBankPayoutAdminReview } from './DirectBankPayoutAdminReview';
 import { BankTransferDepositPanel } from './BankTransferDepositPanel';
 import { BankDepositAdminReview } from './BankDepositAdminReview';
+import ProductApplicationsAdminReview from './ProductApplicationsAdminReview';
 
 /** A real registered VaultBank user (from the backend directory). */
 interface Recipient {
@@ -833,6 +834,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectUpiAdminReview />}
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectBankPayoutAdminReview />}
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <BankDepositAdminReview />}
+      {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <ProductApplicationsAdminReview />}
     </div>
   );
 }
