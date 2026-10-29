@@ -72,6 +72,7 @@ describeWithIsolatedDb('Direct UPI settlement -> native ledger -> internal INR t
     app.use(express.json({ limit: '1mb' }));
     app.use('/', require('../routes/direct-upi'));
     app.use('/', require('../routes/accounts'));
+    app.use('/', require('../routes/bank-deposits'));
   });
 
   afterAll(async () => {
@@ -79,6 +80,8 @@ describeWithIsolatedDb('Direct UPI settlement -> native ledger -> internal INR t
       const ids = Object.values(testData ? testData.userIds : {});
       if (ids.length) {
         // Remove UPI-specific rows before the shared helper deletes test users.
+        await pool.query('DELETE FROM bank_deposit_instructions WHERE user_id = ANY($1::uuid[])', [ids]);
+        await pool.query('DELETE FROM vb_bank_settlement_references WHERE user_id = ANY($1::uuid[])', [ids]);
         await pool.query(
           'DELETE FROM direct_upi_deposit_intents WHERE user_id = ANY($1::uuid[])',
           [ids]
@@ -134,6 +137,11 @@ describeWithIsolatedDb('Direct UPI settlement -> native ledger -> internal INR t
     const initialAliceVerified = await getVerifiedFunds(alice.id);
     const initialBobVerified = await getVerifiedFunds(bob.id);
 
+    const bankQueue = await request(app)
+      .get('/api/bank-deposits/admin/instructions')
+      .set('Authorization', 'Bearer ' + adminToken);
+    expect(bankQueue.status).toBe(200);
+
     const intentResponse = await createIntent('125.50', prefix + '-deposit-attempt-1');
     expect(intentResponse.status).toBe(201);
     expect(intentResponse.body.success).toBe(true);
@@ -177,6 +185,33 @@ describeWithIsolatedDb('Direct UPI settlement -> native ledger -> internal INR t
     expect(settledIntent[0].status).toBe('settled');
     expect(settledIntent[0].bank_utr).toBe(bankUtr);
     expect(settledIntent[0].settled_at).toBeTruthy();
+
+    // Replay the same external bank reference (different casing) through the
+    // other native receive rail. This must roll back without a second credit.
+    const { rows: pendingBankRows } = await pool.query(
+      `INSERT INTO bank_deposit_instructions
+          (user_id, account_id, reference, amount, currency, status, expires_at)
+       VALUES ($1, $2, $3, '125.50', 'INR', 'pending', NOW() + INTERVAL '1 day')
+       RETURNING id`,
+      [testData.userIds.alice, alice.id, 'VB-BD-CROSS-' + prefix]
+    );
+    const crossRailReplay = await request(app)
+      .post('/api/bank-deposits/admin/instructions/' + encodeURIComponent(pendingBankRows[0].id) + '/verify')
+      .set('Authorization', 'Bearer ' + adminToken)
+      .send({
+        settlementAmount: '125.50',
+        note: 'Synthetic statement row reused across rails in isolated test',
+        externalTxnRef: bankUtr.toLowerCase(),
+      });
+    expect(crossRailReplay.status).toBe(409);
+    expect(crossRailReplay.body.code).toBe('BANK_DEPOSIT_REFERENCE_ALREADY_USED');
+    const { rows: stillPendingBankDeposit } = await pool.query(
+      'SELECT status, external_txn_ref FROM bank_deposit_instructions WHERE id = $1',
+      [pendingBankRows[0].id]
+    );
+    expect(stillPendingBankDeposit[0]).toMatchObject({ status: 'pending', external_txn_ref: null });
+    expect(Number((await getAccount(alice.id)).balance)).toBe(Number(initialAlice.balance) + 125.5);
+    expect(await getVerifiedFunds(alice.id)).toBe(initialAliceVerified + 125.5);
 
     const { rows: depositTransactions } = await pool.query(
       `SELECT id, amount::text, currency, external_reference
