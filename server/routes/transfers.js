@@ -65,7 +65,7 @@ router.post('/api/transfers', authenticateToken, transferLimiter, async (req, re
 
     // Parse the amount without binary floating-point rounding.
     const rawAmount = typeof amount === 'number' ? String(amount) : String(amount == null ? '' : amount).trim();
-    if (!/^\\d+(?:\\.\\d{1,2})?$/.test(rawAmount)) {
+    if (!/^\d+(?:\.\d{1,2})?$/.test(rawAmount)) {
         return res.status(400).json({ success: false, message: 'Amount must be positive and have at most two decimal places.' });
     }
     const [rawWhole, rawFraction = ''] = rawAmount.split('.');
@@ -77,7 +77,7 @@ router.post('/api/transfers', authenticateToken, transferLimiter, async (req, re
     if (minor > 10000000n) {
         return res.status(400).json({ success: false, message: 'Maximum single internal transfer is 100,000.00.' });
     }
-    const normalizedAmount = ${whole.toString()}`.${rawFraction.padEnd(2, '0') || '00'}`;
+    const normalizedAmount = `${whole.toString()}.${(rawFraction.padEnd(2, '0') || '00')}`;
 
     try {
         const recipientUser = await findUserById(String(recipient));
