@@ -35,8 +35,7 @@ async function ensureSchema() {
       token_hash CHAR(64) NOT NULL UNIQUE,
       expires_at TIMESTAMPTZ NOT NULL,
       consumed_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      request_ip TEXT
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
   await database.query(`
@@ -51,7 +50,7 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
-async function sendVerificationForUser({ userId, email, requestIp }) {
+async function sendVerificationForUser({ userId, email }) {
   if (!userId || !email) return { sent: false, reason: 'user-details-missing' };
   if (!smtpConfigured()) return { sent: false, reason: 'smtp-not-configured' };
 
@@ -71,15 +70,22 @@ async function sendVerificationForUser({ userId, email, requestIp }) {
   try {
     await client.query('BEGIN');
     transactionOpen = true;
-    // Only the newest unconsumed token remains valid.
+    // Serialize concurrent resend requests, so only the newest link remains valid.
+    await client.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))',
+      [userId, 'email-verification']
+    );
+    await client.query(
+      'DELETE FROM email_verification_tokens WHERE expires_at < NOW() - INTERVAL \'7 days\''
+    );
     await client.query(
       'UPDATE email_verification_tokens SET consumed_at = NOW() WHERE user_id = $1 AND consumed_at IS NULL',
       [userId]
     );
     await client.query(
-      `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at, request_ip)
-       VALUES ($1, $2, NOW() + INTERVAL '30 minutes', $3)`,
-      [userId, tokenHash, String(requestIp || '').slice(0, 128) || null]
+      `INSERT INTO email_verification_tokens (user_id, token_hash, expires_at)
+       VALUES ($1, $2, NOW() + INTERVAL '30 minutes')`,
+      [userId, tokenHash]
     );
     await client.query('COMMIT');
     transactionOpen = false;
