@@ -411,3 +411,26 @@ describe('production native-only policy blocks all legacy provider money routes'
         });
     });
 });
+
+
+describe('production readiness reflects native-only settlement truth', () => {
+    const priorNodeEnv = process.env.NODE_ENV;
+    afterEach(() => {
+        if (priorNodeEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = priorNodeEnv;
+    });
+
+    test('does not advertise legacy provider webhooks or readiness in production', async () => {
+        process.env.NODE_ENV = 'production';
+        const res = await callRoute('/api/payments/readiness', {}, false);
+        expect(res.code).toBe(200);
+        expect(res.body.nativeOnly).toBe(true);
+        expect(res.body.rails.usd.cardStripe).toBe(false);
+        expect(res.body.rails.usd.paypal).toBe(false);
+        expect(res.body.rails.inr.collections).toBe(false);
+        expect(res.body.rails.inr.payouts).toBe(false);
+        expect(res.body.rails.inr.collectionsWebhookPath).toBeNull();
+        expect(res.body.rails.inr.payoutsReconciliation).toBe('not-applicable-native-only');
+        expect(res.body.readinessDefinitions.webhookReady).toContain('Legacy provider webhooks are disabled');
+    });
+});
