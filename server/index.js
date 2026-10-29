@@ -213,6 +213,7 @@ app.use('/', require('./routes/collections'));
 app.use('/', require('./routes/external-payouts'));
 app.use('/', directUpiRoutes);
 app.use('/', directBankPayoutRoutes);
+app.use('/', require('./routes/usd-ach-payouts'));
 app.use('/', productApplicationRoutes);
 app.use('/', require('./vbr'));
 app.use('/', require('./routes/usdc-deposits'));
