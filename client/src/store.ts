@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { cards as initialCards, transactions as initialTransactions, savingsGoals as initialGoals, budgetCategories as initialBudget, investments as initialInvestments } from './data';
 import { api } from './api';
 import { refreshBus } from './refreshBus';
@@ -111,19 +111,38 @@ export function useAppStore() {
   // REAL money transfer — calls the backend /api/account/transfer
   // endpoint which atomically moves money between real registered
   // accounts and records transactions for both parties.
+  //
+  // The API requires an Idempotency-Key. One key belongs to ONE attempt:
+  // it is reused while the same recipient/amount/note is retried (a lost
+  // response must never become a second debit) and cleared on success, so a
+  // later identical transfer legitimately gets a fresh key.
+  const transferAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const sendMoney = useCallback(async (recipient: string, amount: number, note?: string) => {
     const trimmed = (recipient || '').trim();
     if (!trimmed) throw new Error('Please choose a recipient.');
     if (!amount || amount <= 0) throw new Error('Please enter a valid amount.');
 
+    const fingerprint = `${trimmed}|${amount}|${note || ''}`;
+    if (!transferAttempt.current || transferAttempt.current.fingerprint !== fingerprint) {
+      let key: string;
+      try {
+        key = crypto.randomUUID();
+      } catch {
+        key = `vb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      }
+      transferAttempt.current = { fingerprint, key };
+    }
+    const idempotencyKey = transferAttempt.current.key;
+
     setTransferLoading(true);
     try {
       const isEmail = trimmed.includes('@');
       const res = isEmail
-        ? await api.sendMoney({ recipientEmail: trimmed, amount, description: note })
-        : await api.sendMoney({ recipientAccountNumber: trimmed, amount, description: note });
+        ? await api.sendMoney({ recipientEmail: trimmed, amount, description: note }, idempotencyKey)
+        : await api.sendMoney({ recipientAccountNumber: trimmed, amount, description: note }, idempotencyKey);
 
       if (!res.success) throw new Error(res.message || 'Transfer failed.');
+      transferAttempt.current = null;
 
       // Sync real balance from the server response
       const newBalance = res.transfer?.newBalance;
