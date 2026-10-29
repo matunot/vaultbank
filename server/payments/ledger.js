@@ -120,10 +120,11 @@ async function recordWebhookEvent({ provider, providerEventId, eventType, payloa
         } else {
             console.error('[payments.ledger] recordWebhookEvent failed:', err.message);
         }
-        // Fail open: if we can't dedup, let the handler run -- worst case
-        // is a duplicate ledger write that the daily reconciliation will
-        // catch and roll back.
-        return { duplicate: false, id: null, dbError: err.message };
+        // Fail closed: without a durable deduplication claim, a provider retry
+        // could apply the same money event twice. The route returns 503 so the
+        // provider retries; never process a financial webhook without the DB
+        // idempotency record.
+        return { duplicate: false, id: null, dbError: true };
     }
 }
 

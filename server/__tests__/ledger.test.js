@@ -1,7 +1,7 @@
 /**
  * Sprint 1 — Unit tests for the payment ledger persistence helpers.
  *
- * This suite asserts the fail-open ("DB unavailable") path: `config/db` is
+ * This suite asserts the fail-closed ("DB unavailable") path: `config/db` is
  * mocked so every query rejects. Keeps the result deterministic on machines
  * whose environment points at a live DB — with a real connection the fixed
  * fixture `evt_test_1` persisted after the first run, so later runs saw
@@ -37,7 +37,7 @@ describe('payments/ledger', () => {
         expect(await ledger.findPaymentByIdempotencyKey(null)).toBeNull();
     });
 
-    test('recordWebhookEvent fails open when DB unavailable', async () => {
+    test('recordWebhookEvent fails closed when DB unavailable', async () => {
         const r = await ledger.recordWebhookEvent({
             provider: 'stripe',
             providerEventId: 'evt_test_1',
@@ -45,9 +45,10 @@ describe('payments/ledger', () => {
             payload: { id: 'evt_test_1', type: 'payment_intent.succeeded' },
         });
         expect(r).toHaveProperty('duplicate');
-        // DB unavailable -> fail open: treat as first time so the handler still runs
+        // A missing durable dedupe claim must stop webhook processing.
         expect(r.duplicate).toBe(false);
-        expect(r.dbError).toBeTruthy();
+        expect(r.id).toBeNull();
+        expect(r.dbError).toBe(true);
     });
 
     test('updatePaymentStatus does not throw on demo mode', async () => {
