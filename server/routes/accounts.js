@@ -69,9 +69,11 @@ router.get('/api/account', authenticateToken, async (req, res) => {
 router.get('/api/accounts', authenticateToken, async (req, res) => {
     try {
         let accounts;
-        if (req.user.isDemo !== false) {
-            // demo mode
-            accounts = require('../config/database').demoStore.accounts.filter(a => a.user_id === req.user.id);
+        if (isDemo) {
+            // Only use the in-memory store when the server itself is in demo mode.
+            // A real PostgreSQL user has no req.user.isDemo property; checking
+            // that property incorrectly returned demo accounts to every such user.
+            accounts = demoStore.accounts.filter(a => a.user_id === req.user.id);
         } else {
             const result = await db.query(
                 'SELECT * FROM accounts WHERE user_id = $1 ORDER BY created_at ASC',
