@@ -434,6 +434,29 @@ describe('production readiness reflects native-only settlement truth', () => {
         expect(res.body.readinessDefinitions.webhookReady).toContain('Legacy provider webhooks are disabled');
     });
 
+    test('readiness reports rail configuration separately from verified-customer access', async () => {
+        process.env.NODE_ENV = 'production';
+        const keys = ['VB_DIRECT_UPI_CUSTOMER_ACCESS_ENABLED', 'VB_DIRECT_BANK_PAYOUT_CUSTOMER_ACCESS_ENABLED'];
+        const saved = new Map(keys.map((key) => [key, process.env[key]]));
+        try {
+            for (const key of keys) delete process.env[key];
+            const closed = await callRoute('/api/payments/readiness', {}, false);
+            expect(closed.body.rails.inr.directUpiCustomerAccessEnabled).toBe(false);
+            expect(closed.body.rails.inr.directBankPayoutsCustomerAccessEnabled).toBe(false);
+
+            process.env.VB_DIRECT_UPI_CUSTOMER_ACCESS_ENABLED = 'true';
+            process.env.VB_DIRECT_BANK_PAYOUT_CUSTOMER_ACCESS_ENABLED = 'true';
+            const open = await callRoute('/api/payments/readiness', {}, false);
+            expect(open.body.rails.inr.directUpiCustomerAccessEnabled).toBe(true);
+            expect(open.body.rails.inr.directBankPayoutsCustomerAccessEnabled).toBe(true);
+        } finally {
+            for (const key of keys) {
+                if (saved.get(key) === undefined) delete process.env[key];
+                else process.env[key] = saved.get(key);
+            }
+        }
+    });
+
     test('bank-deposit readiness is currency-specific when only INR is configured', async () => {
         process.env.NODE_ENV = 'production';
         const keys = [

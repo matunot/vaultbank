@@ -60,6 +60,7 @@ function readiness() {
   return {
     available: enabledFlag && encryptionKeyReady,
     enabled: enabledFlag && encryptionKeyReady,
+    customerAccessEnabled: process.env.VB_DIRECT_BANK_PAYOUT_CUSTOMER_ACCESS_ENABLED === 'true',
     provider: 'vaultbank-manual-bank-payout',
     mode: 'manual-bank-transfer',
     currency: CURRENCY,
