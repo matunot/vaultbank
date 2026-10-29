@@ -1,4 +1,8 @@
 const { denyLegacyProviderRail } = require('../middleware/nativeOnlyPolicy');
+const express = require('express');
+const request = require('supertest');
+// Load under Jest's test environment so auth's production fail-closed boot check is not triggered.
+const issuingRouter = require('../routes/issuing');
 
 function response() {
   const res = { statusCode: null, body: null };
@@ -24,9 +28,6 @@ describe('VaultBank native-only provider policy', () => {
 
   test('production issuing guard does not block the SPA or unrelated native APIs', async () => {
     process.env.NODE_ENV = 'production';
-    const express = require('express');
-    const request = require('supertest');
-    const issuingRouter = require('../routes/issuing');
     const app = express();
 
     app.use('/', issuingRouter);
