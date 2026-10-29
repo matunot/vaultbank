@@ -68,6 +68,25 @@ async function main() {
             : 'HTTP ' + response.status + ' — readiness payload unavailable';
         mark('native money-rail readiness', !!shapeOk, note);
         if (!shapeOk) ok = false;
+
+        // Production must stay native-only. Old provider credentials or flags
+        // must not reactivate third-party collections/payouts, auto-credit, or
+        // USD external withdrawals.
+        const nativeOnlyOk = !!shapeOk
+            && body.nativeOnly === true
+            && inr.collections === false
+            && inr.payouts === false
+            && inr.directUpiAutoCredit === false
+            && inr.directBankPayoutsAutoTransfer === false
+            && usd.externalWithdrawals === false;
+        mark(
+            'production native-only safety',
+            nativeOnlyOk,
+            nativeOnlyOk
+                ? 'legacy collections/payouts disabled; UPI auto-credit and automatic bank transfer off; USD external withdrawals off'
+                : 'production native-only invariant is violated or missing'
+        );
+        if (!nativeOnlyOk) ok = false;
     } catch (e) { mark('native money-rail readiness', false, e.message); ok = false; }
 
     try {
