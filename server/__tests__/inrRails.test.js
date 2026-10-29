@@ -144,7 +144,9 @@ async function call(router, path, { method = 'get', body, user, params = {}, hea
         method: method.toUpperCase(),
         user: user || { id: 'u-1', role: 'user' },
         ip: '127.0.0.1',
-        headers,
+        headers: Object.assign({}, headers, router === accountsRouter && path === '/api/account/transfer' && !headers['idempotency-key']
+            ? { 'idempotency-key': `inr-rails-${Date.now()}-${Math.random().toString(36).slice(2, 10)}` }
+            : {}),
         body: body !== undefined ? body : {},
         params: pattern.includes(':id') ? Object.assign({ id: 'po-1' }, params) : params,
         query: {},
@@ -939,7 +941,7 @@ describe('unified payments: currency-aware transfers, wallet, payouts list, read
         const first = await call(accountsRouter, '/api/account/transfer', {
             method: 'post',
             body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
-            headers: { 'idempotency-key': 'retry-1' },
+            headers: { 'idempotency-key': 'retry-key-0001' },
         });
         expect(first.body.success).toBe(true);
         const firstSqlCount = sqls.length;
@@ -948,7 +950,7 @@ describe('unified payments: currency-aware transfers, wallet, payouts list, read
         const second = await call(accountsRouter, '/api/account/transfer', {
             method: 'post',
             body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
-            headers: { 'idempotency-key': 'retry-1' },
+            headers: { 'idempotency-key': 'retry-key-0001' },
         });
         expect(second.body.replay).toBe(true);
         expect(second.body.transferId).toBe('transfer-uuid-1');
@@ -965,7 +967,7 @@ describe('unified payments: currency-aware transfers, wallet, payouts list, read
         const res = await call(accountsRouter, '/api/account/transfer', {
             method: 'post',
             body: { recipientEmail: 'r@example.com', amount: 10, currency: 'INR' },
-            headers: { 'idempotency-key': 'retry-2' },
+            headers: { 'idempotency-key': 'retry-key-0002' },
         });
         expect(res.body.success).toBe(true);
         // The idempotency claim was inserted inside the transaction
@@ -1055,6 +1057,8 @@ describe('unified payments: currency-aware transfers, wallet, payouts list, read
             client.queries.push(String(sql));
             const s = String(sql).trim();
             if (s === 'BEGIN' || s === 'ROLLBACK' || s === 'COMMIT') return { rows: [], rowCount: 0 };
+            if (s.includes('pg_advisory_xact_lock')) return { rows: [], rowCount: 0 };
+            if (s.includes('FROM transfer_idempotency') && s.includes('currency <> $3')) return { rows: [], rowCount: 0 };
             if (s.includes('INSERT INTO transfer_idempotency')) return { rows: [{ id: 'idem-1' }], rowCount: 1 };
             if (s.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }], rowCount: 1 };
             if (s.includes('UPDATE transfer_idempotency')) return { rows: [] };
@@ -1085,6 +1089,8 @@ describe('unified payments: currency-aware transfers, wallet, payouts list, read
             client.queries.push(String(sql));
             const s = String(sql).trim();
             if (s === 'BEGIN' || s === 'ROLLBACK' || s === 'COMMIT') return { rows: [], rowCount: 0 };
+            if (s.includes('pg_advisory_xact_lock')) return { rows: [], rowCount: 0 };
+            if (s.includes('FROM transfer_idempotency') && s.includes('currency <> $3')) return { rows: [], rowCount: 0 };
             if (s.includes('INSERT INTO transfer_idempotency')) return { rows: [{ id: 'idem-1' }], rowCount: 1 };
             if (s.includes('INSERT INTO transfers')) return { rows: [{ id: 'tr-1' }], rowCount: 1 };
             if (s.includes('UPDATE transfer_idempotency')) return { rows: [] };

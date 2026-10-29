@@ -1138,7 +1138,7 @@ describeIfDb('VBR intent execution: real Express app + real PostgreSQL', () => {
                 recipientAccountNumber: bob.account_number,
                 amount: 300,
                 currency: 'USD',
-            });
+            }, { 'idempotency-key': `${testPrefix}-status-race-${Date.now()}` });
             await new Promise((resolve) => setTimeout(resolve, 400));
             await lockClient.query('COMMIT');
 

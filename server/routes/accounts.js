@@ -504,7 +504,14 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
     try {
         const { recipientEmail, recipientAccountNumber, amount, description, reason, currency = 'USD' } = req.body;
         const wantedCurrency = String(currency).trim().toUpperCase();
-        const idempotencyKey = req.headers['idempotency-key'] ? String(req.headers['idempotency-key']).slice(0, 100) : null;
+        const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
+        if (!/^[A-Za-z0-9._:-]{8,100}$/.test(idempotencyKey)) {
+            return res.status(400).json({
+                success: false,
+                code: 'IDEMPOTENCY_KEY_REQUIRED',
+                message: 'Provide an Idempotency-Key (8–100 safe characters) and reuse it for retries of this transfer attempt.',
+            });
+        }
 
         // ── D. Explicit supported-currency whitelist ──
         const SUPPORTED_CURRENCIES = ['USD', 'INR'];
