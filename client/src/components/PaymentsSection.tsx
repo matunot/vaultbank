@@ -318,7 +318,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
     },
     {
       key: 'usdach', name: 'USD ACH File Export', desc: 'Bank-compatible credit file; file export is not settlement',
-      ready: usdRail ? usdRail.achFileExport : null, icon: Building2, color: '#64748b',
+      ready: usdRail ? (usdRail.achFileExport ?? false) : null, icon: Building2, color: '#64748b',
       hint: usdRail?.achFileExport ? 'ODFI profile configured; operator upload and bank reconciliation still required' : 'Disabled — authorized ODFI profile and encryption key required',
     },
     {
