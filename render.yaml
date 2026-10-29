@@ -34,13 +34,8 @@ services:
       # passwords at boot).
       - key: ADMIN_PASSWORD
         sync: false
-      # VaultBank-native rails are the production default. The core ledger,
-      # manual bank-transfer deposit review, direct UPI review, and manual bank
-      # payout queue do not select a payment processor. Existing third-party
-      # credentials/env vars are ignored by provider registries in production
-      # unless an operator explicitly sets this flag to false.
-      - key: VB_NATIVE_RAILS_ONLY
-        value: "true"
+      # Production money movement uses VaultBank-native ledger and reconciliation flows.
+      # Legacy third-party collection/payout adapters are hard-disabled in production.
       # ── Real Money Providers (set these in Render dashboard when you have keys) ──
       - key: PAYMENT_PROVIDER_STRIPE_KEY
         sync: false

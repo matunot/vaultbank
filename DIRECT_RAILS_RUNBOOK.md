@@ -61,7 +61,7 @@ Do not confirm from a customer screenshot, browser return, SMS, or email alone. 
 - ₹10–₹10,000 per manual outbound request for the initial pilot.
 - Exact-amount checks, user-scoped request history, required idempotency key for money-moving POSTs, row locks, unique UTR indexes, and transaction rollback are enforced server-side.
 - No automatic credit from client responses or messages.
-- Both rails are disabled by default. Existing Cashfree collection/payout rails are separate and unchanged.
+- Both native rails are disabled by default. Legacy third-party collections/payout adapters are hard-disabled in production regardless of stale provider flags.
 - USD external bank payouts and per-user individual bank accounts are **not** provided by these two rails.
 
 ## Test & release checklist

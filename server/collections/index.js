@@ -31,13 +31,11 @@ function sandboxRefusedInProduction(mode) {
     return String(process['env']['NODE_ENV'] || '').trim().toLowerCase() === 'production' && mode !== 'live';
 }
 
-// The production deployment defaults to VaultBank-native rails. The legacy
-// third-party collections adapter remains in the repository for isolated tests,
-// but is unavailable in production unless an operator explicitly opts out of
-// native-only mode. This also neutralizes stale provider env vars.
+// Third-party adapters are retained only for isolated tests/development. Production is hard-locked to VaultBank-native rails; stale provider env vars are ignored.
 function nativeRailsOnly() {
-    return String(process['env']['NODE_ENV'] || '').trim().toLowerCase() === 'production'
-        && String(process['env']['VB_NATIVE_RAILS_ONLY'] == null ? 'true' : process['env']['VB_NATIVE_RAILS_ONLY']).trim().toLowerCase() !== 'false';
+    // Production is permanently native-only. Legacy provider adapters remain
+    // isolated for tests/development and cannot be re-enabled by environment flags.
+    return String(process['env']['NODE_ENV'] || '').trim().toLowerCase() === 'production';
 }
 
 function activeCollectionsProvider() {
