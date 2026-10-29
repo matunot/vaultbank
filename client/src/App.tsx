@@ -11,6 +11,8 @@ import MarketTicker from './components/MarketTicker';
 import DashboardSection from './components/DashboardSection';
 import ErrorBoundary from './components/ErrorBoundary';
 import PreviewOnlyNotice from './components/PreviewOnlyNotice';
+import EmailVerificationNotice from './components/EmailVerificationNotice';
+import EmailVerificationPage from './components/EmailVerificationPage';
 import { TransferModal, DepositModal, PayBillModal, ConvertModal, WireModal, MobileModal, TradeModal, WithdrawModal } from './components/Modals';
 import VbPayModal from './components/VbPayModal';
 import { useAppStore } from './store';
@@ -48,6 +50,7 @@ const SectionLoader = () => (
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => api.isAuthenticated());
+  const [verifyEmailToken, setVerifyEmailToken] = useState<string | null>(() => new URLSearchParams(window.location.search).get('verify-email'));
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [theme, setTheme] = useState<'obsidian' | 'royal' | 'diamond'>('obsidian');
   const [active, setActive] = useState('home');
@@ -61,6 +64,10 @@ export default function App() {
 
   const openModal = useCallback((name: string) => setModal(name), []);
   const closeModal = useCallback(() => setModal(null), []);
+  const finishEmailVerification = useCallback(() => {
+    window.history.replaceState({}, '', window.location.pathname);
+    setVerifyEmailToken(null);
+  }, []);
 
   // Handle the REAL return from Stripe Checkout (?deposit=success / cancelled)
   // and PayPal Checkout (?deposit=paypal-success&token=ORDERID)
@@ -139,6 +146,10 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
     return true;
   }, [store, closeModal]);
 
+  if (verifyEmailToken) {
+    return <EmailVerificationPage token={verifyEmailToken} onFinish={finishEmailVerification} />;
+  }
+
   if (!isAuthenticated) {
     if (authMode === 'signup') {
       return <SignupPage onSignup={() => setIsAuthenticated(true)} onSwitchToLogin={() => setAuthMode('login')} />;
@@ -164,6 +175,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
 
         <main className="flex-1 overflow-y-auto h-screen min-w-0">
           <Header theme={theme} onThemeChange={setTheme} />
+          <EmailVerificationNotice />
 
           {/* Stripe deposit return banner */}
           <AnimatePresence>
