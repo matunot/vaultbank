@@ -10,6 +10,7 @@ const { rejectDisallowedOrigin, corsOrigin } = require('./middleware/corsPolicy'
 
 // Import routes
 const authRoutes = require('./routes/auth');
+const emailVerificationRoutes = require('./routes/email-verification');
 const transferRoutes = require('./routes/transfers');
 const rewardsRoutes = require('./routes/rewards');
 const alertsRoutes = require('./routes/alerts');
@@ -180,6 +181,7 @@ app.use((req, res, next) => {
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/', authRoutes);
+app.use('/', emailVerificationRoutes);
 app.use('/', transferRoutes);
 app.use('/', rewardsRoutes);
 app.use('/', alertsRoutes);
