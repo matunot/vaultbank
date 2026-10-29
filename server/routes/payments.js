@@ -415,6 +415,16 @@ router.post('/api/payments/webhook/:provider', async (req, res) => {
             eventType,
             payload: event,
         });
+        // Durable webhook deduplication is a money-safety prerequisite. If
+        // PostgreSQL cannot record/check the event, do not process or ACK it;
+        // return 503 so the sender can retry after the database recovers.
+        if (dedup.dbError) {
+            return res.status(503).json({
+                success: false,
+                code: 'WEBHOOK_DEDUP_UNAVAILABLE',
+                message: 'Webhook was not processed because durable event deduplication is unavailable. Retry later.',
+            });
+        }
         webhookDbId = dedup.id;
         if (dedup.duplicate) {
             return res.status(200).json({ success: true, duplicate: true, message: 'Duplicate webhook ignored.' });
