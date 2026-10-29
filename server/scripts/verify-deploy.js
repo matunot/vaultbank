@@ -42,6 +42,25 @@ async function main() {
         if (!(s.status === 200)) ok = false;
     } catch (e) { mark('SPA shell', false, e.message); ok = false; }
 
+    // Public, money-free probe of VaultBank-native rail availability.
+    // Print only booleans and non-secret reason codes; never VPA, bank details, or credentials.
+    try {
+        const response = await fetchWithTimeout(base + '/api/payments/readiness');
+        const body = await response.json();
+        const inr = body && body.rails && body.rails.inr;
+        const usd = body && body.rails && body.rails.usd;
+        const shapeOk = response.status === 200 && body.success === true && inr && usd && Array.isArray(body.currencies);
+        const describe = (value, reason) => (value ? 'ready' : 'disabled') + (reason ? ' (' + reason + ')' : '');
+        const note = shapeOk
+            ? 'INR direct-UPI=' + describe(inr.directUpi, inr.directUpiReason)
+                + '; manual-bank-payout=' + describe(inr.directBankPayouts, inr.directBankPayoutsReason)
+                + '; internal-transfers=' + String(!!inr.internalTransfers)
+                + '; USD external-withdrawals=' + String(!!usd.externalWithdrawals)
+            : 'HTTP ' + response.status + ' — readiness payload unavailable';
+        mark('native money-rail readiness', !!shapeOk, note);
+        if (!shapeOk) ok = false;
+    } catch (e) { mark('native money-rail readiness', false, e.message); ok = false; }
+
     try {
         const w = await fetchWithTimeout(base + '/api/providers/nium/webhook', {
             method: 'POST',
