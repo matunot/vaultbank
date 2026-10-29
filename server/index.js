@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const requestLogger = require('./middleware/logger');
 const { captureRawBody } = require('./middleware/rawBody');
+const { rejectDisallowedOrigin, corsOrigin } = require('./middleware/corsPolicy');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -58,11 +59,12 @@ app.use(helmet({
 }));
 
 // ─── CORS Configuration ─────────────────────────────────────────────────────
-// Allow all origins. This is a public banking app and the frontend may be
-// accessed from any domain (Vercel previews, custom domains, local dev).
-// Credentials are still required for JWT auth.
+// Production accepts only the canonical VaultBank origin plus explicitly
+// approved origins from VB_CORS_ALLOWED_ORIGINS. Local/dev remains convenient.
+// Reject disallowed browser origins before any route can mutate state.
+app.use(rejectDisallowedOrigin);
 app.use(cors({
-    origin: true, // Reflect any origin (safe for public API with JWT auth)
+    origin: corsOrigin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID', 'X-Requested-With', 'Idempotency-Key']
