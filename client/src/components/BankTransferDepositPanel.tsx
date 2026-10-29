@@ -15,6 +15,7 @@ interface BankDepositConfig {
   maxOpen?: number;
   openCount?: number;
   expiryHours?: number;
+  currencies?: string[];
 }
 interface BankDepositInstruction {
   id: string;
@@ -54,6 +55,7 @@ function statusLabel(status: string) {
 
 export function BankTransferDepositPanel() {
   const [config, setConfig] = useState<BankDepositConfig | null>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState('USD');
   const [instructions, setInstructions] = useState<BankDepositInstruction[]>([]);
   const [amount, setAmount] = useState('100.00');
   const [transfer, setTransfer] = useState<TransferDetails | null>(null);
@@ -72,7 +74,18 @@ export function BankTransferDepositPanel() {
         api.bankDepositConfig(),
         api.bankDepositInstructions(),
       ]);
-      setConfig(configResult as unknown as BankDepositConfig);
+      const baseConfig = configResult as unknown as BankDepositConfig;
+      const currencies = Array.isArray(baseConfig.currencies)
+        ? baseConfig.currencies
+        : (baseConfig.enabled && baseConfig.currency ? [baseConfig.currency] : []);
+      const nextCurrency = currencies.includes(selectedCurrency)
+        ? selectedCurrency
+        : (baseConfig.currency || currencies[0] || 'USD');
+      const selectedConfig = baseConfig.currency === nextCurrency
+        ? baseConfig
+        : (await api.bankDepositConfig(nextCurrency)) as unknown as BankDepositConfig;
+      setSelectedCurrency(nextCurrency);
+      setConfig({ ...selectedConfig, currencies });
       setInstructions(Array.isArray(historyResult.instructions) ? historyResult.instructions : []);
     } catch (err) {
       const apiErr = err as ApiErrorLike;
@@ -84,9 +97,17 @@ export function BankTransferDepositPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [selectedCurrency]);
 
   useEffect(() => { void refresh(); }, [refresh]);
+
+  const changeCurrency = (currency: string) => {
+    if (busy || !config?.currencies?.includes(currency)) return;
+    setSelectedCurrency(currency);
+    setTransfer(null);
+    setError('');
+    setNotice('');
+  };
 
   const copy = async (value: string, key: string) => {
     try {
@@ -179,6 +200,19 @@ export function BankTransferDepositPanel() {
               <span className="rounded-full border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-[9px] font-bold text-amber-200">MANUAL VERIFICATION</span>
             </div>
             <p className="mt-2 text-xs text-white/45">Limits: {config.currency} {Number(config.minAmount ?? 1).toLocaleString()}–{Number(config.maxAmount ?? 100000).toLocaleString()} · {config.maxOpen ?? 3} open instructions maximum · expires after {config.expiryHours ?? 168} hours.</p>
+            {(config.currencies?.length ?? 0) > 1 && (
+              <label className="mt-3 block text-[10px] font-bold tracking-wider text-white/45">
+                RECEIVE CURRENCY
+                <select
+                  value={selectedCurrency}
+                  disabled={busy || loading}
+                  onChange={(event) => changeCurrency(event.target.value)}
+                  className="mt-1 block w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-white outline-none focus:border-cyan-400"
+                >
+                  {(config.currencies || []).map((currency) => <option key={currency} value={currency}>{currency}</option>)}
+                </select>
+              </label>
+            )}
             <form onSubmit={(event) => void createInstruction(event)} className="mt-4 space-y-3">
               <label className="block text-[10px] font-bold tracking-wider text-white/45">
                 AMOUNT ({config.currency})

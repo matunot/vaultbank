@@ -61,27 +61,74 @@ function requireVerifiedDepositCustomerOrAdmin(req, res, next) {
     return next();
 }
 
-function receivingConfig() {
-    const enabled = process['env'].VB_BANK_DEPOSIT_ENABLED === 'true';
-    const bankName = (process['env'].VB_BANK_RECEIVING_BANK_NAME || '').trim();
-    const holder = (process['env'].VB_BANK_RECEIVING_HOLDER || '').trim();
-    const details = (process['env'].VB_BANK_RECEIVING_DETAILS || '').trim();
-    const currency = (process['env'].VB_BANK_RECEIVING_CURRENCY || 'USD').trim().toUpperCase();
-    const supportedCurrency = ['INR', 'USD'].includes(currency);
-    const configured = enabled && !!bankName && !!holder && !!details && supportedCurrency;
-    return {
-        enabled: !!configured,
-        bankName: configured ? bankName : null,
-        holder: configured ? holder : null,
-        details: configured ? details : null,
-        currency: configured ? currency : null,
+const DEPOSIT_CURRENCIES = ['INR', 'USD'];
+
+// Currency-specific receiving accounts are preferred. The original
+// VB_BANK_RECEIVING_* variables remain supported for a single legacy currency.
+// Details are returned only to authenticated, verified customers and only
+// when an operator has explicitly enabled the rail and fully configured them.
+function configuredReceivingCurrency(currency) {
+    const selected = String(currency || '').trim().toUpperCase();
+    const enabledFlag = process['env'].VB_BANK_DEPOSIT_ENABLED === 'true';
+    const base = {
+        enabled: false,
+        bankName: null,
+        holder: null,
+        details: null,
+        currency: selected || null,
         verification: 'manual',
-        reason: !enabled ? 'disabled-by-operator' : (!supportedCurrency ? 'unsupported-ledger-currency' : (!bankName || !holder || !details ? 'receiving-account-not-configured' : null)),
+        reason: 'receiving-account-not-configured',
         expiryHours: EXPIRY_HOURS,
         minAmount: MIN_AMOUNT,
         maxAmount: MAX_AMOUNT,
         maxOpen: MAX_OPEN,
     };
+    if (!DEPOSIT_CURRENCIES.includes(selected)) return { ...base, reason: 'unsupported-ledger-currency' };
+    if (!enabledFlag) return { ...base, reason: 'disabled-by-operator' };
+
+    const prefix = 'VB_BANK_RECEIVING_' + selected + '_';
+    const specificBank = String(process['env'][prefix + 'BANK_NAME'] || '').trim();
+    const specificHolder = String(process['env'][prefix + 'HOLDER'] || '').trim();
+    const specificDetails = String(process['env'][prefix + 'DETAILS'] || '').trim();
+    const hasSpecificConfig = !!(specificBank || specificHolder || specificDetails);
+    if (hasSpecificConfig) {
+        const configured = !!(specificBank && specificHolder && specificDetails);
+        return {
+            ...base,
+            enabled: configured,
+            bankName: configured ? specificBank : null,
+            holder: configured ? specificHolder : null,
+            details: configured ? specificDetails : null,
+            reason: configured ? null : 'receiving-account-not-configured',
+        };
+    }
+
+    // Backward compatibility: the old generic variables describe exactly one
+    // currency. Never silently route an INR request to USD bank details or vice versa.
+    const legacyCurrency = String(process['env'].VB_BANK_RECEIVING_CURRENCY || 'USD').trim().toUpperCase();
+    if (legacyCurrency !== selected) return base;
+    const bankName = String(process['env'].VB_BANK_RECEIVING_BANK_NAME || '').trim();
+    const holder = String(process['env'].VB_BANK_RECEIVING_HOLDER || '').trim();
+    const details = String(process['env'].VB_BANK_RECEIVING_DETAILS || '').trim();
+    const configured = !!(bankName && holder && details);
+    return {
+        ...base,
+        enabled: configured,
+        bankName: configured ? bankName : null,
+        holder: configured ? holder : null,
+        details: configured ? details : null,
+        reason: configured ? null : 'receiving-account-not-configured',
+    };
+}
+
+function receivingConfig(currency) {
+    const currencies = DEPOSIT_CURRENCIES.filter((candidate) => configuredReceivingCurrency(candidate).enabled);
+    if (currency != null && String(currency).trim()) {
+        return { ...configuredReceivingCurrency(currency), currencies };
+    }
+    const legacyCurrency = String(process['env'].VB_BANK_RECEIVING_CURRENCY || 'USD').trim().toUpperCase();
+    const preferred = currencies.includes(legacyCurrency) ? legacyCurrency : (currencies[0] || (DEPOSIT_CURRENCIES.includes(legacyCurrency) ? legacyCurrency : 'USD'));
+    return { ...configuredReceivingCurrency(preferred), currencies };
 }
 
 let tablesReady = false;
@@ -156,15 +203,24 @@ async function audit(userId, action, resourceId, details, req) {
 // ============================================================
 router.get('/api/bank-deposits/config', authenticateToken, requireVerifiedDepositCustomerOrAdmin, async (req, res) => {
     try {
-        const cfg = receivingConfig();
+        const requestedCurrency = String(req.query && req.query.currency || '').trim().toUpperCase();
+        if (requestedCurrency && !DEPOSIT_CURRENCIES.includes(requestedCurrency)) {
+            return res.status(400).json({ success: false, code: 'UNSUPPORTED_CURRENCY', message: 'Choose INR or USD.' });
+        }
+        const cfg = receivingConfig(requestedCurrency || undefined);
         if (!cfg.enabled) {
+            // Never include account-holder or destination fields for a disabled rail.
             return res.status(200).json({
                 success: true,
                 enabled: false,
+                currency: requestedCurrency || cfg.currency,
+                currencies: cfg.currencies || [],
                 verification: 'manual',
+                reason: cfg.reason,
                 minAmount: MIN_AMOUNT,
                 maxAmount: MAX_AMOUNT,
                 maxOpen: MAX_OPEN,
+                expiryHours: EXPIRY_HOURS,
             });
         }
         await ensureTables();
@@ -185,12 +241,16 @@ router.get('/api/bank-deposits/config', authenticateToken, requireVerifiedDeposi
 // ============================================================
 router.post('/api/bank-deposits/instructions', authenticateToken, requireVerifiedDepositCustomerOrAdmin, async (req, res) => {
     try {
-        const cfg = receivingConfig();
+        const requestedCurrency = String(req.body && req.body.currency || '').trim().toUpperCase();
+        if (requestedCurrency && !DEPOSIT_CURRENCIES.includes(requestedCurrency)) {
+            return res.status(400).json({ success: false, code: 'UNSUPPORTED_CURRENCY', message: 'Choose INR or USD.' });
+        }
+        const cfg = receivingConfig(requestedCurrency || undefined);
         if (!cfg.enabled) {
             return res.status(503).json({
                 success: false,
                 code: 'BANK_DEPOSITS_NOT_CONFIGURED',
-                message: 'Bank transfer deposits are not set up yet — no verified receiving account is configured.',
+                message: 'Bank transfer deposits are not set up for the selected currency — no verified receiving account is configured.',
             });
         }
         const amount = Math.round(parseFloat(req.body.amount) * 100) / 100;
@@ -200,7 +260,7 @@ router.post('/api/bank-deposits/instructions', authenticateToken, requireVerifie
         // Resolve an account in the receiving rail's actual currency; never
         // silently use the customer's primary account (which may be USD while
         // the configured receiving account accepts INR, or vice versa).
-        const currency = String(req.body.currency || cfg.currency).toUpperCase();
+        const currency = requestedCurrency || cfg.currency;
         if (currency !== cfg.currency) {
             return res.status(400).json({ success: false, message: `This receiving account accepts ${cfg.currency} transfers only.` });
         }

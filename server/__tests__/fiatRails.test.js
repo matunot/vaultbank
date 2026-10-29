@@ -433,4 +433,47 @@ describe('production readiness reflects native-only settlement truth', () => {
         expect(res.body.rails.inr.payoutsReconciliation).toBe('not-applicable-native-only');
         expect(res.body.readinessDefinitions.webhookReady).toContain('Legacy provider webhooks are disabled');
     });
+
+    test('bank-deposit readiness is currency-specific when only INR is configured', async () => {
+        process.env.NODE_ENV = 'production';
+        const keys = [
+            'VB_BANK_DEPOSIT_ENABLED',
+            'VB_BANK_RECEIVING_BANK_NAME',
+            'VB_BANK_RECEIVING_HOLDER',
+            'VB_BANK_RECEIVING_DETAILS',
+            'VB_BANK_RECEIVING_CURRENCY',
+            'VB_BANK_RECEIVING_INR_BANK_NAME',
+            'VB_BANK_RECEIVING_INR_HOLDER',
+            'VB_BANK_RECEIVING_INR_DETAILS',
+            'VB_BANK_RECEIVING_USD_BANK_NAME',
+            'VB_BANK_RECEIVING_USD_HOLDER',
+            'VB_BANK_RECEIVING_USD_DETAILS',
+        ];
+        const saved = new Map(keys.map((key) => [key, process.env[key]]));
+        try {
+            for (const key of keys) delete process.env[key];
+            process.env.VB_BANK_DEPOSIT_ENABLED = 'true';
+            process.env.VB_BANK_RECEIVING_INR_BANK_NAME = 'INR Test Bank';
+            process.env.VB_BANK_RECEIVING_INR_HOLDER = 'VaultBank INR Test';
+            process.env.VB_BANK_RECEIVING_INR_DETAILS = 'IFSC TEST0000123';
+
+            const inrOnly = await callRoute('/api/payments/readiness', {}, false);
+            expect(inrOnly.body.rails.inr.bankTransferInstructions).toBe(true);
+            expect(inrOnly.body.rails.usd.bankTransferInstructions).toBe(false);
+
+            for (const key of keys.filter((item) => item.startsWith('VB_BANK_RECEIVING_INR_'))) delete process.env[key];
+            process.env.VB_BANK_RECEIVING_USD_BANK_NAME = 'USD Test Bank';
+            process.env.VB_BANK_RECEIVING_USD_HOLDER = 'VaultBank USD Test';
+            process.env.VB_BANK_RECEIVING_USD_DETAILS = 'Account 0000123456 · SWIFT TESTUS00';
+
+            const usdOnly = await callRoute('/api/payments/readiness', {}, false);
+            expect(usdOnly.body.rails.usd.bankTransferInstructions).toBe(true);
+            expect(usdOnly.body.rails.inr.bankTransferInstructions).toBe(false);
+        } finally {
+            for (const key of keys) {
+                if (saved.get(key) === undefined) delete process.env[key];
+                else process.env[key] = saved.get(key);
+            }
+        }
+    });
 });

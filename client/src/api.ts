@@ -455,8 +455,9 @@ export const api = {
   },
 
   // Bank-transfer deposit rail — instructions + admin-verified settlement.
-  async bankDepositConfig(): Promise<ApiResponse> {
-    return request<ApiResponse>('api/bank-deposits/config');
+  async bankDepositConfig(currency?: string): Promise<ApiResponse> {
+    const query = currency ? `?currency=${encodeURIComponent(currency)}` : '';
+    return request<ApiResponse>(`api/bank-deposits/config${query}`);
   },
 
   async createBankDepositInstruction(data: { amount: number; currency?: string }): Promise<ApiResponse> {
