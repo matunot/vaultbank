@@ -65,7 +65,7 @@ router.post('/api/transfers', authenticateToken, transferLimiter, async (req, re
 
     // Parse the amount without binary floating-point rounding.
     const rawAmount = typeof amount === 'number' ? String(amount) : String(amount == null ? '' : amount).trim();
-    if (!/^\d+(?:\.\d{1,2})?$/.test(rawAmount)) {
+    if (rawAmount.length > 12 || !/^\d+(?:\.\d{1,2})?$/.test(rawAmount)) {
         return res.status(400).json({ success: false, message: 'Amount must be positive and have at most two decimal places.' });
     }
     const [rawWhole, rawFraction = ''] = rawAmount.split('.');
