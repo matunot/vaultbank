@@ -26,7 +26,6 @@ router.post(
       const result = await sendVerificationForUser({
         userId: req.user.id,
         email: req.user.email,
-        requestIp: req.ip,
       });
       if (!result.sent) {
         return res.status(503).json({
