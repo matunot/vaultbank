@@ -57,6 +57,7 @@ function readiness() {
     available: enabledFlag && valid,
     enabled: enabledFlag && valid,
     configured: valid,
+    customerAccessEnabled: process.env.VB_DIRECT_UPI_CUSTOMER_ACCESS_ENABLED === 'true',
     provider: 'vaultbank-direct-upi',
     mode: 'manual-bank-statement-verification',
     currency: CURRENCY,

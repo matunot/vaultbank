@@ -28,7 +28,7 @@ type Currency = 'USD' | 'INR';
 
 interface RailsReadiness {
   usd: { cardStripe: boolean; paypal: boolean; bankTransferInstructions: boolean; internalTransfers: boolean; externalWithdrawals: boolean };
-  inr: { directUpi: boolean; directUpiProvider?: string; directUpiVerification?: string; directUpiAutoCredit?: boolean; directBankPayouts: boolean; directBankPayoutsProvider?: string; directBankPayoutsAutoTransfer?: boolean; directBankPayoutsReason?: string; collections: boolean; collectionsProvider: string | null; internalTransfers: boolean; payouts: boolean; payoutsProvider: string | null };
+  inr: { directUpi: boolean; directUpiProvider?: string; directUpiVerification?: string; directUpiCustomerAccessEnabled?: boolean; directUpiAutoCredit?: boolean; directBankPayouts: boolean; directBankPayoutsProvider?: string; directBankPayoutsAutoTransfer?: boolean; directBankPayoutsCustomerAccessEnabled?: boolean; directBankPayoutsReason?: string; bankTransferInstructions?: boolean; collections: boolean; collectionsProvider: string | null; internalTransfers: boolean; payouts: boolean; payoutsProvider: string | null };
 }
 
 interface InrTransaction {
@@ -254,6 +254,10 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
   const curSymbol = currency === 'INR' ? '₹' : '$';
   const inrRail = readiness?.inr;
   const usdRail = readiness?.usd;
+  const currentRole = String(api.getUser()?.role || '').trim().toLowerCase();
+  const isAdminUser = currentRole === 'admin' || currentRole === 'super_admin';
+  const canUseDirectUpi = !!inrRail?.directUpi && (isAdminUser || inrRail.directUpiCustomerAccessEnabled === true);
+  const canUseDirectBankPayout = !!inrRail?.directBankPayouts && (isAdminUser || inrRail.directBankPayoutsCustomerAccessEnabled === true);
 
   const rails: Array<{
     key: string; name: string; desc: string; ready: boolean | null;
@@ -280,10 +284,14 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       hint: usdRail?.bankTransferInstructions ? 'Instructions available in Deposits' : 'Not configured — receiving account env required',
     },
     {
-      key: 'directupi', name: 'VaultBank Direct UPI', desc: 'Your configured UPI VPA + QR; statement verification, no payment processor',
-      ready: inrRail ? inrRail.directUpi : null, icon: QrCode, color: '#10b981',
-      hint: inrRail?.directUpi ? 'VaultBank-controlled · manual bank-statement verification' : 'Not configured — own bank-linked VPA required',
-      action: () => { setCurrency('INR'); setShowDirectUpi(true); }, actionLabel: 'Open',
+      key: 'directupi', name: 'VaultBank Direct UPI', desc: 'VaultBank-owned UPI intent; bank-statement verification required',
+      ready: inrRail ? canUseDirectUpi : null, icon: QrCode, color: '#10b981',
+      hint: !inrRail?.directUpi
+        ? 'Not configured — own bank-linked VPA required'
+        : (canUseDirectUpi
+          ? 'Available for this account · manual bank-statement verification; no automatic credit'
+          : 'Admin-only pilot — customer access is disabled'),
+      action: canUseDirectUpi ? () => { setCurrency('INR'); setShowDirectUpi(true); } : undefined, actionLabel: 'Open',
     },
     {
       key: 'collections', name: 'INR Receiving Details', desc: 'Provider-issued per-user account + IFSC, auto-credited',
@@ -292,10 +300,14 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       action: inrRail?.collections ? () => { setCurrency('INR'); fetchMyDetails(); } : undefined, actionLabel: 'Get details',
     },
     {
-      key: 'directbankpayout', name: 'VaultBank Manual Bank Payout', desc: 'Encrypted beneficiary details + operator sends from bank; no payout processor',
-      ready: inrRail ? inrRail.directBankPayouts : null, icon: Banknote, color: '#d97706',
-      hint: inrRail?.directBankPayouts ? 'VaultBank-controlled · manual transfer + bank statement UTR' : 'Not configured — encryption key and manual rail flag required',
-      action: () => { setCurrency('INR'); setShowDirectBankPayout(true); }, actionLabel: 'Open',
+      key: 'directbankpayout', name: 'VaultBank Manual Bank Payout', desc: 'Funds reserved; operator sends via bank and reconciles the statement',
+      ready: inrRail ? canUseDirectBankPayout : null, icon: Banknote, color: '#d97706',
+      hint: !inrRail?.directBankPayouts
+        ? 'Not configured — encryption key and manual rail flag required'
+        : (canUseDirectBankPayout
+          ? 'Available for this account · operator must send manually and confirm the bank UTR'
+          : 'Admin-only pilot — customer access is disabled'),
+      action: canUseDirectBankPayout ? () => { setCurrency('INR'); setShowDirectBankPayout(true); } : undefined, actionLabel: 'Open',
     },
     {
       key: 'payouts', name: 'INR Bank Withdrawals', desc: 'Reserved funds, provider status, exactly-once refunds',
@@ -393,17 +405,20 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     if (currency === 'USD' && onOpenModal) onOpenModal('deposit');
-                    if (currency === 'INR') setShowDirectUpi(true);
+                    if (currency === 'INR' && canUseDirectUpi) setShowDirectUpi(true);
                   }}
-                  className="px-5 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 glow-blue"
+                  disabled={currency === 'INR' && !canUseDirectUpi}
+                  title={currency === 'INR' && !canUseDirectUpi ? 'Direct UPI is restricted to the admin pilot until customer access is authorized' : undefined}
+                  className="px-5 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 glow-blue disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Plus className="w-4 h-4" /> Add Money
                 </motion.button>
                 <motion.button
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
-                  onClick={() => { setCurrency('INR'); setShowDirectBankPayout(true); }}
-                  className="px-4 py-3 rounded-xl glass-btn text-sm font-bold text-white/80 flex items-center gap-2"
-                  title="Switch to INR; external USD bank payouts are not available"
+                  onClick={() => { setCurrency('INR'); if (canUseDirectBankPayout) setShowDirectBankPayout(true); }}
+                  disabled={!canUseDirectBankPayout}
+                  className="px-4 py-3 rounded-xl glass-btn text-sm font-bold text-white/80 flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={!canUseDirectBankPayout ? 'Manual payout is restricted to the admin pilot until customer access is authorized' : 'USD external bank payouts are not available'}
                 >
                   <Download className="w-4 h-4" /> Withdraw INR
                 </motion.button>
@@ -451,13 +466,13 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
         </div>
       </motion.div>
 
-      {/* Quick action buttons */}
+      {/* Quick action buttons only offer rails this account can access. */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { icon: Send, label: 'Send Money', desc: `VaultBank user (${currency})`, color: '#3b82f6', action: () => setShowSend(true) },
-          { icon: QrCode, label: 'Receive', desc: 'VaultBank Direct UPI', color: '#10b981', action: () => { setCurrency('INR'); setShowDirectUpi(true); } },
-          { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : 'VaultBank Direct UPI', color: '#06b6d4', action: () => { if (currency === 'USD' && onOpenModal) onOpenModal('deposit'); else { setCurrency('INR'); setShowDirectUpi(true); } } },
-          { icon: Banknote, label: 'Withdraw INR', desc: 'VaultBank manual bank payout', color: '#f59e0b', action: () => { setCurrency('INR'); setShowDirectBankPayout(true); } },
+          ...(canUseDirectUpi ? [{ icon: QrCode, label: 'Receive', desc: 'VaultBank Direct UPI', color: '#10b981', action: () => { setCurrency('INR'); setShowDirectUpi(true); } }] : []),
+          { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : (canUseDirectUpi ? 'VaultBank Direct UPI' : 'Receiving rail not enabled'), color: '#06b6d4', action: () => { if (currency === 'USD' && onOpenModal) onOpenModal('deposit'); else if (canUseDirectUpi) { setCurrency('INR'); setShowDirectUpi(true); } } },
+          ...(canUseDirectBankPayout ? [{ icon: Banknote, label: 'Withdraw INR', desc: 'VaultBank manual bank payout', color: '#f59e0b', action: () => { setCurrency('INR'); setShowDirectBankPayout(true); } }] : []),
         ].map((a, i) => (
           <motion.button
             key={a.label}
