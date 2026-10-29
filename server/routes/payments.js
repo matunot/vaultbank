@@ -41,6 +41,7 @@ const directUpiRoutes = require('./direct-upi');
 const directBankPayoutRoutes = require('./direct-bank-payouts');
 
 const router = express.Router();
+const { denyLegacyProviderRail } = require('../middleware/nativeOnlyPolicy');
 
 const IDEMPOTENCY_HEADER = 'idempotency-key';
 
@@ -55,13 +56,14 @@ router.get('/api/payments/readiness', (req, res) => {
         // Mirror of the Stripe adapter's own config rules (sk_ prefix + placeholder check).
         const stripeEnv = ['PAYMENT_PROVIDER', 'STRIPE_SECRET'].join('_');
         const stripeSecret = process['env'][stripeEnv] || '';
-        const stripeConfigured = /^sk_(test|live)_/.test(stripeSecret) && !/placeholder|your_/i.test(stripeSecret);
+        const nativeOnly = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+        const stripeConfigured = !nativeOnly && /^sk_(test|live)_/.test(stripeSecret) && !/placeholder|your_/i.test(stripeSecret);
         // PayPal: keys present is NOT the same as live mode. Report the
         // selected mode honestly; a live mode claim requires an actual
         // successful live deposit — none has been verified yet.
-        const paypalKeysPresent = paypalDeposits.missingPayPalKeys().length === 0;
+        const paypalKeysPresent = !nativeOnly && paypalDeposits.missingPayPalKeys().length === 0;
         const paypalInfo = paypalDeposits.paypalConfigInfo();
-        const paypalMode = paypalKeysPresent ? (paypalInfo.mode === 'live' ? 'live-unverified' : 'sandbox') : 'not-configured';
+        const paypalMode = nativeOnly ? 'disabled-native-only' : (paypalKeysPresent ? (paypalInfo.mode === 'live' ? 'live-unverified' : 'sandbox') : 'not-configured');
         const bankConfigured = !!(bankDeposits.receivingConfig && bankDeposits.receivingConfig().enabled);
         const collections = collectionsRegistry.collectionsAvailability();
         const payouts = payoutsRegistry.payoutAvailability();
@@ -69,6 +71,7 @@ router.get('/api/payments/readiness', (req, res) => {
         const directBankPayout = directBankPayoutRoutes.readiness();
         return res.status(200).json({
             success: true,
+            nativeOnly,
             rails: {
                 usd: {
                     cardStripe: stripeConfigured,
@@ -195,6 +198,7 @@ router.get('/api/payments/methods', authenticateToken, (req, res) => {
 });
 
 router.post('/api/payments/transfer', authenticateToken, async (req, res) => {
+    if (denyLegacyProviderRail(res)) return;
     try {
         const {
             fromAccountId,
@@ -349,6 +353,7 @@ router.post('/api/payments/transfer', authenticateToken, async (req, res) => {
 });
 
 router.get('/api/payments/status/:id', authenticateToken, async (req, res) => {
+    if (denyLegacyProviderRail(res)) return;
     try {
         const { id } = req.params;
         const { method = 'stripe' } = req.query;
@@ -361,6 +366,7 @@ router.get('/api/payments/status/:id', authenticateToken, async (req, res) => {
 });
 
 router.post('/api/payments/webhook/:provider', async (req, res) => {
+    if (denyLegacyProviderRail(res)) return;
     let webhookDbId = null;
     try {
         const { provider } = req.params;
@@ -500,6 +506,7 @@ router.post('/api/payments/upi/initiate', authenticateToken, async (req, res) =>
 });
 
 router.post('/api/payments/paypal/initiate', authenticateToken, async (req, res) => {
+    if (denyLegacyProviderRail(res)) return;
     try {
         const { amount, currency, description } = req.body;
         const userId = req.user.id;
@@ -551,6 +558,7 @@ router.post('/api/payments/paypal/initiate', authenticateToken, async (req, res)
 });
 
 router.post('/api/payments/stripe/initiate', authenticateToken, async (req, res) => {
+    if (denyLegacyProviderRail(res)) return;
     try {
         const { amount, currency, description } = req.body;
         const userId = req.user.id;
@@ -617,6 +625,7 @@ router.post('/api/payments/bank/initiate', authenticateToken, async (req, res) =
 });
 
 router.post('/api/payments/paypal/success', authenticateToken, async (req, res) => {
+    if (denyLegacyProviderRail(res)) return;
     try {
         const { paymentId } = req.body;
         if (!paymentId) {
