@@ -218,6 +218,36 @@ export const api = {
     });
   },
 
+  async getCardProgramRequests(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/card-program/requests');
+  },
+
+  async requestCardProgram(
+    data: { cardType: 'debit' | 'credit'; currency: 'INR' | 'USD' },
+    idempotencyKey: string,
+  ): Promise<ApiResponse> {
+    return request<ApiResponse>('api/card-program/requests', {
+      method: 'POST',
+      headers: { 'idempotency-key': idempotencyKey },
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getLoanApplications(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/loan-applications');
+  },
+
+  async submitLoanApplication(
+    data: { amount: number; currency: 'INR' | 'USD'; termMonths: number; purpose: string },
+    idempotencyKey: string,
+  ): Promise<ApiResponse> {
+    return request<ApiResponse>('api/loan-applications', {
+      method: 'POST',
+      headers: { 'idempotency-key': idempotencyKey },
+      body: JSON.stringify(data),
+    });
+  },
+
   async fetchAccount(): Promise<ApiResponse> {
     return request<ApiResponse>('api/account');
   },
