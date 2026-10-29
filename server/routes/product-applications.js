@@ -188,6 +188,21 @@ router.patch('/api/admin/card-program/requests/:id/status', authenticateToken, r
   }
   try {
     await ensureSchema();
+    if (status === 'under_review' || status === 'waiting_for_issuer') {
+      const eligibility = await db.query(
+        'SELECT u.email_verified, u.kyc_status FROM users u JOIN card_program_requests r ON r.user_id = u.id WHERE r.id = $1 LIMIT 1',
+        [req.params.id]
+      );
+      const customer = eligibility.rows[0];
+      if (!customer) return res.status(404).json({ success: false, message: 'Card request not found.' });
+      if (customer.email_verified !== true || customer.kyc_status !== 'verified') {
+        return res.status(403).json({
+          success: false,
+          code: 'CUSTOMER_VERIFICATION_REQUIRED',
+          message: 'Verify email and complete identity verification before card requests can move into issuer review.',
+        });
+      }
+    }
     const result = await db.query("UPDATE card_program_requests SET status = $2, review_note = $3, reviewed_by = $4, updated_at = NOW() WHERE id = $1 AND status <> 'closed' RETURNING *", [req.params.id, status, note, req.user.id]);
     if (!result.rows.length) return res.status(404).json({ success: false, message: 'Open card request not found.' });
     await audit(req, 'card_program_request_reviewed', 'card_program_request', result.rows[0].id, { status });
@@ -217,6 +232,21 @@ router.patch('/api/admin/loan-applications/:id/status', authenticateToken, requi
   }
   try {
     await ensureSchema();
+    if (status === 'under_review' || status === 'funding_required') {
+      const eligibility = await db.query(
+        'SELECT u.email_verified, u.kyc_status FROM users u JOIN loan_applications a ON a.user_id = u.id WHERE a.id = $1 LIMIT 1',
+        [req.params.id]
+      );
+      const customer = eligibility.rows[0];
+      if (!customer) return res.status(404).json({ success: false, message: 'Loan application not found.' });
+      if (customer.email_verified !== true || customer.kyc_status !== 'verified') {
+        return res.status(403).json({
+          success: false,
+          code: 'CUSTOMER_VERIFICATION_REQUIRED',
+          message: 'Verify email and complete identity verification before loan applications can move into review.',
+        });
+      }
+    }
     const result = await db.query("UPDATE loan_applications SET status = $2, review_note = $3, reviewed_by = $4, updated_at = NOW() WHERE id = $1 AND status NOT IN ('closed','declined') RETURNING *", [req.params.id, status, note, req.user.id]);
     if (!result.rows.length) return res.status(404).json({ success: false, message: 'Open loan application not found.' });
     await audit(req, 'loan_application_reviewed', 'loan_application', result.rows[0].id, { status });
