@@ -217,6 +217,7 @@ app.use('/', directBankPayoutRoutes);
 app.use('/', require('./routes/usd-ach-payouts'));
 app.use('/', productApplicationRoutes);
 app.use('/', kycRoutes);
+app.use('/', require('./routes/currencies'));
 app.use('/', require('./vbr'));
 app.use('/', require('./routes/usdc-deposits'));
 

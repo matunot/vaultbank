@@ -12,7 +12,7 @@ Production collections and payout provider registries are hard-locked to native 
 
 | Flow | Currency | What actually happens |
 |---|---|---|
-| VaultBank user-to-user internal transfer | INR or USD | One database transaction updates both accounts, writes both transaction rows, posts a balanced journal, and claims the idempotency key. No external bank transfer occurs. |
+| VaultBank user-to-user internal transfer | Any operator-enabled currency (USD and INR by default) | One database transaction updates both accounts, writes both transaction rows, posts a balanced journal, and claims the idempotency key. No external bank transfer occurs. |
 | Bank-transfer deposit instruction | Configured INR or USD receiving account | Creates a pending instruction and unique reference. It never credits funds at creation. An authorized administrator verifies the official receiving-bank statement, matching amount and unique bank reference before the ledger is credited. |
 | Direct UPI deposit | INR | Generates a UPI intent to the configured real bank-linked VPA. The balance remains pending until an administrator matches the actual bank statement and unique UTR. |
 | Manual bank payout | INR | Reserves the user's available funds atomically. An authorized operator initiates the bank transfer outside VaultBank, then confirms the actual debit/UTR. A request alone is not a completed bank payment. |
@@ -32,6 +32,17 @@ Store real financial details and cryptographic keys only in the deployment secre
 - `VB_BANK_RECEIVING_DETAILS` — actual bank transfer instructions
 
 The configured receiving account must exist and be controlled by the responsible VaultBank operator. Never invent receiving details. Each instruction expires after seven days; creation is pending-only and does not increase a balance.
+
+### Additional currencies (AED, GBP, EUR, CAD, AUD, SGD, NZD, CHF, HKD)
+
+These codes are registered in `server/config/currencies.js` but disabled by default. A currency becomes usable only when both conditions hold:
+
+- `VB_MULTICURRENCY_ENABLED=true`
+- A complete real receiving account for that exact code: `VB_BANK_RECEIVING_<CODE>_BANK_NAME`, `VB_BANK_RECEIVING_<CODE>_HOLDER`, `VB_BANK_RECEIVING_<CODE>_DETAILS`
+
+Enabling a currency only permits a zero-balance wallet, internal transfers in that same currency, and (if configured) pending bank-deposit instructions. It never creates an exchange rate, converts a balance, or authorizes an external payout. `GET /api/currencies` reports what is enabled and whether receiving is configured, without exposing account details.
+
+The legacy `VB_BANK_RECEIVING_*` variables describe exactly one currency (`VB_BANK_RECEIVING_CURRENCY`, default `USD`) and are never used to answer a different currency's request.
 
 ### Direct UPI deposits
 

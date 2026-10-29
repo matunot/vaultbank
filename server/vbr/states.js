@@ -49,7 +49,16 @@ const LEGAL_TRANSITIONS = Object.freeze({
 
 const TERMINAL_STATES = Object.freeze([STATES.SUCCEEDED, STATES.FAILED, STATES.CANCELLED]);
 
-const SUPPORTED_CURRENCIES = Object.freeze(['USD', 'INR']);
+const { enabledCurrencies, isCurrencyEnabled } = require('../config/currencies');
+
+/**
+ * Currencies the VBR orchestration layer may touch right now. This is a live
+ * view of the registry (USD + INR always, additional currencies only when an
+ * operator enables multi-currency), never a hardcoded pair.
+ */
+function supportedCurrencies() {
+    return enabledCurrencies();
+}
 
 /** Returns true if `from → to` is a legal transition. */
 function canTransition(from, to) {
@@ -69,9 +78,9 @@ function assertTransition(from, to) {
     }
 }
 
-/** Validates a currency is explicitly supported. */
+/** Validates a currency is explicitly supported and currently enabled. */
 function isCurrencySupported(currency) {
-    return SUPPORTED_CURRENCIES.includes(String(currency || '').toUpperCase());
+    return isCurrencyEnabled(currency);
 }
 
-module.exports = { STATES, LEGAL_TRANSITIONS, TERMINAL_STATES, SUPPORTED_CURRENCIES, canTransition, isTerminal, assertTransition, isCurrencySupported };
+module.exports = { STATES, LEGAL_TRANSITIONS, TERMINAL_STATES, supportedCurrencies, canTransition, isTerminal, assertTransition, isCurrencySupported };

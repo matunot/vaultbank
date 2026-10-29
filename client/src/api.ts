@@ -441,6 +441,21 @@ export const api = {
     return request<ApiResponse>('api/account/inr');
   },
 
+  async getCurrencies(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/currencies');
+  },
+
+  async getCurrencyWallet(currency: string): Promise<ApiResponse> {
+    return request<ApiResponse>(`api/account/wallet/${encodeURIComponent(currency)}`);
+  },
+
+  async openCurrencyAccount(currency: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/account/open-currency', {
+      method: 'POST',
+      body: JSON.stringify({ currency }),
+    });
+  },
+
   async collectionsMyDetails(): Promise<ApiResponse> {
     return request<ApiResponse>('api/collections/my-details');
   },

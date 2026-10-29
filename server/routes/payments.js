@@ -35,6 +35,8 @@ const walletAdapter = require('../payments/wallet');
 const ledger = require('../payments/ledger');
 const paypalDeposits = require('./paypal-deposits');
 const bankDeposits = require('./bank-deposits');
+const bankReceiving = require('../services/bankReceivingConfig');
+const { enabledCurrencies } = require('../config/currencies');
 const collectionsRegistry = require('../collections');
 const payoutsRegistry = require('../payouts');
 const directUpiRoutes = require('./direct-upi');
@@ -127,7 +129,8 @@ router.get('/api/payments/readiness', (req, res) => {
                     payoutsReconciliation: payouts.reconciliation,
                 },
             },
-            currencies: ['USD', 'INR'],
+            currencies: enabledCurrencies(),
+            currencyRails: bankReceiving.receivingStatus(),
             readinessDefinitions: {
                 configured: nativeOnly
                     ? 'Third-party provider configuration is ignored in production; native routes expose their own readiness.'

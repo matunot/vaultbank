@@ -8,7 +8,7 @@
     "start": "node index.js",
     "dev": "nodemon index.js",
     "test": "npx --yes jest@30.5.2",
-    "test:integration": "npx --yes jest@30.5.2 __tests__/pgIntegration.test.js __tests__/pgHttpIntegration.test.js __tests__/vbrHttpIntegration.test.js __tests__/inrPgIntegration.test.js __tests__/internalTransferLedgerPg.test.js --runInBand --testPathIgnorePatterns /node_modules/",
+    "test:integration": "npx --yes jest@30.5.2 __tests__/pgIntegration.test.js __tests__/pgHttpIntegration.test.js __tests__/vbrHttpIntegration.test.js __tests__/inrPgIntegration.test.js __tests__/internalTransferLedgerPg.test.js __tests__/multiCurrencyLedgerPg.test.js --runInBand --testPathIgnorePatterns /node_modules/",
     "test:sepolia": "node scripts/sepolia-integration.js",
     "check:schema": "node scripts/check-inr-schema.js"
   },

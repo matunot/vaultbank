@@ -40,11 +40,14 @@ const {
     createNotification,
     createAuditLog,
 } = require('../config/database');
-
-const EXPIRY_HOURS = 168; // 7 days — international bank transfers can take several business days.
-const MIN_AMOUNT = 1;
-const MAX_AMOUNT = 100000;
-const MAX_OPEN = 3;
+const { isKnownCurrency, isCurrencyEnabled } = require('../config/currencies');
+const {
+    EXPIRY_HOURS,
+    MIN_AMOUNT,
+    MAX_AMOUNT,
+    MAX_OPEN,
+    receivingConfig,
+} = require('../services/bankReceivingConfig');
 
 // Receiving-account configuration (env only — never invented, never logged).
 // Customer deposit instructions and receiving details are limited to verified
@@ -59,76 +62,6 @@ function requireVerifiedDepositCustomerOrAdmin(req, res, next) {
         });
     }
     return next();
-}
-
-const DEPOSIT_CURRENCIES = ['INR', 'USD'];
-
-// Currency-specific receiving accounts are preferred. The original
-// VB_BANK_RECEIVING_* variables remain supported for a single legacy currency.
-// Details are returned only to authenticated, verified customers and only
-// when an operator has explicitly enabled the rail and fully configured them.
-function configuredReceivingCurrency(currency) {
-    const selected = String(currency || '').trim().toUpperCase();
-    const enabledFlag = process['env'].VB_BANK_DEPOSIT_ENABLED === 'true';
-    const base = {
-        enabled: false,
-        bankName: null,
-        holder: null,
-        details: null,
-        currency: selected || null,
-        verification: 'manual',
-        reason: 'receiving-account-not-configured',
-        expiryHours: EXPIRY_HOURS,
-        minAmount: MIN_AMOUNT,
-        maxAmount: MAX_AMOUNT,
-        maxOpen: MAX_OPEN,
-    };
-    if (!DEPOSIT_CURRENCIES.includes(selected)) return { ...base, reason: 'unsupported-ledger-currency' };
-    if (!enabledFlag) return { ...base, reason: 'disabled-by-operator' };
-
-    const prefix = 'VB_BANK_RECEIVING_' + selected + '_';
-    const specificBank = String(process['env'][prefix + 'BANK_NAME'] || '').trim();
-    const specificHolder = String(process['env'][prefix + 'HOLDER'] || '').trim();
-    const specificDetails = String(process['env'][prefix + 'DETAILS'] || '').trim();
-    const hasSpecificConfig = !!(specificBank || specificHolder || specificDetails);
-    if (hasSpecificConfig) {
-        const configured = !!(specificBank && specificHolder && specificDetails);
-        return {
-            ...base,
-            enabled: configured,
-            bankName: configured ? specificBank : null,
-            holder: configured ? specificHolder : null,
-            details: configured ? specificDetails : null,
-            reason: configured ? null : 'receiving-account-not-configured',
-        };
-    }
-
-    // Backward compatibility: the old generic variables describe exactly one
-    // currency. Never silently route an INR request to USD bank details or vice versa.
-    const legacyCurrency = String(process['env'].VB_BANK_RECEIVING_CURRENCY || 'USD').trim().toUpperCase();
-    if (legacyCurrency !== selected) return base;
-    const bankName = String(process['env'].VB_BANK_RECEIVING_BANK_NAME || '').trim();
-    const holder = String(process['env'].VB_BANK_RECEIVING_HOLDER || '').trim();
-    const details = String(process['env'].VB_BANK_RECEIVING_DETAILS || '').trim();
-    const configured = !!(bankName && holder && details);
-    return {
-        ...base,
-        enabled: configured,
-        bankName: configured ? bankName : null,
-        holder: configured ? holder : null,
-        details: configured ? details : null,
-        reason: configured ? null : 'receiving-account-not-configured',
-    };
-}
-
-function receivingConfig(currency) {
-    const currencies = DEPOSIT_CURRENCIES.filter((candidate) => configuredReceivingCurrency(candidate).enabled);
-    if (currency != null && String(currency).trim()) {
-        return { ...configuredReceivingCurrency(currency), currencies };
-    }
-    const legacyCurrency = String(process['env'].VB_BANK_RECEIVING_CURRENCY || 'USD').trim().toUpperCase();
-    const preferred = currencies.includes(legacyCurrency) ? legacyCurrency : (currencies[0] || (DEPOSIT_CURRENCIES.includes(legacyCurrency) ? legacyCurrency : 'USD'));
-    return { ...configuredReceivingCurrency(preferred), currencies };
 }
 
 let tablesReady = false;
@@ -204,8 +137,15 @@ async function audit(userId, action, resourceId, details, req) {
 router.get('/api/bank-deposits/config', authenticateToken, requireVerifiedDepositCustomerOrAdmin, async (req, res) => {
     try {
         const requestedCurrency = String(req.query && req.query.currency || '').trim().toUpperCase();
-        if (requestedCurrency && !DEPOSIT_CURRENCIES.includes(requestedCurrency)) {
-            return res.status(400).json({ success: false, code: 'UNSUPPORTED_CURRENCY', message: 'Choose INR or USD.' });
+        if (requestedCurrency && !isKnownCurrency(requestedCurrency)) {
+            return res.status(400).json({ success: false, code: 'CURRENCY_UNKNOWN', message: 'Choose a currency from the VaultBank currency registry.' });
+        }
+        if (requestedCurrency && !isCurrencyEnabled(requestedCurrency)) {
+            return res.status(400).json({
+                success: false,
+                code: 'CURRENCY_NOT_ENABLED',
+                message: `${requestedCurrency} bank deposits are not enabled by the operator yet.`,
+            });
         }
         const cfg = receivingConfig(requestedCurrency || undefined);
         if (!cfg.enabled) {
@@ -242,8 +182,15 @@ router.get('/api/bank-deposits/config', authenticateToken, requireVerifiedDeposi
 router.post('/api/bank-deposits/instructions', authenticateToken, requireVerifiedDepositCustomerOrAdmin, async (req, res) => {
     try {
         const requestedCurrency = String(req.body && req.body.currency || '').trim().toUpperCase();
-        if (requestedCurrency && !DEPOSIT_CURRENCIES.includes(requestedCurrency)) {
-            return res.status(400).json({ success: false, code: 'UNSUPPORTED_CURRENCY', message: 'Choose INR or USD.' });
+        if (requestedCurrency && !isKnownCurrency(requestedCurrency)) {
+            return res.status(400).json({ success: false, code: 'CURRENCY_UNKNOWN', message: 'Choose a currency from the VaultBank currency registry.' });
+        }
+        if (requestedCurrency && !isCurrencyEnabled(requestedCurrency)) {
+            return res.status(400).json({
+                success: false,
+                code: 'CURRENCY_NOT_ENABLED',
+                message: `${requestedCurrency} bank deposits are not enabled by the operator yet.`,
+            });
         }
         const cfg = receivingConfig(requestedCurrency || undefined);
         if (!cfg.enabled) {

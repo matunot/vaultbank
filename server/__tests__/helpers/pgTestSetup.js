@@ -8,6 +8,7 @@
  */
 
 const { Pool } = require('pg');
+const { isSupportedCurrency } = require('../../config/currencies');
 
 // Load the server environment file if present — same mechanism as config/db.js.
 // The file path is assembled from fragments to avoid scanner patterns.
@@ -91,7 +92,7 @@ async function applySchema(pool) {
     try {
         await pool.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
     } catch (_) { /* may already exist or lack permissions */ }
-    const needed = ['007_real_banking_schema.sql', '008_credit_schema.sql', '009_transfer_idempotency.sql', '010_payout_idempotency.sql', '011_vbr_payment_intents.sql', '012_global_transfer_idempotency.sql', '013_vaultbank_double_entry_ledger.sql', '014_kyc_document_files.sql', '015_scope_inr_wallet_unique_index.sql'];
+    const needed = ['007_real_banking_schema.sql', '008_credit_schema.sql', '009_transfer_idempotency.sql', '010_payout_idempotency.sql', '011_vbr_payment_intents.sql', '012_global_transfer_idempotency.sql', '013_vaultbank_double_entry_ledger.sql', '014_kyc_document_files.sql', '015_scope_inr_wallet_unique_index.sql', '016_multicurrency_ledger.sql'];
     for (const file of needed) {
         const sql = fs.readFileSync(path.join(migrationsDir, file), 'utf8')
             // 007 opens with DROP TABLE ... CASCADE (a one-time reset of the
@@ -125,7 +126,7 @@ async function applySchema(pool) {
  */
 async function seedVerifiedTestLedgerAccount(pool, account) {
     const currency = String(account.currency).toUpperCase();
-    if (!['INR', 'USD'].includes(currency)) throw new Error('Unsupported test ledger currency');
+    if (!isSupportedCurrency(currency)) throw new Error('Unsupported test ledger currency');
     const amount = String(account.balance);
     const verifiedAvailable = String(account.available_balance);
     const client = await pool.connect();
@@ -154,25 +155,27 @@ async function seedVerifiedTestLedgerAccount(pool, account) {
         );
         if (!offsetRows[0]) throw new Error('Could not initialize test ledger offset');
 
-        const { rows: journalRows } = await client.query(
-            `INSERT INTO vb_ledger_journals
-                (event_type, source_type, source_id, currency, description, metadata)
-             VALUES ('opening_balance', 'account', $1, $2,
-                     'Synthetic externally verified test funding',
-                     '{"cutover":"test-fixture","openingBalanceReconciled":true}'::jsonb)
-             ON CONFLICT (event_type, source_type, source_id) DO NOTHING
-             RETURNING id`,
-            [String(account.id), currency]
-        );
-        if (journalRows.length) {
-            await client.query(
-                "INSERT INTO vb_ledger_entries (journal_id, ledger_account_id, side, amount) VALUES ($1, $2, 'debit', $3)",
-                [journalRows[0].id, offsetRows[0].id, amount]
+        if (Number(amount) > 0) {
+            const { rows: journalRows } = await client.query(
+                `INSERT INTO vb_ledger_journals
+                    (event_type, source_type, source_id, currency, description, metadata)
+                 VALUES ('opening_balance', 'account', $1, $2,
+                         'Synthetic externally verified test funding',
+                         '{"cutover":"test-fixture","openingBalanceReconciled":true}'::jsonb)
+                 ON CONFLICT (event_type, source_type, source_id) DO NOTHING
+                 RETURNING id`,
+                [String(account.id), currency]
             );
-            await client.query(
-                "INSERT INTO vb_ledger_entries (journal_id, ledger_account_id, side, amount) VALUES ($1, $2, 'credit', $3)",
-                [journalRows[0].id, customerRows[0].id, amount]
-            );
+            if (journalRows.length) {
+                await client.query(
+                    "INSERT INTO vb_ledger_entries (journal_id, ledger_account_id, side, amount) VALUES ($1, $2, 'debit', $3)",
+                    [journalRows[0].id, offsetRows[0].id, amount]
+                );
+                await client.query(
+                    "INSERT INTO vb_ledger_entries (journal_id, ledger_account_id, side, amount) VALUES ($1, $2, 'credit', $3)",
+                    [journalRows[0].id, customerRows[0].id, amount]
+                );
+            }
         }
         await client.query('COMMIT');
     } catch (error) {
@@ -264,4 +267,4 @@ async function cleanupTestData(pool, prefix) {
     await pool.query(`DELETE FROM users WHERE email LIKE $1`, [`${prefix}-%`]);
 }
 
-module.exports = { connectToTestDb, applySchema, seedTestData, cleanupTestData, deriveTestUrl };
+module.exports = { connectToTestDb, applySchema, seedTestData, seedVerifiedTestLedgerAccount, cleanupTestData, deriveTestUrl };

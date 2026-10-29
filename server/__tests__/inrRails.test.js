@@ -1191,7 +1191,7 @@ describe('INR accounts: explicit opt-in, USD untouched', () => {
         const res = await call(accountsRouter, '/api/account/open-inr', { method: 'post' });
         expect(res.code).toBe(201);
         expect(res.body.account.currency).toBe('INR');
-        expect(CDB.createAccount).toHaveBeenCalledWith('u-1', 'savings', 'INR');
+        expect(CDB.createAccount).toHaveBeenCalledWith('u-1', 'checking', 'INR');
 
         CDB.db.query.mockImplementation(async (sql) => {
             if (sql.includes("currency = 'INR'")) return { rows: [{ id: 'acc-inr', account_number: 'VB-9' }] };

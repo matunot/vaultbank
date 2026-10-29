@@ -20,6 +20,7 @@ const { checkAnomaly } = require('../anomaly');
 const { generateTransferToken, verifyTransferToken } = require('../transfers/token');
 const auditLogger = require('../middleware/auditLogger');
 const { logAudit } = require('../utils/audit');
+const { isCurrencyEnabled, enabledCurrencies } = require('../config/currencies');
 
 const router = express.Router();
 
@@ -59,8 +60,8 @@ router.post('/api/transfers', authenticateToken, transferLimiter, async (req, re
             message: 'This endpoint supports VaultBank-to-VaultBank internal transfers only. External bank transfers use a separate settlement rail.',
         });
     }
-    if (!['INR', 'USD'].includes(requestedCurrency)) {
-        return res.status(400).json({ success: false, code: 'UNSUPPORTED_CURRENCY', message: 'Use INR or USD for internal transfers.' });
+    if (!isCurrencyEnabled(requestedCurrency)) {
+        return res.status(400).json({ success: false, code: 'UNSUPPORTED_CURRENCY', message: `Use an enabled VaultBank currency: ${enabledCurrencies().join(', ')}.` });
     }
 
     // Parse the amount without binary floating-point rounding.

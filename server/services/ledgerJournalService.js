@@ -9,8 +9,12 @@
 const fs = require('fs');
 const path = require('path');
 const { db } = require('../config/database');
+const { isSupportedCurrency, normalizeCurrency } = require('../config/currencies');
 
-const MIGRATION_FILE = '013_vaultbank_double_entry_ledger.sql';
+const MIGRATION_FILES = [
+    '013_vaultbank_double_entry_ledger.sql',
+    '016_multicurrency_ledger.sql',
+];
 let schemaReady = false;
 let schemaPromise = null;
 
@@ -50,7 +54,7 @@ async function ensureVaultLedgerSchema() {
             // Serialize runtime migration with other application instances.
             await client.query(
                 "SELECT pg_advisory_xact_lock(hashtext('vaultbank-runtime-migration'), hashtext($1))",
-                [MIGRATION_FILE]
+                [MIGRATION_FILES.join(',')]
             );
             await client.query(`
                 CREATE TABLE IF NOT EXISTS _migrations (
@@ -59,17 +63,18 @@ async function ensureVaultLedgerSchema() {
                     executed_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
                 )
             `);
-            const { rows } = await client.query(
-                'SELECT filename FROM _migrations WHERE filename = $1 LIMIT 1',
-                [MIGRATION_FILE]
-            );
-            if (rows.length === 0) {
-                const migrationPath = path.join(__dirname, '..', 'migrations', MIGRATION_FILE);
+            for (const migrationFile of MIGRATION_FILES) {
+                const { rows } = await client.query(
+                    'SELECT filename FROM _migrations WHERE filename = $1 LIMIT 1',
+                    [migrationFile]
+                );
+                if (rows.length > 0) continue;
+                const migrationPath = path.join(__dirname, '..', 'migrations', migrationFile);
                 const sql = fs.readFileSync(migrationPath, 'utf8');
                 await client.query(sql);
                 await client.query(
                     'INSERT INTO _migrations (filename) VALUES ($1) ON CONFLICT (filename) DO NOTHING',
-                    [MIGRATION_FILE]
+                    [migrationFile]
                 );
             }
             const ready = await client.query(`
@@ -106,14 +111,14 @@ async function ensureVaultLedgerSchema() {
 
 async function getSystemLedgerAccount(client, systemCode, currency) {
     const code = String(systemCode || '').trim().toUpperCase();
-    const cur = String(currency || '').trim().toUpperCase();
+    const cur = normalizeCurrency(currency);
     const definition = SYSTEM_ACCOUNTS[code];
     if (!definition) {
         const error = new Error('Unknown VaultBank system ledger account.');
         error.code = 'VB_LEDGER_SYSTEM_ACCOUNT_UNKNOWN';
         throw error;
     }
-    if (!['INR', 'USD'].includes(cur)) {
+    if (!isSupportedCurrency(cur)) {
         const error = new Error('Unsupported VaultBank ledger currency.');
         error.code = 'VB_LEDGER_CURRENCY_UNSUPPORTED';
         throw error;
@@ -154,8 +159,8 @@ async function ensureCustomerLedgerAccount(client, accountId) {
         error.code = 'VB_LEDGER_ACCOUNT_NOT_FOUND';
         throw error;
     }
-    const currency = String(account.currency || '').trim().toUpperCase();
-    if (!['INR', 'USD'].includes(currency)) {
+    const currency = normalizeCurrency(account.currency);
+    if (!isSupportedCurrency(currency)) {
         const error = new Error('VaultBank ledger does not support this account currency.');
         error.code = 'VB_LEDGER_CURRENCY_UNSUPPORTED';
         throw error;
@@ -331,9 +336,9 @@ async function postBalancedJournal(client, input) {
     const eventType = String(input.eventType || '').trim();
     const sourceType = String(input.sourceType || '').trim();
     const sourceId = String(input.sourceId || '').trim();
-    const currency = String(input.currency || '').trim().toUpperCase();
+    const currency = normalizeCurrency(input.currency);
     const entries = Array.isArray(input.entries) ? input.entries : [];
-    if (!eventType || !sourceType || !sourceId || sourceId.length > 200 || !['INR', 'USD'].includes(currency)) {
+    if (!eventType || !sourceType || !sourceId || sourceId.length > 200 || !isSupportedCurrency(currency)) {
         const error = new Error('VaultBank journal source and currency are invalid.');
         error.code = 'VB_LEDGER_JOURNAL_INVALID';
         throw error;

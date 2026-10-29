@@ -17,7 +17,8 @@
 
 const express = require('express');
 const router = express.Router();
-const { STATES, canTransition, isTerminal, assertTransition, isCurrencySupported, SUPPORTED_CURRENCIES } = require('./states');
+const { STATES, canTransition, isTerminal, assertTransition, isCurrencySupported, supportedCurrencies } = require('./states');
+const { SQL_CURRENCY_LIST } = require('../config/currencies');
 const { validateConnector } = require('./connector');
 const { db, findUserById, findUserByEmail, findAccountByUserIdAndCurrency, findAccountByNumber, createNotification } = require('../config/database');
 const { authenticateToken } = require('../middleware/auth');
@@ -49,7 +50,7 @@ async function ensureTables() {
             direction TEXT NOT NULL CHECK (direction IN ('send', 'receive')),
             method TEXT NOT NULL CHECK (method IN ('internal', 'collections', 'payouts')),
             amount NUMERIC(15,2) NOT NULL CHECK (amount > 0),
-            currency TEXT NOT NULL CHECK (currency IN ('USD', 'INR')),
+            currency TEXT NOT NULL CHECK (currency IN (${SQL_CURRENCY_LIST})),
             state TEXT NOT NULL DEFAULT 'created'
                 CHECK (state IN ('created', 'pending', 'processing', 'succeeded', 'failed', 'cancelled', 'reconciliation_required')),
             counterparty TEXT,
@@ -162,7 +163,7 @@ function vbrAvailability() {
 // GET /api/vbr/availability — PUBLIC VBR readiness
 // ============================================================
 router.get('/api/vbr/availability', (req, res) => {
-    res.status(200).json({ success: true, ...vbrAvailability(), currencies: SUPPORTED_CURRENCIES });
+    res.status(200).json({ success: true, ...vbrAvailability(), currencies: supportedCurrencies() });
 });
 
 // ============================================================
@@ -234,7 +235,7 @@ router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
         // ── Validation: currency, amount, method ──
         const wantedCurrency = String(currency || '').trim().toUpperCase();
         if (!isCurrencySupported(wantedCurrency)) {
-            return res.status(400).json({ success: false, message: `Currency ${wantedCurrency} is not supported. Use ${SUPPORTED_CURRENCIES.join(' or ')}.` });
+            return res.status(400).json({ success: false, message: `Currency ${wantedCurrency} is not supported. Use ${supportedCurrencies().join(' or ')}.` });
         }
         const amountStr = validateAmount(amount);
         if (!amountStr) {
@@ -254,6 +255,12 @@ router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
         // message is more precise than the generic connector message).
         if (wantedCurrency === 'USD' && method !== 'internal' && direction === 'send') {
             return res.status(503).json({ success: false, code: 'VBR_NO_USD_RAIL', message: 'USD external bank transfers are explicitly unavailable — no authorized USD settlement rail exists today.' });
+        }
+        // No non-INR currency has an authorized external settlement rail. INR
+        // payouts are handled by the separate manual bank-payout rail, so this
+        // gate stays fail-closed for everything else.
+        if (wantedCurrency !== 'INR' && method !== 'internal' && direction === 'send') {
+            return res.status(503).json({ success: false, code: 'VBR_NO_EXTERNAL_RAIL', message: `${wantedCurrency} external bank transfers are unavailable — no authorized ${wantedCurrency} settlement rail exists today.` });
         }
         // ── Availability check: fail closed for unconfigured connectors ──
         const avail = vbrAvailability();

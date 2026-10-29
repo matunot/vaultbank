@@ -26,7 +26,16 @@ interface Recipient {
   accountNumber?: string | null;
 }
 
-type Currency = 'USD' | 'INR';
+/** A currency enabled for this deployment (from GET /api/currencies). */
+interface CurrencyOption {
+  code: string;
+  name: string;
+  symbol: string;
+  enabled: boolean;
+  bankReceivingConfigured?: boolean;
+}
+
+type Currency = string;
 
 interface RailsReadiness {
   usd: { cardStripe: boolean; paypal: boolean; bankTransferInstructions: boolean; internalTransfers: boolean; externalWithdrawals: boolean; achFileExport?: boolean; achCustomerAccessEnabled?: boolean; achFileExportReason?: string; achAutomaticTransfer?: boolean };
@@ -88,56 +97,84 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       .catch(() => setRailMode('demo'));
   }, []);
 
-  // ── INR wallet state ──
-  const [inrState, setInrState] = useState<'idle' | 'loading' | 'none' | 'ready' | 'error'>('idle');
-  const [inrWallet, setInrWallet] = useState<{ account: { accountNumber: string; balance: number }; transactions: InrTransaction[] } | null>(null);
-  const [payoutRecords, setPayoutRecords] = useState<PayoutRecord[]>([]);
+  // ── Enabled currencies (single source of truth: server registry) ──
+  const [currencies, setCurrencies] = useState<CurrencyOption[]>([
+    { code: 'USD', name: 'US Dollar', symbol: '$', enabled: true },
+    { code: 'INR', name: 'Indian Rupee', symbol: '₹', enabled: true },
+  ]);
+  useEffect(() => {
+    api.getCurrencies()
+      .then((r) => {
+        const list = Array.isArray(r.currencies)
+          ? (r.currencies as CurrencyOption[]).filter((c) => c && c.enabled)
+          : [];
+        if (list.length) setCurrencies(list);
+      })
+      .catch(() => { /* keep the conservative USD/INR default */ });
+  }, []);
+  const currencyMeta = currencies.find((c) => c.code === currency);
+  const currencySymbol = currencyMeta?.symbol || currency;
 
-  const loadInr = async () => {
-    setInrState('loading');
+  // ── INR wallet state ──
+  const [walletState, setWalletState] = useState<'idle' | 'loading' | 'none' | 'ready' | 'error'>('idle');
+  const [wallet, setWallet] = useState<{ currency: string; account: { accountNumber: string; balance: number }; transactions: InrTransaction[] } | null>(null);
+  const [payoutRecords, setPayoutRecords] = useState<PayoutRecord[]>([]);
+  const walletSeq = useRef(0);
+
+  const loadWallet = async (code: string) => {
+    const seq = ++walletSeq.current;
+    setWalletState('loading');
     try {
       const [walletRes, payoutsRes] = await Promise.all([
-        api.getInrAccount(),
-        api.myPayouts().catch(() => ({ success: false, requests: [] })),
+        api.getCurrencyWallet(code),
+        code === 'INR'
+          ? api.myPayouts().catch(() => ({ success: false, requests: [] }))
+          : Promise.resolve({ success: false, requests: [] }),
       ]);
+      if (seq !== walletSeq.current) return;
       if (walletRes.success && walletRes.account) {
-        setInrWallet({ account: walletRes.account, transactions: walletRes.transactions || [] });
-        setInrState('ready');
+        setWallet({ currency: code, account: walletRes.account, transactions: (walletRes.transactions as InrTransaction[]) || [] });
+        setWalletState('ready');
       } else {
-        setInrWallet(null);
-        setInrState('none');
+        setWallet(null);
+        setWalletState('none');
       }
-      setPayoutRecords((payoutsRes.requests as PayoutRecord[]) || []);
+      if (code === 'INR') setPayoutRecords((payoutsRes.requests as PayoutRecord[]) || []);
     } catch (err: any) {
+      if (seq !== walletSeq.current) return;
       if (err?.status === 404) {
-        setInrWallet(null);
-        setInrState('none');
+        setWallet(null);
+        setWalletState('none');
       } else {
-        setInrState('error');
+        setWalletState('error');
       }
     }
   };
+  const loadInr = () => loadWallet('INR');
+  const inrWallet = wallet?.currency === 'INR' ? wallet : null;
+  const inrState = currency === 'INR' ? walletState : (inrWallet ? 'ready' : 'idle');
 
   useEffect(() => {
-    if (currency === 'INR' && inrState === 'idle') loadInr();
+    if (currency === 'USD') return;
+    if (wallet?.currency === currency && walletState === 'ready') return;
+    loadWallet(currency);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currency]);
 
-  // ── Open INR wallet ──
-  const [openInrStatus, setOpenInrStatus] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [openInrMsg, setOpenInrMsg] = useState('');
-  const openInrWallet = async () => {
-    setOpenInrStatus('loading');
-    setOpenInrMsg('');
+  // ── Open a zero-balance wallet in the selected currency ──
+  const [openWalletStatus, setOpenWalletStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const [openWalletMsg, setOpenWalletMsg] = useState('');
+  const openWallet = async () => {
+    setOpenWalletStatus('loading');
+    setOpenWalletMsg('');
     try {
-      const res = await api.openInrAccount();
-      if (!res.success && !res.already) throw new Error(res.message || 'Could not open your INR wallet.');
-      setInrState('idle'); // triggers reload below
-      await loadInr();
-      setOpenInrStatus('idle');
+      const res = await api.openCurrencyAccount(currency);
+      if (!res.success && !res.already) throw new Error(res.message || `Could not open your ${currency} wallet.`);
+      await loadWallet(currency);
+      setOpenWalletStatus('idle');
     } catch (err: any) {
-      setOpenInrStatus('error');
-      setOpenInrMsg(err?.message || 'Could not open your INR wallet.');
+      setOpenWalletStatus('error');
+      setOpenWalletMsg(err?.message || `Could not open your ${currency} wallet.`);
     }
   };
 
@@ -231,7 +268,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       setSendStatus('success');
       setSendMsg(`${currency} ${parseFloat(sendAmount).toFixed(2)} transfer completed.`);
       sendKeyRef.current = null; // definitive result — key consumed
-      if (currency === 'INR') loadInr();
+      if (currency !== 'USD') loadWallet(currency);
       setTimeout(resetSend, 2200);
     } catch (err: any) {
       setSendStatus('error');
@@ -260,6 +297,8 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
   const isAdminUser = currentRole === 'admin' || currentRole === 'super_admin';
   const canUseDirectUpi = !!inrRail?.directUpi && (isAdminUser || inrRail.directUpiCustomerAccessEnabled === true);
   const canUseDirectBankPayout = !!inrRail?.directBankPayouts && (isAdminUser || inrRail.directBankPayoutsCustomerAccessEnabled === true);
+  const canOpenBankDeposit = currency === 'USD' || currencyMeta?.bankReceivingConfigured === true;
+  const canAddMoney = canOpenBankDeposit || (currency === 'INR' && canUseDirectUpi);
 
   const rails: Array<{
     key: string; name: string; desc: string; ready: boolean | null;
@@ -365,19 +404,21 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                     </span>
                   )}
                 </div>
-                {/* Currency selector — USD / INR */}
-                <div className="flex items-center gap-2 mb-3">
-                  {(['USD', 'INR'] as Currency[]).map(c => (
+                {/* Currency selector — every operator-enabled currency */}
+                <div className="flex flex-wrap items-center gap-2 mb-3">
+                  {currencies.map(c => (
                     <button
-                      key={c}
-                      onClick={() => setCurrency(c)}
+                      key={c.code}
+                      onClick={() => setCurrency(c.code)}
                       className={`px-4 py-1.5 rounded-xl text-xs font-bold border transition-all ${
-                        currency === c
+                        currency === c.code
                           ? 'bg-linear-to-r from-cyan-400 to-blue-500 text-white border-transparent glow-blue'
                           : 'glass-btn text-white/50 border-white/10 hover:text-white'
                       }`}
                     >
-                      {c === 'INR' ? <span className="flex items-center gap-1"><IndianRupee className="w-3 h-3" /> INR</span> : '$ USD'}
+                      {c.code === 'INR'
+                        ? <span className="flex items-center gap-1"><IndianRupee className="w-3 h-3" /> INR</span>
+                        : `${c.symbol} ${c.code}`}
                     </button>
                   ))}
                 </div>
@@ -387,17 +428,17 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                   </p>
                 ) : (
                   <p className="font-display text-5xl lg:text-6xl text-white">
-                    {hideBalances ? '••••••' : inrState === 'ready' && inrWallet
-                      ? `₹${inrWallet.account.balance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
-                      : inrState === 'loading' ? '…' : '—'}
+                    {hideBalances ? '••••••' : wallet?.currency === currency && walletState === 'ready'
+                      ? `${currencySymbol}${wallet.account.balance.toLocaleString(currency === 'INR' ? 'en-IN' : 'en-US', { minimumFractionDigits: 2 })}`
+                      : walletState === 'loading' ? '…' : '—'}
                   </p>
                 )}
                 <p className="text-sm text-white/40 mt-1.5">
                   {currency === 'USD'
                     ? `REAL balance · ${account?.accountNumber ? `VaultBank •• ${account.accountNumber.slice(-4)}` : 'VaultBank account'}`
-                    : inrState === 'ready' && inrWallet
-                      ? `REAL INR balance · VaultBank •• ${inrWallet.account.accountNumber.slice(-4)}`
-                      : 'INR wallet' + (inrState === 'none' ? ' — not opened yet' : '')}
+                    : wallet?.currency === currency && walletState === 'ready'
+                      ? `REAL ${currency} balance · VaultBank •• ${wallet.account.accountNumber.slice(-4)}`
+                      : `${currency} wallet` + (walletState === 'none' ? ' — not opened yet' : '')}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -411,11 +452,11 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                 <motion.button
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   onClick={() => {
-                    if (currency === 'USD' && onOpenModal) onOpenModal('deposit');
                     if (currency === 'INR' && canUseDirectUpi) setShowDirectUpi(true);
+                    else if (canOpenBankDeposit && onOpenModal) onOpenModal('deposit');
                   }}
-                  disabled={currency === 'INR' && !canUseDirectUpi}
-                  title={currency === 'INR' && !canUseDirectUpi ? 'Direct UPI is restricted to the admin pilot until customer access is authorized' : undefined}
+                  disabled={!canAddMoney}
+                  title={!canAddMoney ? `${currency} receiving is not configured yet` : undefined}
                   className="px-5 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 glow-blue disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Plus className="w-4 h-4" /> Add Money
@@ -442,7 +483,9 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                 <p className="text-xl font-bold text-white">
                   {hideBalances ? '••••' : currency === 'USD'
                     ? `$${(balance?.available ?? 0).toLocaleString()}`
-                    : inrState === 'ready' && inrWallet ? `₹${inrWallet.account.balance.toLocaleString('en-IN')}` : '—'}
+                    : wallet?.currency === currency && walletState === 'ready'
+                      ? `${currencySymbol}${wallet.account.balance.toLocaleString(currency === 'INR' ? 'en-IN' : 'en-US')}`
+                      : '—'}
                 </p>
                 <p className="text-[10px] text-white/40 mt-0.5">real funds</p>
               </div>
@@ -452,7 +495,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                   <p className="text-[10px] text-white/40 tracking-wider">RECORDS</p>
                 </div>
                 <p className="text-xl font-bold text-white">
-                  {currency === 'USD' ? transactions.length : (inrWallet?.transactions.length ?? 0)}
+                  {currency === 'USD' ? transactions.length : (wallet?.currency === currency ? wallet.transactions.length : 0)}
                 </p>
                 <p className="text-[10px] text-white/40 mt-0.5">real transactions</p>
               </div>
@@ -478,7 +521,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
         {[
           { icon: Send, label: 'Send Money', desc: `VaultBank user (${currency})`, color: '#3b82f6', action: () => setShowSend(true) },
           ...(canUseDirectUpi ? [{ icon: QrCode, label: 'Receive', desc: 'VaultBank Direct UPI', color: '#10b981', action: () => { setCurrency('INR'); setShowDirectUpi(true); } }] : []),
-          { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : (canUseDirectUpi ? 'VaultBank Direct UPI' : 'Receiving rail not enabled'), color: '#06b6d4', action: () => { if (currency === 'USD' && onOpenModal) onOpenModal('deposit'); else if (canUseDirectUpi) { setCurrency('INR'); setShowDirectUpi(true); } } },
+          { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : (canUseDirectUpi ? 'VaultBank Direct UPI' : canOpenBankDeposit ? `Bank transfer (${currency})` : 'Receiving rail not enabled'), color: '#06b6d4', action: () => { if (currency === 'INR' && canUseDirectUpi) { setShowDirectUpi(true); } else if (canOpenBankDeposit && onOpenModal) { onOpenModal('deposit'); } } },
           ...(canUseDirectBankPayout ? [{ icon: Banknote, label: 'Withdraw INR', desc: 'VaultBank manual bank payout', color: '#f59e0b', action: () => { setCurrency('INR'); setShowDirectBankPayout(true); } }] : []),
         ].map((a, i) => (
           <motion.button
@@ -500,6 +543,23 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
         ))}
       </div>
 
+      {/* ── Non-INR currency wallet: explicit opt-in, zero balance ── */}
+      {currency !== 'USD' && currency !== 'INR' && walletState === 'none' && (
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="glass-panel rounded-3xl p-6">
+          <h3 className="font-display text-xl text-white mb-1 flex items-center gap-2">
+            <Wallet className="w-5 h-5 text-cyan-300" /> Open your {currency} wallet
+          </h3>
+          <p className="text-sm text-white/50 mb-4">
+            A separate, zero-balance {currency} account. Your USD balance is untouched, and nothing is converted — {currency} arrives only from a verified {currency} transfer.
+          </p>
+          <button onClick={openWallet} disabled={openWalletStatus === 'loading'}
+            className="px-5 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50">
+            {openWalletStatus === 'loading' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Open {currency} wallet
+          </button>
+          {openWalletStatus === 'error' && <p className="text-xs text-rose-400 font-bold mt-3">{openWalletMsg}</p>}
+        </motion.div>
+      )}
+
       {/* ── INR wallet zone ── */}
       {currency === 'INR' && (
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -512,11 +572,11 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
             {inrState === 'none' && (
               <div className="py-3">
                 <p className="text-sm text-white/50 mb-4">You don't have an INR wallet yet. Open one — it's a separate, zero-balance account; your USD account is untouched.</p>
-                <button onClick={openInrWallet} disabled={openInrStatus === 'loading'}
+                <button onClick={openWallet} disabled={openWalletStatus === 'loading'}
                   className="px-5 py-3 rounded-xl bg-linear-to-r from-emerald-400 to-teal-500 text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50">
-                  {openInrStatus === 'loading' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Open INR Wallet
+                  {openWalletStatus === 'loading' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Open INR Wallet
                 </button>
-                {openInrStatus === 'error' && <p className="text-xs text-rose-400 font-bold mt-3">{openInrMsg}</p>}
+                {openWalletStatus === 'error' && <p className="text-xs text-rose-400 font-bold mt-3">{openWalletMsg}</p>}
               </div>
             )}
             {inrState === 'error' && <p className="text-sm text-rose-400 py-4">Could not load your INR account. Try again.</p>}
@@ -695,15 +755,15 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
             })}
           </div>
         ))}
-        {currency === 'INR' && (inrState === 'loading' ? (
-          <div className="flex items-center gap-2 text-white/40 text-sm py-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading INR records…</div>
-        ) : inrState !== 'ready' || !inrWallet ? (
-          <div className="py-4 text-sm text-white/40">{inrState === 'none' ? 'Open your INR wallet to see INR activity.' : 'No INR wallet loaded.'}</div>
-        ) : inrWallet.transactions.length === 0 ? (
-          <div className="py-4 text-sm text-white/40">No INR activity yet — receive INR or transfer from another VaultBank user.</div>
+        {currency !== 'USD' && (walletState === 'loading' ? (
+          <div className="flex items-center gap-2 text-white/40 text-sm py-4"><Loader2 className="w-4 h-4 animate-spin" /> Loading {currency} records…</div>
+        ) : !wallet || wallet.currency !== currency || walletState !== 'ready' ? (
+          <div className="py-4 text-sm text-white/40">{walletState === 'none' ? `Open your ${currency} wallet to see ${currency} activity.` : `No ${currency} wallet loaded.`}</div>
+        ) : wallet.transactions.length === 0 ? (
+          <div className="py-4 text-sm text-white/40">No {currency} activity yet — receive {currency} or transfer from another VaultBank user.</div>
         ) : (
           <div className="space-y-2">
-            {inrWallet.transactions.slice(0, 6).map((t) => {
+            {wallet.transactions.slice(0, 6).map((t) => {
               const positive = t.amount > 0;
               return (
                 <div key={t.id} className="flex items-center gap-3 p-3 rounded-2xl bg-white/3 border border-white/5">
@@ -712,10 +772,10 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-white truncate">{t.description || t.category}</p>
-                    <p className="text-[11px] text-white/40">{t.date ? new Date(t.date).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' }) : ''} · {t.status}</p>
+                    <p className="text-[11px] text-white/40">{t.date ? new Date(t.date).toLocaleDateString(currency === 'INR' ? 'en-IN' : 'en-US', { month: 'short', day: 'numeric' }) : ''} · {t.status}</p>
                   </div>
                   <p className={`font-bold text-sm ${positive ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {positive ? '+' : '-'}₹{Math.abs(t.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    {positive ? '+' : '-'}{currencySymbol}{Math.abs(t.amount).toLocaleString(currency === 'INR' ? 'en-IN' : 'en-US', { minimumFractionDigits: 2 })}
                   </p>
                 </div>
               );
@@ -751,8 +811,8 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
               </div>
 
               <div className="space-y-3">
-                {currency === 'INR' && inrState !== 'ready' && (
-                  <p className="text-xs text-amber-400 font-bold bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">Open your INR wallet first to send INR.</p>
+                {currency !== 'USD' && (walletState !== 'ready' || wallet?.currency !== currency) && (
+                  <p className="text-xs text-amber-400 font-bold bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">Open your {currency} wallet first to send {currency}.</p>
                 )}
                 <div>
                   <label className="text-[10px] text-white/40 tracking-wider font-semibold mb-2 block">RECIPIENT — REAL VAULTBANK USERS</label>
@@ -824,7 +884,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                 )}
                 <button
                   onClick={executeSend}
-                  disabled={sendStatus === 'sending' || !sendAmount || (!selected && query.trim().length < 2) || (currency === 'INR' && inrState !== 'ready')}
+                  disabled={sendStatus === 'sending' || !sendAmount || (!selected && query.trim().length < 2) || (currency !== 'USD' && (walletState !== 'ready' || wallet?.currency !== currency))}
                   className="w-full py-4 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm glow-blue flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
                 >
                   {sendStatus === 'sending' ? (
@@ -846,13 +906,13 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
         isOpen={showDirectUpi}
         onClose={() => setShowDirectUpi(false)}
         accountState={inrState}
-        onOpenInrAccount={openInrWallet}
+        onOpenInrAccount={openWallet}
       />
       <DirectBankPayoutModal
         isOpen={showDirectBankPayout}
         onClose={() => setShowDirectBankPayout(false)}
         accountState={inrState}
-        onOpenInrAccount={openInrWallet}
+        onOpenInrAccount={openWallet}
       />
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectUpiAdminReview />}
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectBankPayoutAdminReview />}

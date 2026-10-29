@@ -14,6 +14,7 @@ const {
     findAccountByNumber,
     searchUsers,
     createAccount,
+    generateUniqueAccountNumber,
     updateAccountBalance,
     createTransaction,
     getTransactions,
@@ -26,6 +27,7 @@ const {
     demoStore,
 } = require('../config/database');
 const { ensureInrWalletIndex } = require('../services/inrWalletIndexService');
+const { isKnownCurrency, isCurrencyEnabled, normalizeCurrency, enabledCurrencies, getCurrency } = require('../config/currencies');
 
 // ============================================================
 // GET /api/account — Get user's primary account
@@ -368,45 +370,71 @@ router.post('/api/account/withdraw', authenticateToken, async (req, res) => {
 });
 
 // ============================================================
+// GET /api/account/wallet/:currency — wallet balance + currency-scoped
+// history for any enabled currency. USD is served by /api/accounts.
+// ============================================================
+async function walletSnapshot(req, res, currency) {
+    const code = normalizeCurrency(currency);
+    if (!isKnownCurrency(code)) {
+        return res.status(400).json({ success: false, code: 'CURRENCY_UNKNOWN', message: 'Unknown VaultBank currency.' });
+    }
+    if (!isCurrencyEnabled(code)) {
+        return res.status(403).json({ success: false, code: 'CURRENCY_NOT_ENABLED', message: `${code} is not enabled by the operator.` });
+    }
+    const account = await findAccountByUserIdAndCurrency(req.user.id, code);
+    if (!account) {
+        return res.status(404).json({ success: false, code: 'ACCOUNT_NOT_FOUND', message: `No ${code} account yet — open one with POST /api/account/open-currency.` });
+    }
+    let transactions = [];
+    if (!isDemo) {
+        const { rows } = await db.query(
+            'SELECT * FROM transactions WHERE account_id = $1 AND currency = $2 ORDER BY created_at DESC LIMIT 25',
+            [account.id, code]
+        );
+        transactions = rows;
+    }
+    const symbol = (getCurrency(code) || {}).symbol || code;
+    return res.json({
+        success: true,
+        account: {
+            id: account.id,
+            accountNumber: account.account_number,
+            currency: code,
+            symbol,
+            balance: parseFloat(account.balance),
+            availableBalance: parseFloat(account.available_balance),
+            heldBalance: parseFloat(account.held_balance),
+        },
+        transactions: transactions.map((t) => ({
+            id: t.id,
+            type: t.type,
+            status: t.status,
+            amount: parseFloat(t.amount),
+            currency: t.currency,
+            description: t.description,
+            category: t.category,
+            balanceAfter: t.balance_after ? parseFloat(t.balance_after) : null,
+            date: t.created_at,
+            externalReference: t.external_reference || null,
+        })),
+    });
+}
+
+router.get('/api/account/wallet/:currency', authenticateToken, async (req, res) => {
+    try {
+        return await walletSnapshot(req, res, req.params.currency);
+    } catch (error) {
+        console.error('Wallet snapshot error:', error.message);
+        return res.status(500).json({ success: false, message: 'Could not load this currency account.' });
+    }
+});
+
+// ============================================================
 // GET /api/account/inr — INR wallet: balance + INR-only history
 // ============================================================
 router.get('/api/account/inr', authenticateToken, async (req, res) => {
     try {
-        const account = await findAccountByUserIdAndCurrency(req.user.id, 'INR');
-        if (!account) {
-            return res.status(404).json({ success: false, message: 'No INR account yet — open one with POST /api/account/open-inr.' });
-        }
-        let transactions = [];
-        if (!isDemo) {
-            const { rows } = await db.query(
-                'SELECT * FROM transactions WHERE account_id = $1 ORDER BY created_at DESC LIMIT 25',
-                [account.id]
-            );
-            transactions = rows;
-        }
-        res.json({
-            success: true,
-            account: {
-                id: account.id,
-                accountNumber: account.account_number,
-                currency: 'INR',
-                balance: parseFloat(account.balance),
-                availableBalance: parseFloat(account.available_balance),
-                heldBalance: parseFloat(account.held_balance),
-            },
-            transactions: transactions.map((t) => ({
-                id: t.id,
-                type: t.type,
-                status: t.status,
-                amount: parseFloat(t.amount),
-                currency: t.currency,
-                description: t.description,
-                category: t.category,
-                balanceAfter: t.balance_after ? parseFloat(t.balance_after) : null,
-                date: t.created_at,
-                externalReference: t.external_reference || null,
-            })),
-        });
+        return await walletSnapshot(req, res, 'INR');
     } catch (error) {
         console.error('INR account error:', error);
         res.status(500).json({ success: false, message: 'Could not load your INR account.' });
@@ -426,7 +454,7 @@ router.post('/api/account/open-inr', authenticateToken, async (req, res) => {
             if (dupe) {
                 return res.status(409).json({ success: true, already: true, account: dupe, message: 'You already have an INR account.' });
             }
-            const created = await createAccount(req.user.id, 'savings', 'INR');
+            const created = await createAccount(req.user.id, 'checking', 'INR');
             return res.status(201).json({
                 success: true,
                 account: { id: created.id, accountNumber: created.account_number, currency: 'INR', balance: 0 },
@@ -458,7 +486,7 @@ router.post('/api/account/open-inr', authenticateToken, async (req, res) => {
         }
         let created;
         try {
-            created = await createAccount(req.user.id, 'savings', 'INR');
+            created = await createAccount(req.user.id, 'checking', 'INR');
         } catch (e) {
             // Unique-index race lost to a concurrent request — treat as already open.
             if (String(e.message || '').includes('accounts_one_inr_per_user') || String(e.message || '').includes('duplicate key')) {
@@ -498,6 +526,111 @@ router.post('/api/account/open-inr', authenticateToken, async (req, res) => {
 });
 
 // ============================================================
+// POST /api/account/open-currency — explicit opt-in wallet in another
+// registered currency. The account starts at zero; nothing is credited,
+// converted, or invented. A currency only becomes openable once an operator
+// enables multi-currency, and it can only be funded through a configured,
+// independently verified receiving rail.
+// ============================================================
+router.post('/api/account/open-currency', authenticateToken, async (req, res) => {
+    const currency = normalizeCurrency(req.body && req.body.currency);
+    if (!isKnownCurrency(currency)) {
+        return res.status(400).json({
+            success: false,
+            code: 'CURRENCY_UNKNOWN',
+            message: 'Choose a currency from the VaultBank currency registry.',
+        });
+    }
+    if (!isCurrencyEnabled(currency)) {
+        return res.status(403).json({
+            success: false,
+            code: 'CURRENCY_NOT_ENABLED',
+            message: `${currency} is registered but not enabled by the operator. Enabled currencies: ${enabledCurrencies().join(', ')}.`,
+        });
+    }
+    if (currency === 'USD') {
+        return res.status(409).json({ success: false, already: true, message: 'Your primary USD account already exists.' });
+    }
+    try {
+        if (isDemo) {
+            const dupe = demoStore.accounts.find((a) => a.user_id === req.user.id && a.currency === currency && a.account_type !== 'savings');
+            if (dupe) {
+                return res.status(409).json({ success: true, already: true, account: dupe, message: `You already have a ${currency} account.` });
+            }
+            const created = await createAccount(req.user.id, 'checking', currency);
+            return res.status(201).json({
+                success: true,
+                account: { id: created.id, accountNumber: created.account_number, currency, balance: 0 },
+                message: `${currency} account opened.`,
+            });
+        }
+
+        const client = await db.getClient();
+        let created = null;
+        let already = null;
+        try {
+            await client.query('BEGIN');
+            // Serialize open-wallet attempts for this user/currency pair so two
+            // concurrent taps cannot create two zero-balance wallets.
+            await client.query(
+                "SELECT pg_advisory_xact_lock(hashtext('vaultbank-open-wallet'), hashtext($1))",
+                [`${req.user.id}:${currency}`]
+            );
+            const { rows: existing } = await client.query(
+                "SELECT id, account_number, currency, balance FROM accounts WHERE user_id = $1 AND currency = $2 AND account_type <> 'savings' LIMIT 1",
+                [req.user.id, currency]
+            );
+            if (existing.length > 0) {
+                already = existing[0];
+                await client.query('COMMIT');
+            } else {
+                const accountNumber = await generateUniqueAccountNumber();
+                const { rows } = await client.query(
+                    `INSERT INTO accounts (user_id, account_number, account_type, account_name, currency, balance, available_balance, held_balance, status)
+                     VALUES ($1, $2, 'checking', $3, $4, 0, 0, 0, 'active')
+                     RETURNING id, account_number, currency, balance, status`,
+                    [req.user.id, accountNumber, `${currency} Account`, currency]
+                );
+                created = rows[0];
+                await client.query('COMMIT');
+            }
+        } catch (error) {
+            try { await client.query('ROLLBACK'); } catch (_) { /* already closed */ }
+            throw error;
+        } finally {
+            client.release();
+        }
+
+        if (already) {
+            return res.status(409).json({ success: true, already: true, account: already, message: `You already have a ${currency} account.` });
+        }
+
+        await createAuditLog({
+            userId: req.user.id,
+            action: 'multi_currency_account_opened',
+            resourceType: 'account',
+            resourceId: created.id,
+            details: { currency, explicitOptIn: true, funding: 'not_funded_by_this_request' },
+            ipAddress: req.ip,
+            userAgent: req.headers['user-agent'],
+        });
+        await createNotification(req.user.id, {
+            type: 'success',
+            title: `${currency} account opened`,
+            message: `Your ${currency} account is ready. It holds a zero balance until a verified ${currency} deposit settles.`,
+        });
+        return res.status(201).json({
+            success: true,
+            account: { id: created.id, accountNumber: created.account_number, currency, balance: 0 },
+            message: `${currency} account opened.`,
+        });
+    } catch (error) {
+        console.error('Open currency account error:', error && error.code ? error.code : error.message);
+        return res.status(500).json({ success: false, message: 'Could not open the requested currency account.' });
+    }
+});
+
+// ============================================================
 // POST /api/account/transfer — Transfer money to another user
 // ATOMIC: idempotency claim + debit + credit + both ledger rows
 // + the transfer record run in ONE database transaction on ONE
@@ -519,10 +652,9 @@ router.post('/api/account/transfer', authenticateToken, async (req, res) => {
             });
         }
 
-        // ── D. Explicit supported-currency whitelist ──
-        const SUPPORTED_CURRENCIES = ['USD', 'INR'];
-        if (!SUPPORTED_CURRENCIES.includes(wantedCurrency)) {
-            return res.status(400).json({ success: false, message: `Currency ${wantedCurrency} is not supported. Use ${SUPPORTED_CURRENCIES.join(' or ')}.` });
+        // ── D. Explicit supported-currency whitelist (registry-driven) ──
+        if (!isCurrencyEnabled(wantedCurrency)) {
+            return res.status(400).json({ success: false, message: `Currency ${wantedCurrency} is not enabled. Use ${enabledCurrencies().join(', ')}.` });
         }
 
         // ── D. Amount validation: finite, positive, precision-safe ──
