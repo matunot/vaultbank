@@ -56,6 +56,9 @@ const CFG = {
     VB_BANK_RECEIVING_HOLDER: 'VaultBank Inc.',
     VB_BANK_RECEIVING_DETAILS: 'Account 0012345678 · SWIFT FTTBUS33',
     VB_BANK_RECEIVING_CURRENCY: 'USD',
+    VB_BANK_RECEIVING_INR_BANK_NAME: 'Rupee Test Bank',
+    VB_BANK_RECEIVING_INR_HOLDER: 'VaultBank INR Test Holder',
+    VB_BANK_RECEIVING_INR_DETAILS: 'Test INR account · IFSC TEST0000123',
 };
 const SAVED = {};
 for (const k of Object.keys(CFG)) { SAVED[k] = ENVP[k]; delete ENVP[k]; }
@@ -82,7 +85,7 @@ function mkRes() {
     return res;
 }
 
-async function call(path, { method = 'get', body, user } = {}) {
+async function call(path, { method = 'get', body, user, query } = {}) {
     // Param routes are registered as patterns — translate the concrete id.
     const pattern = path
         .replace('/bd-1/cancel', '/:id/cancel')
@@ -100,7 +103,7 @@ async function call(path, { method = 'get', body, user } = {}) {
         headers: {},
         body: body || {},
         params: pattern.includes(':id') ? { id: 'bd-1' } : {},
-        query: {},
+        query: query || {},
     };
     const handlers = layer.route.stack.map((s) => s.handle);
     // Run the middleware chain synchronously; a middleware that rejects (no
@@ -120,11 +123,16 @@ const ADMIN = { id: 'adm-1', role: 'admin' };
 
 function scriptDb({ claimRows, ledgerRows = [], openCount = '0', debitRows = [{ balance_before: '100.00', balance_after: '50.00', balance: '50.00' }], instructionRow = INSTRUCTION } = {}) {
     const sqls = [];
-    CDB.db.query.mockImplementation(async (sql) => {
+    CDB.db.query.mockImplementation(async (sql, params = []) => {
         sqls.push(String(sql));
         if (sql.includes('CREATE TABLE IF NOT EXISTS')) return { rows: [] };
         if (sql.includes('SELECT COUNT(*)')) return { rows: [{ open_count: String(openCount) }] };
-        if (sql.includes("INSERT INTO bank_deposit_instructions")) return { rows: [INSTRUCTION] };
+        if (sql.includes("INSERT INTO bank_deposit_instructions")) return { rows: [Object.assign({}, INSTRUCTION, {
+            account_id: params[1] || INSTRUCTION.account_id,
+            amount: params[3] != null ? String(params[3]) : INSTRUCTION.amount,
+            currency: params[4] || INSTRUCTION.currency,
+            reference: params[2] || INSTRUCTION.reference,
+        })] };
         if (sql.includes("status = 'settling'")) return { rows: claimRows === undefined ? [] : claimRows };
         if (sql.includes('FROM transactions WHERE external_reference')) return { rows: ledgerRows };
         if (sql.includes('balance = balance + $2')) return { rows: [{ balance_before: '100.00', balance_after: '200.00' }] };
@@ -231,6 +239,20 @@ describe('receiving-account configuration gates everything', () => {
         expect(res.body.enabled).toBe(true);
         expect(res.body.bankName).toBe('First Test Bank');
         expect(res.body.details).toContain('0012345678');
+        expect(res.body.currencies).toEqual(expect.arrayContaining(['USD', 'INR']));
+    });
+
+    test('explicit INR configuration coexists with the legacy USD receiving account', async () => {
+        configure();
+        scriptDb();
+        const res = await call('/api/bank-deposits/config', { query: { currency: 'INR' } });
+        expect(res.code).toBe(200);
+        expect(res.body.enabled).toBe(true);
+        expect(res.body.currency).toBe('INR');
+        expect(res.body.bankName).toBe('Rupee Test Bank');
+        expect(res.body.holder).toBe('VaultBank INR Test Holder');
+        expect(res.body.details).toContain('IFSC TEST0000123');
+        expect(res.body.currencies).toEqual(expect.arrayContaining(['USD', 'INR']));
     });
 });
 
@@ -246,6 +268,24 @@ describe('instruction creation never moves money', () => {
         expect(sqls.some((s) => s.includes('balance = balance'))).toBe(false);
         expect(CDB.createTransaction).not.toHaveBeenCalled();
         expect(CDB.createAuditLog).toHaveBeenCalled();
+    });
+
+    test('explicit INR deposit instructions use the INR account and matching bank details', async () => {
+        configure();
+        const inrAccount = { id: 'acc-inr', user_id: 'u-1', balance: '100.00', currency: 'INR', status: 'active' };
+        CDB.findAccountByUserIdAndCurrency.mockResolvedValue(inrAccount);
+        const sqls = scriptDb();
+        const res = await call('/api/bank-deposits/instructions', { method: 'post', body: { amount: '1000.00', currency: 'INR' } });
+        expect(res.code).toBe(200);
+        expect(res.body.instruction.currency).toBe('INR');
+        expect(res.body.instruction.amount).toBe(1000);
+        expect(res.body.transfer.currency).toBe('INR');
+        expect(res.body.transfer.bankName).toBe('Rupee Test Bank');
+        expect(res.body.transfer.details).toContain('IFSC TEST0000123');
+        expect(CDB.findAccountByUserIdAndCurrency).toHaveBeenCalledWith('u-1', 'INR');
+        expect(sqls.some((sql) => sql.includes('INSERT INTO bank_deposit_instructions'))).toBe(true);
+        expect(sqls.some((sql) => /balance\s*=\s*balance/.test(sql))).toBe(false);
+        expect(CDB.createTransaction).not.toHaveBeenCalled();
     });
 
     test('rejects out-of-bounds amounts', async () => {
