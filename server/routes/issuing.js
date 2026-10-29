@@ -15,6 +15,10 @@
 
 const express = require('express');
 const router = express.Router();
+const { denyLegacyProviderRail } = require('../middleware/nativeOnlyPolicy');
+
+// Card issuing is preview-only until a native issuer and settlement integration exist.
+router.use((req, res, next) => denyLegacyProviderRail(res) ? undefined : next());
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const {
     db,
@@ -574,6 +578,9 @@ async function autoSetupIssuing() {
 }
 
 function startIssuingAutomation() {
+    // Never create or poll external issuer resources in production while the
+    // native card program is not implemented.
+    if (String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production') return;
     if (isDemo) return;
     setTimeout(() => { autoSetupIssuing(); }, 8000); // shortly after boot
     setInterval(() => { autoSetupIssuing(); }, 30 * 60 * 1000); // re-check every 30 min

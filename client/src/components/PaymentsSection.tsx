@@ -72,9 +72,14 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       .catch(() => setReadiness(null));
   }, []);
 
-  // Detect whether real Stripe keys are configured (LIVE vs not) — card rail badge
+  // Third-party card rails exist only in isolated development/testing.
+  // Production uses the VaultBank-native ledger and settlement workflows.
   const [railMode, setRailMode] = useState<'live' | 'demo' | null>(null);
   useEffect(() => {
+    if (import.meta.env.PROD) {
+      setRailMode(null);
+      return;
+    }
     api.stripeBalance()
       .then(r => setRailMode(r.mode === 'live' ? 'live' : 'demo'))
       .catch(() => setRailMode('demo'));
@@ -303,6 +308,13 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       hint: 'No authorized USD payout rail exists yet — kept honestly disabled',
     },
   ];
+
+  // Do not advertise third-party processors or per-user provider-issued
+  // accounts in the production UI. Those systems are not part of VaultBank's
+  // native production rails.
+  const visibleRails = import.meta.env.PROD
+    ? rails.filter((r) => !['card', 'paypal', 'collections', 'payouts'].includes(r.key))
+    : rails;
 
   return (
     <div className="space-y-5">
@@ -590,9 +602,9 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       {/* ── REAL rails readiness — no fake providers ── */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-panel rounded-3xl p-6">
         <h3 className="font-display text-xl text-white mb-1">Payment Rails</h3>
-        <p className="text-xs text-white/40 mb-5">Live configuration state — verified against the server, never simulated</p>
+        <p className="text-xs text-white/40 mb-5">VaultBank-native ledger and settlement workflows. External bank settlement is shown only when its receiving details and reconciliation controls are configured.</p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {rails.map((r, i) => (
+          {visibleRails.map((r, i) => (
             <motion.div
               key={r.key}
               initial={{ opacity: 0, y: 12 }}

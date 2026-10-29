@@ -10,6 +10,7 @@
 
 const express = require('express');
 const router = express.Router();
+const { denyLegacyProviderRail } = require('../middleware/nativeOnlyPolicy');
 const { authenticateToken } = require('../middleware/auth');
 const {
     findUserById,
@@ -66,6 +67,7 @@ const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 // POST /api/stripe/deposit — Create a Stripe Checkout Session for deposit
 // ============================================================
 router.post('/api/stripe/deposit', authenticateToken, async (req, res) => {
+    if (denyLegacyProviderRail(res)) return;
     try {
         const { amount, currency = 'usd' } = req.body;
 
@@ -173,6 +175,7 @@ router.post('/api/stripe/deposit', authenticateToken, async (req, res) => {
 // POST /api/stripe/webhook — Handle Stripe webhooks
 // ============================================================
 router.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+    if (denyLegacyProviderRail(res)) return;
     try {
         const stripeInstance = getStripe();
         if (!stripeInstance) {
@@ -322,6 +325,7 @@ router.post('/api/stripe/webhook', express.raw({ type: 'application/json' }), as
 // GET /api/stripe/balance — Get Stripe account balance
 // ============================================================
 router.get('/api/stripe/balance', authenticateToken, async (req, res) => {
+    if (denyLegacyProviderRail(res)) return;
     try {
         const account = await findAccountByUserId(req.user.id);
         if (!account) {
@@ -361,6 +365,7 @@ router.get('/api/stripe/balance', authenticateToken, async (req, res) => {
 // POST /api/stripe/withdraw — Create a withdrawal (Stripe payout)
 // ============================================================
 router.post('/api/stripe/withdraw', authenticateToken, async (req, res) => {
+    if (denyLegacyProviderRail(res)) return;
     try {
         const { amount, bankAccountId } = req.body;
 
