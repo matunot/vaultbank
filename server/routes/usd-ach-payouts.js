@@ -324,7 +324,7 @@ function decryptBatchFile(row) {
   const fileContent = decryptSecret(row.encrypted_file_content);
   const expectedHash = String(row.file_sha256 || '').toLowerCase();
   const actualHash = crypto.createHash('sha256').update(fileContent, 'ascii').digest('hex');
-  if (!/^[0-9a-f]{64}$/.test(expectedHash) || actualHash !== expectedHash || /[^\\x00-\\x7F]/.test(fileContent)) {
+  if (!/^[0-9a-f]{64}$/.test(expectedHash) || actualHash !== expectedHash || /[^\u0000-\u007F]/.test(fileContent)) {
     const error = new Error('Stored ACH file integrity check failed.');
     error.code = 'USD_ACH_FILE_HASH_MISMATCH';
     throw error;
