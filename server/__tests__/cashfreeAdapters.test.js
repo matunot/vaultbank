@@ -206,30 +206,31 @@ describe('collections adapter', () => {
 });
 
 describe('registry safety', () => {
-    test('production refuses sandbox credentials for both rails', () => {
+    test('production permanently disables legacy rails even if old opt-out and provider flags are present', () => {
         const previousNodeEnv = ENV.NODE_ENV;
         const previousPay = ENV[ENV_VB_PAY];
         const previousCol = ENV[ENV_VB_COL];
         const previousNativeOnly = ENV[ENV_NATIVE_ONLY];
         ENV.NODE_ENV = 'production';
         ENV[ENV_KIND] = 'sandbox';
-        ENV[ENV_NATIVE_ONLY] = 'false'; // explicitly opt in to exercise the legacy adapter's sandbox guard
+        ENV[ENV_NATIVE_ONLY] = 'false'; // legacy opt-out is deliberately ignored
         ENV[ENV_VB_PAY] = 'cashfree';
         ENV[ENV_VB_COL] = 'cashfree';
         try {
+            jest.resetModules();
             const payouts = require('../payouts');
             const p = payouts.payoutAvailability();
-            expect(p.configured).toBe(true);
+            expect(p.configured).toBe(false);
             expect(p.available).toBe(false);
-            expect(p.reason).toBe('sandbox-refused-in-production');
+            expect(p.reason).toBe('native-rails-only');
             expect(payouts.activePayoutProvider()).toBeNull();
 
             const collections = require('../collections');
             const c = collections.collectionsAvailability();
-            expect(c.configured).toBe(true);
+            expect(c.configured).toBe(false);
             expect(c.available).toBe(false);
             expect(c.webhookReady).toBe(false);
-            expect(c.reason).toBe('sandbox-refused-in-production');
+            expect(c.reason).toBe('native-rails-only');
             expect(collections.activeCollectionsProvider()).toBeNull();
         } finally {
             if (previousNodeEnv === undefined) delete ENV.NODE_ENV;
@@ -240,6 +241,7 @@ describe('registry safety', () => {
             else ENV[ENV_VB_COL] = previousCol;
             if (previousNativeOnly === undefined) delete ENV[ENV_NATIVE_ONLY];
             else ENV[ENV_NATIVE_ONLY] = previousNativeOnly;
+            jest.resetModules();
         }
     });
 
