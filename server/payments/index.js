@@ -91,6 +91,9 @@ function liveModeEnabled(req) {
 function getAvailableMethods(options = {}) {
     const { currency = 'USD' } = options;
     const isProd = process.env.NODE_ENV === 'production';
+    // The production UI may use only VaultBank-native rails. Do not advertise
+    // processor-backed methods or demo-era payment simulations.
+    if (isProd) return [];
 
     const allMethods = [
         { id: 'card', label: 'Card (Stripe)', icon: '\u{1F4B3}', enabled: true, currencies: ['USD', 'EUR', 'GBP', 'INR'], provider: 'stripe' },
@@ -129,6 +132,12 @@ function getAvailableMethods(options = {}) {
  * check is skipped so the adapter falls back to its mock mode.
  */
 function getProvider(method, req) {
+    if (String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production') {
+        const error = new Error('Legacy third-party payment-provider rails are disabled in production.');
+        error.code = 'LEGACY_PROVIDER_RAIL_DISABLED';
+        error.statusCode = 503;
+        throw error;
+    }
     const provider = providers[String(method || '').toLowerCase()];
     if (!provider) {
         throw new Error('Unknown payment method: ' + method);
@@ -163,6 +172,12 @@ async function createPayment(method, payload, req) {
  * Verify webhook signature and parse event.
  */
 async function verifyWebhook(provider, req) {
+    if (String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production') {
+        const error = new Error('Legacy third-party provider webhooks are disabled in production.');
+        error.code = 'LEGACY_PROVIDER_RAIL_DISABLED';
+        error.statusCode = 503;
+        throw error;
+    }
     const adapter = providers[provider];
     if (!adapter || !adapter.verifyWebhook) {
         throw new Error('Webhook not supported for provider: ' + provider);
