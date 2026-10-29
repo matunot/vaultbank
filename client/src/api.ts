@@ -179,6 +179,28 @@ export const api = {
     return request<ApiResponse>('api/accounts');
   },
 
+  async getSavingsAccounts(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/savings/accounts');
+  },
+
+  async openSavingsAccount(data: { currency: 'USD' | 'INR' }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/savings/accounts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async moveSavings(
+    data: { fromAccountId: string; toAccountId: string; amount: number },
+    idempotencyKey: string,
+  ): Promise<ApiResponse> {
+    return request<ApiResponse>('api/savings/move', {
+      method: 'POST',
+      headers: { 'idempotency-key': idempotencyKey },
+      body: JSON.stringify(data),
+    });
+  },
+
   async fetchAccount(): Promise<ApiResponse> {
     return request<ApiResponse>('api/account');
   },
