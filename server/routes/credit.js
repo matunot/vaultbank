@@ -16,6 +16,19 @@
 
 const express = require('express');
 const router = express.Router();
+
+// No verified lender/funding source is connected. Production must not expose
+// fabricated credit liabilities or debit customer balances for unbacked debt.
+function denyUnfundedCredit(res) {
+    if (String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production') return false;
+    res.status(503).json({
+        success: false,
+        code: 'CREDIT_UNAVAILABLE',
+        message: 'VaultBank credit is disabled until a verified funding facility exists. No credit balance, interest or repayment will be changed.',
+    });
+    return true;
+}
+
 const { authenticateToken } = require('../middleware/auth');
 const {
     db,
@@ -175,6 +188,7 @@ async function drawCredit(userId, amount, description) {
 
 // GET /api/credit/status
 router.get('/api/credit/status', authenticateToken, async (req, res) => {
+    if (denyUnfundedCredit(res)) return;
     try {
         if (isDemo) return res.json({ success: true, demo: true, available: false });
         const acct = await getCreditAccount(req.user.id);
@@ -211,6 +225,7 @@ router.get('/api/credit/status', authenticateToken, async (req, res) => {
 
 // POST /api/credit/apply — instant decision from real activity
 router.post('/api/credit/apply', authenticateToken, async (req, res) => {
+    if (denyUnfundedCredit(res)) return;
     try {
         if (isDemo) return res.status(400).json({ success: false, message: 'Credit requires a live account.' });
         // Real mode: VaultBank has no authorized lender/funding source — a
@@ -230,6 +245,7 @@ router.post('/api/credit/apply', authenticateToken, async (req, res) => {
 
 // POST /api/credit/repay — pay down from VaultBank balance
 router.post('/api/credit/repay', authenticateToken, async (req, res) => {
+    if (denyUnfundedCredit(res)) return;
     try {
         if (isDemo) return res.status(400).json({ success: false, message: 'Credit requires a live account.' });
         const amount = Math.round(parseFloat(req.body.amount) * 100) / 100;
@@ -293,6 +309,7 @@ router.post('/api/credit/repay', authenticateToken, async (req, res) => {
 
 // POST /api/credit/autopay — toggle
 router.post('/api/credit/autopay', authenticateToken, async (req, res) => {
+    if (denyUnfundedCredit(res)) return;
     try {
         const acct = await getCreditAccount(req.user.id);
         if (!acct) return res.status(404).json({ success: false, message: 'No credit line found.' });
@@ -373,6 +390,9 @@ async function runCreditAutomation() {
 }
 
 function startCreditAutomation() {
+    // Prevent automated interest accrual or account debits when no funded
+    // credit facility exists in production.
+    if (String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production') return;
     if (isDemo) return;
     setTimeout(() => { runCreditAutomation(); }, 12000);
     setInterval(() => { runCreditAutomation(); }, 6 * 60 * 60 * 1000); // every 6h
