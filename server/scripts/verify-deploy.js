@@ -62,6 +62,8 @@ async function main() {
         const describe = (value, reason) => (value ? 'ready' : 'disabled') + (reason ? ' (' + reason + ')' : '');
         const note = shapeOk
             ? 'INR direct-UPI=' + describe(inr.directUpi, inr.directUpiReason)
+                + '; INR bank-receive-instructions=' + describe(inr.bankTransferInstructions)
+                + '; USD bank-receive-instructions=' + describe(usd.bankTransferInstructions)
                 + '; manual-bank-payout=' + describe(inr.directBankPayouts, inr.directBankPayoutsReason)
                 + '; internal-transfers=' + String(!!inr.internalTransfers)
                 + '; USD external-withdrawals=' + String(!!usd.externalWithdrawals)
