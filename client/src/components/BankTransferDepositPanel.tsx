@@ -55,6 +55,7 @@ function statusLabel(status: string) {
 
 export function BankTransferDepositPanel() {
   const [config, setConfig] = useState<BankDepositConfig | null>(null);
+  const [selectedCurrency, setSelectedCurrency] = useState('USD');
   const [instructions, setInstructions] = useState<BankDepositInstruction[]>([]);
   const [amount, setAmount] = useState('100.00');
   const [transfer, setTransfer] = useState<TransferDetails | null>(null);
