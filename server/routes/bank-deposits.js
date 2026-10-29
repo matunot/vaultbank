@@ -40,6 +40,7 @@ const {
     createNotification,
     createAuditLog,
 } = require('../config/database');
+const bankStatementReferenceRegistry = require('../services/bankStatementReferenceRegistry');
 
 const EXPIRY_HOURS = 168; // 7 days — international bank transfers can take several business days.
 const MIN_AMOUNT = 1;
@@ -430,6 +431,7 @@ router.post('/api/bank-deposits/admin/instructions/:id/verify', authenticateToke
 
         await ensureVaultLedgerSchema();
         await ensureTables();
+        await bankStatementReferenceRegistry.ensureBankSettlementReferenceRegistry();
         client = await db.getClient();
         await client.query('BEGIN');
         const selected = await client.query(
@@ -492,6 +494,12 @@ router.post('/api/bank-deposits/admin/instructions/:id/verify', authenticateToke
             return res.status(409).json({ success: false, code: 'BANK_DEPOSIT_NOT_PENDING', message: 'The instruction was concurrently resolved. No credit was made.' });
         }
 
+        await bankStatementReferenceRegistry.claimBankStatementReference(client, {
+            currency: String(instruction.currency).toUpperCase(),
+            bankReference: externalTxnRef, sourceType: 'bank_deposit_instruction',
+            sourceId: String(instruction.id), accountId: String(instruction.account_id),
+            userId: String(instruction.user_id), amount: settlementText, adminId: String(req.user.id),
+        });
         await ensureCustomerLedgerAccount(client, instruction.account_id);
         await changeVerifiedAvailableBalance(client, instruction.account_id, settlementText, 'credit');
         const accountUpdate = await client.query(
