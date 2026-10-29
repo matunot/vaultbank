@@ -101,7 +101,6 @@ const handleSignup = async (req, res) => {
             const verification = await sendVerificationForUser({
                 userId: user.id,
                 email: user.email,
-                requestIp: req.ip,
             });
             verificationEmailSent = verification.sent === true;
         } catch (verificationError) {
