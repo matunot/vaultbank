@@ -446,15 +446,19 @@ const { seedDemoData } = require('./config/database');
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 async function startServer() {
-    // Payment-safety boot diagnostic: logs which providers are enabled but
-    // unconfigured in production. Never throws — the per-call requireRealKey
-    // guard stays the authoritative fail-closed mechanism.
+    // Production is intentionally native-only: legacy third-party provider
+    // credentials are neither required nor a supported way to activate rails.
+    // Emit truthful diagnostics instead of warning about missing Stripe,
+    // Razorpay, PayPal or legacy UPI keys that must not be used in production.
     try {
         const { validateProductionConfig } = require('./payments/safety');
-        const { ok, errors } = validateProductionConfig({ silent: true });
-        if (!ok) {
+        const nativeOnly = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+        const result = validateProductionConfig({ silent: true, nativeOnly });
+        if (result.skipped && result.reason === 'native-only') {
+            console.info('[payments-safety] legacy provider checks skipped: production is locked to VaultBank-native rails; see /api/payments/readiness.');
+        } else if (!result.ok) {
             console.error('[payments-safety] production configuration gaps:');
-            errors.forEach((e) => console.error('  - ' + e));
+            result.errors.forEach((error) => console.error('  - ' + error));
         }
     } catch (_) { /* diagnostic only */ }
 
