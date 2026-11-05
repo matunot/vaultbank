@@ -19,23 +19,26 @@ import { useAppStore } from './store';
 import { api } from './api';
 import { refreshBus } from './refreshBus';
 
-// Lazy load heavy sections
+// Lazy load heavy sections.
+// ponytail: dev-only preview components are excluded from the production
+// bundle at build time (gated imports, not just gated rendering).
+const isDev = import.meta.env.DEV;
 const CardsSection = lazy(() => import('./components/IssuingCardsSection'));
 const CardProgramSection = lazy(() => import('./components/CardProgramSection'));
 const LoanApplicationSection = lazy(() => import('./components/LoanApplicationSection'));
 const PaymentsSection = lazy(() => import('./components/PaymentsSection'));
-const InvestmentsSection = lazy(() => import('./components/InvestmentsSection'));
-const VaultSection = lazy(() => import('./components/VaultSection'));
+const InvestmentsSection = isDev ? lazy(() => import('./components/InvestmentsSection')) : (null as unknown as typeof import('./components/InvestmentsSection').default);
+const VaultSection = isDev ? lazy(() => import('./components/VaultSection')) : (null as unknown as typeof import('./components/VaultSection').default);
 const SavingsAccountsSection = lazy(() => import('./components/SavingsAccountsSection'));
-const DebtsSection = lazy(() => import('./components/DebtsSection'));
-const CreditSection = lazy(() => import('./components/CreditSection'));
+const DebtsSection = isDev ? lazy(() => import('./components/DebtsSection')) : (null as unknown as typeof import('./components/DebtsSection').default);
+const CreditSection = isDev ? lazy(() => import('./components/CreditSection')) : (null as unknown as typeof import('./components/CreditSection').default);
 const VbPaySection = lazy(() => import('./components/VbPaySection'));
 
-const SwissSection = lazy(() => import('./components/SwissSection'));
-const BudgetSection = lazy(() => import('./components/BudgetSection'));
+const SwissSection = isDev ? lazy(() => import('./components/SwissSection')) : (null as unknown as typeof import('./components/SwissSection').default);
+const BudgetSection = isDev ? lazy(() => import('./components/BudgetSection')) : (null as unknown as typeof import('./components/BudgetSection').default);
 const TransferSection = lazy(() => import('./components/TransferSection'));
 const HistorySection = lazy(() => import('./components/HistorySection'));
-const RewardsSection = lazy(() => import('./components/RewardsSection'));
+const RewardsSection = isDev ? lazy(() => import('./components/RewardsSection')) : (null as unknown as typeof import('./components/RewardsSection').default);
 const VerificationSection = lazy(() => import('./components/VerificationSection'));
 
 // Loading fallback
@@ -266,19 +269,19 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                 <ErrorBoundary>
                   <Suspense fallback={<SectionLoader />}>
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
-                    {active === 'vault' && (import.meta.env.DEV ? <VaultSection /> : <SavingsAccountsSection />)}
-                    {active === 'swiss' && (import.meta.env.DEV ? <SwissSection /> : <PreviewOnlyNotice title="Swiss banking is not connected" message="The development view is illustrative only. No Swiss bank account, banking partnership, or deposit-protection arrangement is offered through this section." />)}
-                    {active === 'cards' && (import.meta.env.DEV ? <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /> : <CardProgramSection />)}
+                    {active === 'vault' && (isDev ? <VaultSection /> : <SavingsAccountsSection />)}
+                    {active === 'swiss' && (isDev ? <SwissSection /> : <PreviewOnlyNotice title="Swiss banking is not connected" message="The development view is illustrative only. No Swiss bank account, banking partnership, or deposit-protection arrangement is offered through this section." />)}
+                    {active === 'cards' && (isDev ? <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /> : <CardProgramSection />)}
                     {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
-                    {active === 'invest' && (import.meta.env.DEV ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
+                    {active === 'invest' && (isDev ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
 {active === 'pay' && <VbPaySection />}
-                    {active === 'credit' && (import.meta.env.DEV ? <CreditSection /> : <CardProgramSection defaultCardType="credit" />)}
+                    {active === 'credit' && (isDev ? <CreditSection /> : <CardProgramSection defaultCardType="credit" />)}
 
-                    {active === 'loans' && (import.meta.env.DEV ? <DebtsSection /> : <LoanApplicationSection />)}
-                    {active === 'budget' && (import.meta.env.DEV ? <BudgetSection /> : <PreviewOnlyNotice title="Budget tools are a development preview" message="The current budget figures are example data, not your personal spending history. Live transaction-linked budgets are not connected yet." />)}
+                    {active === 'loans' && (isDev ? <DebtsSection /> : <LoanApplicationSection />)}
+                    {active === 'budget' && (isDev ? <BudgetSection /> : <PreviewOnlyNotice title="Budget tools are a development preview" message="The current budget figures are example data, not your personal spending history. Live transaction-linked budgets are not connected yet." />)}
                     {active === 'send' && <TransferSection />}
                     {active === 'history' && <HistorySection />}
-                    {active === 'rewards' && (import.meta.env.DEV ? <RewardsSection /> : <PreviewOnlyNotice title="Rewards program is not live yet" message="The development preview contains sample points and benefits. Production rewards, interest rates, and fee waivers are not being promised by this screen." />)}
+                    {active === 'rewards' && (isDev ? <RewardsSection /> : <PreviewOnlyNotice title="Rewards program is not live yet" message="The development preview contains sample points and benefits. Production rewards, interest rates, and fee waivers are not being promised by this screen." />)}
                     {active === 'security' && <VerificationSection />}
                   </Suspense>
                 </ErrorBoundary>

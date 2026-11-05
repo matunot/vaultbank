@@ -12,6 +12,7 @@ build/
 !.env.example
 server/.env
 server/.env.*
+!server/.env.example
 
 # Logs
 logs/
@@ -49,3 +50,11 @@ data/vectordb/
 data/viking/
 data/_system/
 data/*.pid
+
+# Local tooling state and one-off artifacts (never committed)
+.opencode/
+.mssqlignore
+repair_backups/
+uploads/
+server/integration_out.txt
+server/pg7.txt

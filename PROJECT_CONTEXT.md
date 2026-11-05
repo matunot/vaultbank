@@ -1,313 +1,147 @@
 # 🏦 VaultBank — Project Context
 
-> **The single source of truth for anyone (AI or human) working on this project.**
-> Read this first to avoid asking unnecessary questions.
+> The single source of truth for anyone (AI or human) working on this project.
+> Read this first, then `MEMORY.md` and the runbooks it links to.
+> Last rewritten: 2026-11-05 (previous version described the retired provider era).
 
 ---
 
-## 1. Project Overview
+## 1. What VaultBank is
 
-**VaultBank** is a **real licensed bank**, not a demo or toy project. The backend is currently running against live **PostgreSQL (Neon cloud database)** with real data persistence. All core banking operations work end-to-end.
+A banking application built on a **VaultBank-owned double-entry ledger** in
+PostgreSQL. Customer money is recorded and moved by VaultBank itself; no
+third-party processor is authoritative for a balance.
 
-### What's Built
+Two deployment facts override everything else you may read elsewhere:
 
-- Full banking backend (Node.js + Express + PostgreSQL)
-- Full banking frontend (React + TypeScript + Tailwind CSS)
-- Real authentication (signup, login, JWT tokens, 2FA, profile management)
-- Real money transfers (atomic, with balance validation)
-- Account management (checking, savings, business accounts)
-- Rewards system (points + tiers)
-- Notifications system
-- Audit logging
-- Anomaly/fraud detection
+1. **One origin:** `https://vaultbank-md20.onrender.com` serves both the React
+   SPA (`client/dist`) and the API (Render, `workingDirectory: server`).
+2. **Native-only in production:** when `NODE_ENV=production`, legacy provider
+   money adapters (Stripe deposits/payouts, PayPal, Cashfree, Nium) are
+   hard-disabled regardless of environment variables. They fail closed with
+   explicit `*_NOT_CONFIGURED` codes.
 
-### License Note
+The Vercel alias (`vaultbank-mu.vercel.app`) is a frozen old frontend. Ignore it.
 
-- **License is added** (2026-08-30): see [`LICENSE`](./LICENSE) at repo root — MIT notice followed by the proprietary **VaultBank AG Software Licence Agreement** (Swiss law, multi-jurisdiction). Respect its restrictions when sharing/distributing code.
-- `package.json` files are `"private": true` + `"license": "UNLICENSED"` — do NOT publish to npm.
-- **No unnecessary setup** — speed is prioritized.
-- Treat everything as production-grade.
+### Honest boundary
+
+VaultBank is **not** currently authorised to take deposits, issue cards, or lend
+in any jurisdiction on the strength of this software. Card and loan applications
+are request queues that park at `waiting_for_issuer` / `funding_required`.
+Prerequisites are enumerated in [`docs/cards-and-lending-prerequisites.md`](./docs/cards-and-lending-prerequisites.md).
+A software licence cannot grant a banking licence.
 
 ---
 
-## 2. Tech Stack
+## 2. Tech stack
 
 | Layer | Technology |
-| ------- | ----------- |
-| Backend | Node.js + Express |
+| --- | --- |
+| Backend | Node.js 24 + Express 5 |
 | Database | PostgreSQL (Neon cloud) |
-| Frontend | React + TypeScript |
-| Styling | Tailwind CSS + Framer Motion |
-| Build Tool | Vite |
-| Auth | JWT tokens |
-| API | RESTful (JSON) |
-| Deployment | Render (backend), Vercel (frontend) |
-
-### Project Structure
-
-```
-vaultbank/
-├── server/                    # Backend
-│   ├── config/
-│   │   ├── db.js              # PostgreSQL connection pool
-│   │   └── database.js        # Data access layer (all queries)
-│   ├── routes/
-│   │   ├── auth.js            # Authentication routes
-│   │   └── transfers.js       # Money transfer routes
-│   ├── middleware/
-│   ├── migrations/
-│   │   └── 007_real_banking_schema.sql  # 19-table schema
-│   ├── utils/
-│   │   └── audit.js           # Audit logging
-│   ├── .env                   # Database credentials (NEON)
-│   ├── .env.example           # Template
-│   └── index.js               # Server entry point
-├── client/                    # Frontend
-│   ├── src/                   # React components
-│   ├── index.html
-│   ├── package.json
-│   └── vite.config.ts
-├── deployment/                # Deployment docs
-├── docs/                      # PCI checklist, runbook, incident playbook
-├── scripts/                   # Automation scripts
-├── monitoring/                # Prometheus + Grafana
-└── PROJECT_CONTEXT.md         # This file
-```
+| Ledger | VaultBank double-entry journal (`013`/`016` migrations) |
+| Frontend | React 19 + TypeScript 7 + Tailwind 4 + Framer Motion |
+| Build | Vite 8 + `vite-plugin-singlefile` (single `dist/index.html`) |
+| Auth | JWT + email verification + admin-approved KYC |
+| Deploy | Render (build also compiles the client) |
 
 ---
 
-## 3. ✅ What's DONE (Completed)
+## 3. What actually works today
 
-### Core Infrastructure
+### Money movement (real, ledger-backed)
 
-- [x] **PostgreSQL migration** — 19 tables in `migrations/007_real_banking_schema.sql`
-- [x] **Neon PostgreSQL connection** — `server/.env` has correct `DATABASE_URL`
-- [x] **`.env` path fixed** — `db.js` and `database.js` load `.env` from `server/` (not root)
-- [x] **All Mongoose legacy code cleaned** — `database.js` and `transfers.js` use pure PostgreSQL
-- [x] **Tailwind CSS warnings fixed** — `client/src/App.tsx` uses canonical classes
+| Flow | Status | Evidence |
+| --- | --- | --- |
+| User→user transfer (USD, INR) | ✅ Live | atomic `BEGIN…COMMIT`, idempotency key required |
+| VBR payment intents (internal only) | ✅ Live | `server/vbr/*`, `payment_intents` |
+| Savings vaults (USD/INR) | ✅ Live | ledger postings, no advertised APY |
+| Additional currencies (AED GBP EUR CAD AUD SGD NZD CHF HKD) | ⚙️ Registered, **disabled** | needs `VB_MULTICURRENCY_ENABLED=true` + a real receiving account per code; no FX exists |
+| Bank-transfer deposits | ⚙️ Code ready, **off** | credit only after admin matches the official bank statement |
+| Direct UPI deposits (INR) | ⚙️ Configured, manual verification | admin matches amount + unique UTR |
+| Manual bank payouts (INR) | ⚙️ Configured, manual operator transfer | beneficiary details AES-256-GCM encrypted; refund only after evidence |
+| USD ACH payout | ⚙️ File export only | no network submission, no ODFI profile |
+| USDC/USDT deposits + withdrawals | ❌ 503 | hot wallet unfunded (balance 0, nonce 0) |
 
-### Authentication
+### Customer/product surface
 
-- [x] Signup (`POST /api/auth/signup`) → Creates user + account + rewards + notification
-- [x] Login (`POST /api/auth/login`) → JWT token issued
-- [x] Admin login (`POST /api/auth/admin/login`)
-- [x] Profile management (`PUT /api/auth/profile`)
-- [x] Password change (`POST /api/auth/change-password`)
-- [x] 2FA support (code present in auth routes)
+- Signup, login, email verification, profile, password change, 2FA code paths.
+- Dashboard, transfers, transaction history, notifications (real API-backed).
+- KYC upload + review (bytes stored in PostgreSQL, admin-approved).
+- Card program requests and loan applications with admin review queues.
+- Savings vaults; multi-currency wallets.
+- Admin queues for KYC, card/loan applications, bank deposits, direct UPI,
+  manual payouts, USD ACH — all mounted inside `PaymentsSection` for admins.
 
-### Banking Operations
+### Deliberately absent
 
-- [x] Money transfers (`POST /api/transactions/send`) → Atomic debit/credit
-- [x] Balance validation (insufficient funds check)
-- [x] Transaction types use `transfer_out` / `transfer_in`
-- [x] Transaction history (`GET /api/transactions`)
-- [x] Transfer history (`GET /api/transfers`)
-
-### Testing (Verified Working)
-
-```
-Login:     OK (POST /api/auth/login → 200)
-Signup:    OK (POST /api/auth/signup → 201)
-Transfer:  OK (POST /api/transfers → 200, money moves between accounts)
-Health:    OK (GET /health → 200)
-```
-
-### Deployments ✅ ALL LIVE
-
-- [x] **Frontend**: Deployed to Vercel
-  - Production: <https://vaultbank-hha0sj6he-matus-projects-c3e42681.vercel.app>
-  - Alias: <https://vaultbank-mu.vercel.app>
-- [x] **Backend**: LIVE on Render
-  - URL: <https://vaultbank-md20.onrender.com>
-  - Health: <https://vaultbank-md20.onrender.com/health> → HTTP 200
-  - Login verified: POST /api/auth/login → 200 + JWT (<demo@vaultbank.com> / password)
-- [x] **Database**: Neon PostgreSQL connected (real data, Demo User balance $4,980.50)
-- [x] **Frontend → Backend**: Hardcoded in `client/src/api.ts` line 6:
-
-  ```ts
-  const API_BASE = 'https://vaultbank-md20.onrender.com';
-  ```
-
-  (No Vercel env var needed — URL is baked into the build)
-- [x] **CORS**: `server/index.js` now allows **all origins** (`origin: true`) — fixes "Failed to fetch" for custom domains & Vercel preview URLs
-- [x] **Client network resilience**: `client/src/api.ts` retries failed requests up to 2 times (handles Render free-tier cold starts) and shows a friendly error instead of raw "Failed to fetch"
-- [x] **TypeScript fix**: `client/tsconfig.json` — removed `baseUrl` option (TS 7 compatibility), fixed `@/*` path mapping
+- Card PAN/CVV issuance, card authorisation, credit decisioning, loan
+  disbursement, interest accrual on customer credit.
+- FX conversion of any kind.
+- Automatic external settlement of any kind.
+- Investment/trading execution, rewards ledger, budget engine (the UI shows a
+  "not connected" notice for these in production).
 
 ---
 
-## 4. ⏭️ What's NEXT (To Do)
+## 4. Verification commands
 
-### ✅ Deployments — DONE (moved from old Priorities 1 & 2)
+```powershell
+# Backend unit/integration battery (server/)
+npm test -- --runInBand --forceExit
 
-- [x] Backend deployed on Render (`https://vaultbank-md20.onrender.com`, health → 200)
-- [x] Frontend deployed on Vercel (production + `vaultbank-mu.vercel.app` alias)
-- [x] Frontend → backend wired via hardcoded `API_BASE` in `client/src/api.ts` (no `VITE_API_URL` needed)
+# Client typecheck + production build (client/)
+npx tsc --noEmit
+npm run build
 
-### Priority 1: Real Money Integration ✅ CODE READY — WAITING FOR USER KEYS
+# Live deployment: health + Postgres readiness + SPA + rail readiness + fail-closed webhooks
+node scripts/verify-deploy.js
+node scripts/verify-deploy.js http://localhost:5000
 
-**Status: The payment code is fully built and production-ready. It activates automatically when the user pastes real API keys into Render.**
+# Read-only chain readiness (never signs, never prints key material)
+node scripts/probe-chain.js base <hot-wallet-address>
+```
 
-- [x] **Stripe adapter** (`server/payments/stripe.js`) — real API calls, NO mock fallback, validates `sk_test_`/`sk_live_` keys
-- [x] **Stripe routes** (`server/routes/stripe-payments.js`) — deposits (checkout sessions), withdrawals (payouts), webhooks, balance
-- [x] **PayPal adapter** (`server/payments/paypal.js`) — real orders/capture when keys present
-- [x] **render.yaml** — payment env vars added (`sync: false`, set in Render dashboard):
-  - `PAYMENT_PROVIDER_STRIPE_KEY` (pk_test_... or pk_live_...)
-  - `PAYMENT_PROVIDER_STRIPE_SECRET` (sk_test_... or sk_live_...)
-  - `STRIPE_WEBHOOK_SECRET` (whsec_...)
-  - `PAYMENT_PROVIDER_PAYPAL_CLIENT_ID`
-  - `PAYMENT_PROVIDER_PAYPAL_SECRET`
-  - `PAYPAL_WEBHOOK_ID`
-
-**When user provides keys:**
-
-1. Paste keys into Render dashboard → Environment → the 6 vars above
-2. Render redeploys automatically
-3. Deposits/withdrawals switch from demo mode to REAL money automatically (no code changes needed)
-
-**Legal note:** Real money requires a banking license or Stripe Connect/partner. User handles license.
-
-### Priority 2: Enhancements (Optional)
-
-- [ ] Email verification (SMTP)
-- [ ] Phone verification (SMS)
-- [ ] Rate limiting on auth endpoints
-- [ ] Production SSL setup (`deployment/ssl-setup.sh`)
+Baseline after the 2026-11-05 cleanup: **42/42 suites, 396/396 tests** (see
+`MEMORY.md` for the exact commit once pushed).
 
 ---
 
-## 5. 🔑 Key Decisions & Rules
+## 5. Rules that prevent real losses
 
-### Critical Rules
-
-1. **REAL bank, not a demo** — everything must be production-grade
-2. **NO unnecessary setup** — user wants speed, only add what's needed
-3. **License added** — see `LICENSE` at repo root (MIT notice + VaultBank AG banking licence agreement). Don't re-license or publish to npm
-4. **No external API assumptions** — internal transfers work without any third-party API
-5. **PostgreSQL first** — if a function works on PostgreSQL, it's correct; if it uses Mongoose methods (`.lean()`, `.toObject()`, `.findByIdAndUpdate()` with `$set`), it's WRONG
-
-### Database Rules
-
-1. **`.env`** is at `server/.env` (NOT root) — `db.js` loads it from `path.resolve(__dirname, '..', '.env')`
-2. **Transaction types** must be: `deposit`, `withdrawal`, `transfer_in`, `transfer_out`, `payment`, `refund`, `fee`, `interest`, `adjustment` — NOT `'transfer'`
-3. **Audit logs** use columns: `action`, `resource_type`, `resource_id`, `details`, `ip_address`, `user_agent`, `created_at` — NOT `category` or `timestamp`
-4. **All data access** must go through `db.query()` raw SQL or the compatibility models in `db.js`
-
----
-
-## 6. 🚀 How to Run (Locally)
-
-### Backend
-
-```bash
-cd server
-node index.js
-# Output: 🚀 Server running on port 5000
-```
-
-### Frontend
-
-```bash
-cd client
-npm install
-npm run dev
-# Output: ➜ Local: http://localhost:5173/
-```
-
-### Verify Both Are Running
-
-```bash
-# Health check (backend)
-curl http://localhost:5000/health
-# Should return: { "status": "ok", ... }
-
-# Frontend check
-curl http://localhost:5173
-# Should return HTML 200
-```
-
-### Database
-
-- PostgreSQL database is hosted on **Neon**
-- Connection string is in `server/.env`
-- No local PostgreSQL needed
-
-### Demo Credentials
-
-```
-User:  demo@vaultbank.com  / password
-Admin: admin@vaultbank.com / admin123
-```
+1. **`.env` lives at `server/.env`.** Never at the repo root. Template:
+   `server/.env.example` (tracked, placeholders only).
+2. **PostgreSQL only.** No `.lean()`, `.toObject()`, `._id`. Use `db.query()`
+   with `$1, $2` positional parameters.
+3. **Transaction types** are constrained by migration `007`
+   (`deposit|withdrawal|transfer_in|transfer_out|payment|refund|fee|interest|adjustment|stripe_deposit|stripe_withdrawal|card_charge|card_refund`).
+   Never a bare `transfer`.
+4. **`audit_logs`** columns: `action, resource_type, resource_id, details,
+   ip_address, user_agent, created_at`. No `category`, no `timestamp`.
+5. **Debit atomically:**
+   `UPDATE accounts SET balance = balance - $2 WHERE id = $1 AND balance >= $2 RETURNING *`
+   A missing row means insufficient funds — never compute the new balance in JS
+   and write it back.
+6. **Ambiguous external outcomes are never auto-refunded.** They become
+   `reconciliation_required` and wait for a human with statement evidence.
+7. **Idempotency keys belong to one attempt.** Reuse the same key on retry; never
+   mint a new one for the same intended transfer.
+8. **No secrets in git, memory, graph, or chat.** Real financial details,
+   encryption keys, and provider credentials go in the deployment secret store.
 
 ---
 
-## 7. ⚠️ Important Gotchas
+## 6. Where to look next
 
-### 1. `.env` Location
-
-- The `.env` file is at **`server/.env`**, not root
-- Both `server/config/db.js` and `server/config/database.js` load it with:
-
-  ```js
-  require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
-  ```
-
-- If you see `ECONNREFUSED 127.0.0.1:5432`, the `.env` path is wrong — the app is trying to connect to local PostgreSQL instead of Neon.
-
-### 2. Transaction Types
-
-- The `transactions` table has a CHECK constraint on `type`:
-  `'deposit', 'withdrawal', 'transfer_in', 'transfer_out', 'payment', 'refund', 'fee', 'interest', 'adjustment'`
-- **DO NOT use `'transfer'`** — use `'transfer_out'` (for sender) and `'transfer_in'` (for recipient)
-
-### 3. Audit Logs
-
-- The `audit_logs` table has columns: `id`, `user_id`, `action`, `resource_type`, `resource_id`, `details`, `ip_address`, `user_agent`, `created_at`
-- **DO NOT use `category` or `timestamp`** — these columns don't exist
-- Use `resource_type` instead of `category`
-- Use `created_at` instead of `timestamp`
-
-### 4. MongoDB Legacy Code
-
-- The project was **originally MongoDB**. It has been **migrated to PostgreSQL**.
-- Any code using `.lean()`, `.toObject()`, `._id.toString()` is **legacy** and will CRASH on PostgreSQL.
-- Always search for `.lean()` before writing new code.
-
-### 5. Balance Updates
-
-- Use **atomic PostgreSQL UPDATE with condition**:
-
-  ```sql
-  UPDATE accounts SET balance = balance - $2 WHERE id = $1 AND balance >= $2 RETURNING *
-  ```
-
-- This prevents race conditions (insufficient funds between balance check and debit).
+| Topic | Document |
+| --- | --- |
+| Native rails, config, reconciliation rules | `INR_RAILS_RUNBOOK.md` |
+| Direct UPI + manual payout pilot controls | `DIRECT_RAILS_RUNBOOK.md` |
+| Held funds, incidents, backup/restore, deploy checks | `RECONCILIATION_RUNBOOK.md` |
+| Card/lending prerequisites and disabled behaviour | `docs/cards-and-lending-prerequisites.md` |
+| Agent working rules | `AGENTS.md` |
+| Persistent session memory | `MEMORY.md` |
 
 ---
 
-## 8. Key Files to Know
-
-| File | Purpose | Important Note |
-| ------ | --------- | ---------------- |
-| `server/.env` | Database credentials | NEON DATABASE_URL |
-| `server/config/db.js` | PostgreSQL connection | Loads `.env` from `server/` |
-| `server/config/database.js` | Data access functions | All CRUD → use `db.query()` |
-| `server/routes/transfers.js` | Money transfer API | Use `transfer_out`/`transfer_in` |
-| `server/routes/auth.js` | Authentication API | 2FA, profile, password change |
-| `server/migrations/007_real_banking_schema.sql` | Database schema | 19 tables |
-| `server/utils/audit.js` | Audit logging | Use `resource_type`, not `category` |
-| `client/src/App.tsx` | Main React component | Canonical Tailwind classes |
-| `render.yaml` | Render deployment config | Free tier backend deploy |
-| `vercel.json` | Vercel deployment config | Frontend deploy |
-
----
-
-## 9. Test Credentials
-
-```
-User:  demo@vaultbank.com  / password
-Admin: admin@vaultbank.com / admin123
-```
-
----
-
-*Created: 2026-08-10 | Last updated: 2026-09-02 | Status: Production-ready core banking, all deployed*
+*Created 2026-08-10 · Rewritten 2026-11-05 to reflect native-ledger reality.*

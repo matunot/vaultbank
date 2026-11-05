@@ -6,6 +6,13 @@ import {
 import { navItems } from '../data';
 import RichIcon from './RichIcon';
 
+// ponytail: dev-only preview sections keep their nav entries out of production
+// so customers never land on an "unavailable" dead end.
+const DEV_ONLY_SECTIONS = ['swiss', 'invest', 'rewards'];
+const visibleNavItems = import.meta.env.DEV
+  ? navItems
+  : navItems.filter((item) => !DEV_ONLY_SECTIONS.includes(item.id));
+
 const iconMap: Record<string, React.ComponentType<any>> = {
   Home, Vault, CreditCard, TrendingUp, Send, History, Gem, Landmark, PieChart, Mountain, Wallet, Zap,
 };
@@ -69,7 +76,7 @@ export default function Sidebar({ active, setActive, onSettings, onLogout }: Pro
 
       {/* Nav */}
       <nav className="px-3 flex-1 space-y-1 mt-2 overflow-y-auto">
-        {navItems.map((item, i) => {
+        {visibleNavItems.map((item, i) => {
           const Icon = iconMap[item.icon] ?? Home;
           const isActive = active === item.id;
           return (
