@@ -1,24 +1,10 @@
-MIT License
+VAULTBANK Software Licence Agreement
 
-Copyright (c) 2024-2026 VaultBank
+Copyright (c) 2024-2026 VaultBank AG. All rights reserved.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+This software is proprietary. No permission is granted except as expressly set
+out in the Agreement below. Reproduction, distribution, sublicensing, or use
+outside the scope of Section 2.1 is prohibited.
 
 ================================================================================
                       VAULTBANK SOFTWARE LICENCE AGREEMENT
@@ -28,7 +14,7 @@ SOFTWARE.
   Issued By:       VaultBank AG (Incorporated under Swiss Law)
   Issue Date:      January 1, 2024
   Version:         4.2.1 (Multi-Jurisdictional Banking Framework)
-  Classification:  Proprietary — Protected by International Banking Law
+  Classification:  Proprietary — All rights reserved
   Jurisdiction:    Zurich, Switzerland (Primary) | New York, USA (US) |
                    Abu Dhabi, UAE (UAE) | London, UK (UK) | Singapore (SG)
 
@@ -88,13 +74,16 @@ Regulated Jurisdictions where the Software operates.
 
 2.1  Subject to the terms and conditions of this Agreement, Licensor hereby
      grants to Licensee a limited, non-exclusive, non-transferable,
-     non-sublicensable, revocable licence to use the Software solely for
-     internal evaluation, testing, and demonstration purposes within the
-     Licensee's organisation ("Authorised Use").
+     non-sublicensable, revocable licence to use the Software for internal
+     evaluation, testing, and demonstration purposes within the Licensee's
+     organisation, and — only where the Licensee complies with Section 12
+     (Operator Responsibility) — for production operation of a real-money
+     service ("Authorised Use").
 
-2.2  The Software contains proprietary algorithms, trading systems, risk
-     management frameworks, and cryptographic security protocols developed
-     in accordance with:
+2.2  The Software contains proprietary algorithms, ledger, risk, and
+     cryptographic components designed with reference to the following
+     frameworks. This list describes design intent only; it is not a
+     certification, audit result, or representation of conformity:
 
      (a) The Swiss Banking Act of 1934 (SR 952.21) and the Swiss Banking
          Ordinance on Commercial Risk Management (SR 952.211);
@@ -118,13 +107,14 @@ Regulated Jurisdictions where the Software operates.
          4.0 and all subsequent revisions;
      (j) The Wolfsberg Group Recommendations on Anti-Money Laundering
          and Counter-Terrorist Financing; and
-     (k) All applicable national and supranational financial services,
+     (k) Applicable national and supranational financial services,
          data protection, cybersecurity, and consumer protection laws.
 
-2.3  Licensee acknowledges that the Software is designed to meet the highest
-     standards of financial institution-grade security, compliance, and
-     operational resilience as required by the aforementioned regulatory
-     frameworks.
+2.3  Licensee acknowledges that the Software is intended to support a
+     licensed operator's compliance programme. The Software does not by
+     itself make any deployment compliant with any framework listed above;
+     compliance depends on the Operator's own policies, controls, audits,
+     and authorisations under Section 12.
 
 ================================================================================
 3. RESTRICTIONS
@@ -133,8 +123,8 @@ Regulated Jurisdictions where the Software operates.
 3.1  Licensee shall NOT:
 
      (a) Use the Software for any commercial purpose, production
-         deployment, or live financial transaction processing without
-         obtaining a separate commercial banking licence from VaultBank AG;
+         deployment, or live financial transaction processing unless the
+         Licensee complies with Section 12 (Operator Responsibility);
      (b) Reverse engineer, decompile, disassemble, or attempt to derive
          the source code, algorithms, or cryptographic methods of the
          Software, except as expressly permitted under Article 6 of the
@@ -261,9 +251,8 @@ Regulated Jurisdictions where the Software operates.
 6. SECURITY AND RISK MANAGEMENT
 ================================================================================
 
-6.1  Licensee acknowledges that the VaultBank Platform implements
-     enterprise-grade security controls consistent with the requirements
-     of:
+6.1  Licensee acknowledges that the VaultBank Platform is designed with
+     reference to the security guidance of:
 
      - The Swiss Financial Market Infrastructure Act (FMIS) and FINMA
        Circular 2018/1 on outsourcing;
@@ -288,11 +277,11 @@ Regulated Jurisdictions where the Software operates.
      the UK Computer Misuse Act 1990, and the UAE Cybercrime Law
      (Federal Decree-Law No. 5 of 2012).
 
-6.3  The Software incorporates real-time anomaly detection and fraud
-     prevention systems powered by the VaultBank "Sentinel" engine,
-     which utilises machine learning models trained on synthetic and
-     anonymised transaction data in compliance with GDPR Article 89
-     (safeguards for processing).
+6.3  The Software includes rule-based transaction anomaly flagging evaluated
+     per transfer (amount, method, and frequency thresholds) and surfaced to
+     authorised reviewers. It is a monitoring aid, not a guarantee of fraud
+     detection, and it does not replace the Operator's own AML/CFT,
+     sanctions-screening, and fraud controls under Section 12.
 
 ================================================================================
 7. TERM AND TERMINATION
@@ -472,6 +461,66 @@ Regulated Jurisdictions where the Software operates.
       the written requirement under Article 1324 of the Swiss Code of
       Obligations and equivalent statutory requirements in all
       Regulated Jurisdictions.
+
+================================================================================
+12. OPERATOR RESPONSIBILITY, REGULATED ACTIVITY, AND ASSUMPTION OF RISK
+================================================================================
+
+12.1  Software Licence Only. This Agreement is a software licence. It does not
+      grant, evidence, or imply any licence, authorisation, charter,
+      registration, or exemption to conduct banking, deposit-taking, payment
+      services, electronic money issuance, card issuing or acquiring, lending,
+      money transmission, currency exchange, or any other regulated financial
+      activity in any jurisdiction.
+
+12.2  Operator Licensing Warranty. Any person or entity that deploys or operates
+      the Software for real-money activity ("Operator") represents and warrants
+      that it holds, and will maintain in force, every licence, authorisation,
+      registration, and approval required in each jurisdiction in which it
+      operates, together with the capital, customer-fund safeguarding,
+      AML/CFT, sanctions, KYC, data-protection, and consumer-protection
+      arrangements applicable to that activity.
+
+12.3  Sole Responsibility. The Operator is solely responsible for the legality
+      of its operation, including the currencies it supports, the customers and
+      countries it serves, the disclosures it publishes, and the accuracy of
+      every statement it makes to customers, regulators, and counterparties
+      about its regulatory status.
+
+12.4  No Representation of Licensing. Nothing in the Software, its
+      documentation, its user interface, or this Agreement may be relied upon
+      as a statement that VaultBank AG or any Operator is licensed,
+      supervised, insured, or approved by any government, central bank, or
+      regulator. VaultBank AG makes no such representation.
+
+12.5  Assumption of Risk. Real-money operation is the Operator's own decision.
+      The Operator accepts all risk arising from it, including regulatory
+      enforcement, customer claims, chargebacks, reversals, sanctions
+      exposure, and losses caused by operational error. VaultBank AG has no
+      role in, and no liability for, the Operator's regulated activity.
+
+12.6  Suspension. VaultBank AG may suspend or terminate the licence granted in
+      Section 2.1 if it reasonably believes the Operator is conducting
+      regulated activity without the authorisations described in Section 12.2.
+
+================================================================================
+13. PRECEDENCE
+================================================================================
+
+13.1  Internal Precedence. In the event of any conflict or ambiguity within
+      this Agreement, the specific restrictions and disclaimers in Sections 3,
+      8, and 12 prevail over any general statement of grant, permission, or
+      authority elsewhere in this Agreement.
+
+13.2  No Implied Permission. The grant in Section 2.1 is the only permission
+      granted. Nothing in this Agreement may be read to authorise any use that
+      Section 3 prohibits, or to expand the scope of Section 2.1 by implication.
+
+13.3  Regulatory Status. The Regulated Jurisdictions and regulators listed in
+      the Compliance Schedule describe the regimes the Software is designed to
+      support. Their listing is not a representation that VaultBank AG or any
+      Operator is authorised under any of them. Actual authorisation is a
+      matter for each Operator under Section 12.
 
 ================================================================================
                            REGULATORY COMPLIANCE SCHEDULE
