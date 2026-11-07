@@ -27,6 +27,7 @@ const CardsSection = lazy(() => import('./components/IssuingCardsSection'));
 const CardProgramSection = lazy(() => import('./components/CardProgramSection'));
 const LoanApplicationSection = lazy(() => import('./components/LoanApplicationSection'));
 const PaymentsSection = lazy(() => import('./components/PaymentsSection'));
+const BankApiSetupSection = lazy(() => import('./components/BankApiSetupSection'));
 const InvestmentsSection = isDev ? lazy(() => import('./components/InvestmentsSection')) : (null as unknown as typeof import('./components/InvestmentsSection').default);
 const VaultSection = isDev ? lazy(() => import('./components/VaultSection')) : (null as unknown as typeof import('./components/VaultSection').default);
 const SavingsAccountsSection = lazy(() => import('./components/SavingsAccountsSection'));
@@ -273,6 +274,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                     {active === 'swiss' && (isDev ? <SwissSection /> : <PreviewOnlyNotice title="Swiss banking is not connected" message="The development view is illustrative only. No Swiss bank account, banking partnership, or deposit-protection arrangement is offered through this section." />)}
                     {active === 'cards' && (isDev ? <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /> : <CardProgramSection />)}
                     {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
+                    {active === 'bank-api' && (['admin', 'super_admin'].includes(String(currentUser?.role || '').toLowerCase()) ? <BankApiSetupSection /> : <PreviewOnlyNotice title="Admin access required" message="Bank integration setup is restricted to VaultBank administrators." />)}
                     {active === 'invest' && (isDev ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
 {active === 'pay' && <VbPaySection />}
                     {active === 'credit' && (isDev ? <CreditSection /> : <CardProgramSection defaultCardType="credit" />)}
