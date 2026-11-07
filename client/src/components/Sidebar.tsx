@@ -4,6 +4,7 @@ import {
   Home, CreditCard, TrendingUp, Send, History, Gem, Settings, LogOut, Vault, ChevronLeft, Landmark, PieChart, Mountain, Wallet, Zap,
 } from 'lucide-react';
 import { navItems } from '../data';
+import { api } from '../api';
 import RichIcon from './RichIcon';
 
 // ponytail: dev-only preview sections keep their nav entries out of production
@@ -31,6 +32,10 @@ interface Props {
 }
 
 export default function Sidebar({ active, setActive, onSettings, onLogout }: Props) {
+  const isAdmin = ['admin', 'super_admin'].includes(String(api.getUser()?.role || '').toLowerCase());
+  const userNavItems = isAdmin
+    ? [...visibleNavItems, { id: 'bank-api', icon: 'Landmark', label: 'Bank API' }]
+    : visibleNavItems;
   const [collapsed, setCollapsed] = useState(false);
 
   const toggle = useCallback(() => setCollapsed(c => !c), []);
@@ -76,7 +81,7 @@ export default function Sidebar({ active, setActive, onSettings, onLogout }: Pro
 
       {/* Nav */}
       <nav className="px-3 flex-1 space-y-1 mt-2 overflow-y-auto">
-        {visibleNavItems.map((item, i) => {
+        {userNavItems.map((item, i) => {
           const Icon = iconMap[item.icon] ?? Home;
           const isActive = active === item.id;
           return (
