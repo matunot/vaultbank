@@ -15,7 +15,7 @@ const visibleNavItems = import.meta.env.DEV
   : navItems.filter((item) => !DEV_ONLY_SECTIONS.includes(item.id));
 
 const iconMap: Record<string, React.ComponentType<any>> = {
-  Home, Vault, CreditCard, TrendingUp, Send, History, Gem, Landmark, PieChart, Mountain, Wallet, Zap,
+  Home, Vault, CreditCard, TrendingUp, Send, History, Gem, Landmark, PieChart, Mountain, Wallet, Zap, IndianRupee,
 };
 
 const variantMap: Record<string, 'gold' | 'emerald' | 'ruby' | 'sapphire' | 'amethyst' | 'amber' | 'cyan'> = {
