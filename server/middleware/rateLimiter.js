@@ -84,6 +84,21 @@ const applicationLimiter = rateLimit({
 });
 
 /**
+ * Rate limit VaultTag profile writes and directory lookups.
+ */
+const upiP2PLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 15,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+        success: false,
+        message: 'Too many VaultTag requests. Please wait a minute and try again.',
+        retryAfter: 60
+    }
+});
+
+/**
  * Signup rate limiter
  */
 const signupLimiter = rateLimit({
@@ -119,6 +134,7 @@ module.exports = {
     authStrictLimiter,
     applicationLimiter,
     transferLimiter,
+    upiP2PLimiter,
     signupLimiter,
     adminLimiter
 };
