@@ -264,7 +264,7 @@ export default function UpiP2PSection() {
             <p className="text-[11px] text-white/40">VaultTag is a VaultBank-only directory name, not a UPI ID or a bank-issued handle.</p>
           )}
 
-          {recipientInput.includes('@') && !validVpa(recipientInput.trim()) && (
+          {validVpa(recipientInput.trim()) && (
             <div>
               <label htmlFor="p2p-recipient-name" className="mb-2 block text-[10px] font-semibold tracking-wider text-white/45">PAYEE NAME (AS SHARED BY RECIPIENT)</label>
               <input id="p2p-recipient-name" value={recipientName} onChange={(event) => setRecipientName(event.target.value)} placeholder="Name shown by their bank" className="w-full rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white outline-none focus:border-amber-400/50" />
