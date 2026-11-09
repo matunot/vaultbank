@@ -60,6 +60,17 @@ Before implementing the adapter, obtain the chosen bank/PSP's official API docum
 
 The customer-facing UPI P2P screen creates a standard `upi://pay` intent for a payer's installed UPI app. The sender authenticates with their own UPI PIN and the money moves directly between the sender's and recipient's linked bank accounts. This does not use VaultBank balances, does not create a VaultBank wallet top-up, and does not make VaultBank a UPI PSP/TPAP or payment-system operator.
 
+### VaultTag directory alias
+
+The P2P feature includes an opt-in VaultTag directory:
+- A user chooses a short VaultBank-only alias and submits their real UPI VPA and payee name.
+- A signed-in, email-verified VaultBank user can resolve a listed alias to those submitted details.
+- The alias is not a UPI address, does not end with a VaultBank UPI handle, and is not issued or validated by NPCI or a bank.
+- VaultBank does not verify that the submitted VPA belongs to the profile owner. The payer must verify the beneficiary name shown by their UPI app before entering a UPI PIN.
+- The directory does not debit, credit, hold, route, or reconcile funds. There is no VaultBank-side success state or automatic transaction confirmation.
+
+The directory uses migration `server/migrations/018_vaulttag_upi_p2p.sql`. It must be applied to the intended database before VaultTag save/resolve endpoints can work. The previous production database identity and migration checkpoint were not confirmed, so this migration has **not** been applied to production.
+
 The receive screen shares the recipient's own VPA as a payment link. It is not a formal UPI Collect request. VaultBank does not receive a signed PSP callback or automatic status confirmation from this basic intent flow, so no VaultBank balance or transaction record is automatically credited. Users must verify success in their own UPI/bank app. Do not treat a redirect, app launch, screenshot, SMS, or user-submitted UTR alone as verified settlement evidence.
 
 The app's Bank API Setup page is an admin-only status and configuration guide. It intentionally links to Render for secret storage; it does not accept or display raw API secrets. Production money movement stays disabled until the provider adapter, settlement account, reconciliation and required approvals are verified.
