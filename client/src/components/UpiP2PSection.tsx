@@ -188,7 +188,7 @@ export default function UpiP2PSection() {
             </a>
           ) : (
             <button type="button" disabled className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-xl bg-white/10 px-5 py-4 text-sm font-bold text-white/30">
-              <Smartphone className="h-4 w-4" /> Enter a valid UPI ID and amount
+              <Smartphone className="h-4 w-4" /> Enter recipient name, UPI ID and amount
             </button>
           )}
           {sendValid && (
