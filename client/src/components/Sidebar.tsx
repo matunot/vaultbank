@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Home, CreditCard, TrendingUp, Send, History, Gem, Settings, LogOut, Vault, ChevronLeft, Landmark, PieChart, Mountain, Wallet, Zap,
+  Home, CreditCard, TrendingUp, Send, History, Gem, Settings, LogOut, Vault, ChevronLeft, Landmark, PieChart, Mountain, Wallet, Zap, IndianRupee,
 } from 'lucide-react';
 import { navItems } from '../data';
 import { api } from '../api';
@@ -21,7 +21,7 @@ const iconMap: Record<string, React.ComponentType<any>> = {
 const variantMap: Record<string, 'gold' | 'emerald' | 'ruby' | 'sapphire' | 'amethyst' | 'amber' | 'cyan'> = {
   Home: 'gold', Vault: 'amethyst', CreditCard: 'sapphire', TrendingUp: 'emerald',
   Send: 'cyan', History: 'amber', Gem: 'ruby', Landmark: 'emerald', PieChart: 'sapphire', Mountain: 'ruby',
-  Wallet: 'cyan',
+  Wallet: 'cyan', IndianRupee: 'emerald',
 };
 
 interface Props {
