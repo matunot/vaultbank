@@ -10,9 +10,10 @@ function validVpa(value: string): boolean {
   return /^[A-Za-z0-9._-]{2,256}@[A-Za-z0-9.-]{2,64}$/.test(value.trim());
 }
 
-function makeUpiLink(vpa: string, amount: string, note: string): string {
+function makeUpiLink(vpa: string, payeeName: string, amount: string, note: string): string {
   const params = new URLSearchParams({
     pa: vpa.trim(),
+    pn: payeeName.trim(),
     cu: 'INR',
   });
   if (amount.trim()) params.set('am', Number(amount).toFixed(2));
@@ -23,25 +24,27 @@ function makeUpiLink(vpa: string, amount: string, note: string): string {
 export default function UpiP2PSection() {
   const [mode, setMode] = useState<Mode>('send');
   const [recipientVpa, setRecipientVpa] = useState('');
+  const [recipientName, setRecipientName] = useState('');
   const [sendAmount, setSendAmount] = useState('');
   const [sendNote, setSendNote] = useState('');
   const [ownVpa, setOwnVpa] = useState('');
+  const [ownName, setOwnName] = useState('');
   const [receiveAmount, setReceiveAmount] = useState('');
   const [receiveNote, setReceiveNote] = useState('');
   const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState('');
 
   const amountNumber = Number(sendAmount);
-  const sendValid = validVpa(recipientVpa) && Number.isFinite(amountNumber) && amountNumber >= 1;
-  const ownVpaValid = validVpa(ownVpa);
+  const sendValid = validVpa(recipientVpa) && recipientName.trim().length >= 2 && Number.isFinite(amountNumber) && amountNumber >= 1;
+  const ownVpaValid = validVpa(ownVpa) && ownName.trim().length >= 2;
   const receiveAmountValid = !receiveAmount.trim() || (Number.isFinite(Number(receiveAmount)) && Number(receiveAmount) >= 1);
   const sendLink = useMemo(
-    () => sendValid ? makeUpiLink(recipientVpa, sendAmount, sendNote) : '',
-    [recipientVpa, sendAmount, sendNote, sendValid],
+    () => sendValid ? makeUpiLink(recipientVpa, recipientName, sendAmount, sendNote) : '',
+    [recipientVpa, recipientName, sendAmount, sendNote, sendValid],
   );
   const receiveLink = useMemo(
-    () => ownVpaValid && receiveAmountValid ? makeUpiLink(ownVpa, receiveAmount, receiveNote) : '',
-    [ownVpa, receiveAmount, receiveNote, ownVpaValid, receiveAmountValid],
+    () => ownVpaValid && receiveAmountValid ? makeUpiLink(ownVpa, ownName, receiveAmount, receiveNote) : '',
+    [ownVpa, ownName, receiveAmount, receiveNote, ownVpaValid, receiveAmountValid],
   );
 
   async function copyText(value: string) {
@@ -125,6 +128,17 @@ export default function UpiP2PSection() {
             )}
           </div>
 
+          <div>
+            <label htmlFor="p2p-recipient-name" className="mb-2 block text-[10px] font-semibold tracking-wider text-white/45">RECIPIENT NAME (AS THEY SHARE IT)</label>
+            <input
+              id="p2p-recipient-name"
+              value={recipientName}
+              onChange={(event) => setRecipientName(event.target.value)}
+              placeholder="Name of the person"
+              className="w-full rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white outline-none focus:border-amber-400/50"
+            />
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="p2p-send-amount" className="mb-2 block text-[10px] font-semibold tracking-wider text-white/45">AMOUNT (INR)</label>
@@ -160,7 +174,7 @@ export default function UpiP2PSection() {
             <div className="flex items-start gap-3">
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-amber-200" />
               <div className="text-xs leading-5 text-white/65">
-                Before entering your UPI PIN, verify the bank-validated beneficiary name and amount shown inside your UPI app. Never share your UPI PIN or OTP with VaultBank or anyone else.
+                The name above is only a prefilled label. Before entering your UPI PIN, verify that the bank-validated beneficiary name and amount shown inside your UPI app match the person you intend to pay. Never share your UPI PIN or OTP with VaultBank or anyone else.
               </div>
             </div>
           </div>
@@ -209,6 +223,17 @@ export default function UpiP2PSection() {
             {ownVpa.trim() && !ownVpaValid && (
               <p className="mt-2 text-xs text-rose-300">Enter a valid UPI ID, for example yourname@bank.</p>
             )}
+          </div>
+
+          <div>
+            <label htmlFor="p2p-own-name" className="mb-2 block text-[10px] font-semibold tracking-wider text-white/45">YOUR BANK ACCOUNT NAME</label>
+            <input
+              id="p2p-own-name"
+              value={ownName}
+              onChange={(event) => setOwnName(event.target.value)}
+              placeholder="Your name as shown by your bank"
+              className="w-full rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white outline-none focus:border-emerald-400/50"
+            />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
