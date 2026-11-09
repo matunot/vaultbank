@@ -56,4 +56,10 @@ Credentials alone are not an integration. A provider-specific server adapter mus
 
 Before implementing the adapter, obtain the chosen bank/PSP's official API documentation, sandbox and live credentials, webhook signing details, permitted-use approval, and the name of the settlement account owned/controlled by the authorized VaultBank entity. Do not route customer funds through an administrator's personal account.
 
+## Direct UPI P2P without a VaultBank payment API
+
+The customer-facing UPI P2P screen creates a standard `upi://pay` intent for a payer's installed UPI app. The sender authenticates with their own UPI PIN and the money moves directly between the sender's and recipient's linked bank accounts. This does not use VaultBank balances, does not create a VaultBank wallet top-up, and does not make VaultBank a UPI PSP/TPAP or payment-system operator.
+
+The receive screen shares the recipient's own VPA as a payment link. It is not a formal UPI Collect request. VaultBank does not receive a signed PSP callback or automatic status confirmation from this basic intent flow, so no VaultBank balance or transaction record is automatically credited. Users must verify success in their own UPI/bank app. Do not treat a redirect, app launch, screenshot, SMS, or user-submitted UTR alone as verified settlement evidence.
+
 The app's Bank API Setup page is an admin-only status and configuration guide. It intentionally links to Render for secret storage; it does not accept or display raw API secrets. Production money movement stays disabled until the provider adapter, settlement account, reconciliation and required approvals are verified.
