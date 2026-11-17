@@ -1,6 +1,5 @@
 import { memo } from 'react';
-import { motion } from 'framer-motion';
-import { Search, Crown, Globe, Moon, Sparkles } from 'lucide-react';
+import { Search, Crown, Globe, Moon, Sparkles, Diamond } from 'lucide-react';
 import NotificationsPanel from './NotificationsPanel';
 import RichIcon from './RichIcon';
 
@@ -33,15 +32,18 @@ const Header = memo(function Header({ theme, onThemeChange, user }: { theme: The
   const initials = getInitials(displayName);
 
   return (
-    <motion.header
-      initial={{ y: -30, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      className="sticky top-0 z-30 px-5 lg:px-8 py-4"
-    >
-      <div className="glass-panel rounded-2xl px-4 lg:px-5 py-2.5 flex items-center gap-3">
-        {/* Search */}
-        <div className="relative flex-1 max-w-md">
+    <header className="vb-enter sticky top-0 z-30 px-3 sm:px-5 lg:px-8 py-3 lg:py-4">
+      <div className="glass-panel rounded-2xl px-3 lg:px-5 py-2.5 flex items-center gap-2 sm:gap-3">
+        {/* Compact brand lockup on phones, where the search field is hidden */}
+        <div className="flex items-center gap-2 sm:hidden">
+          <div className="w-7 h-7 rounded-lg bg-linear-to-br from-amber-300 via-yellow-400 to-amber-600 flex items-center justify-center">
+            <Diamond className="w-3.5 h-3.5 text-amber-950" />
+          </div>
+          <span className="font-display text-base tracking-[0.18em] text-white/85">VAULT</span>
+        </div>
+
+        {/* Search — desktop/tablet only; the mobile header keeps core actions */}
+        <div className="relative hidden sm:block flex-1 max-w-md">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-white/30" />
           <input
             id="hdr-search"
@@ -53,33 +55,31 @@ const Header = memo(function Header({ theme, onThemeChange, user }: { theme: The
           />
         </div>
 
-        <div className="flex items-center gap-1.5 ml-auto">
-          <motion.button
-            whileHover={{ scale: 1.08 }}
-            whileTap={{ scale: 0.92 }}
+        <div className="flex items-center gap-1 sm:gap-1.5 ml-auto">
+          <button
             onClick={cycleTheme}
-            className="p-2 rounded-xl glass-btn"
+            className="p-2 rounded-xl glass-btn transition-transform duration-200 hover:scale-105 active:scale-90"
             title={`Theme: ${themeLabel}`}
+            aria-label={`Switch theme (current: ${themeLabel})`}
           >
             {theme === 'obsidian' && <Moon className="w-4 h-4 text-amber-300" />}
             {theme === 'royal' && <Sparkles className="w-4 h-4 text-sky-300" />}
             {theme === 'diamond' && <Crown className="w-4 h-4 text-cyan-100" />}
-          </motion.button>
+          </button>
 
-          <motion.button
-            whileHover={{ scale: 1.08 }}
-            whileTap={{ scale: 0.92 }}
-            className="px-2.5 py-2 rounded-xl glass-btn text-xs font-bold text-white/60 flex items-center gap-1.5"
+          <button
+            className="hidden sm:flex px-2.5 py-2 rounded-xl glass-btn text-xs font-bold text-white/60 items-center gap-1.5 transition-transform duration-200 hover:scale-105 active:scale-95"
+            aria-label="Language: English"
           >
             <RichIcon icon={<Globe size={12} />} variant="cyan" size="sm" />
-            <span className="hidden sm:inline">EN</span>
-          </motion.button>
+            <span className="hidden md:inline">EN</span>
+          </button>
 
           <NotificationsPanel />
 
-          <div className="w-px h-6 bg-white/10 mx-1" />
+          <div className="w-px h-6 bg-white/10 mx-0.5 sm:mx-1" />
 
-          <motion.div whileHover={{ scale: 1.03 }} className="flex items-center gap-2.5 cursor-pointer pl-1">
+          <div className="flex items-center gap-2.5 cursor-pointer pl-1">
             <div className="relative">
               <div className="w-9 h-9 rounded-xl overflow-hidden ring-2 ring-amber-500/40 glow-amber bg-linear-to-br from-amber-400 to-amber-600 flex items-center justify-center">
                 {initials ? (
@@ -96,10 +96,10 @@ const Header = memo(function Header({ theme, onThemeChange, user }: { theme: The
               <p className="text-sm font-bold text-white leading-tight">{displayName}</p>
               <p className="text-[10px] text-amber-400 font-semibold tracking-wider">OBSIDIAN MEMBER</p>
             </div>
-          </motion.div>
+          </div>
         </div>
       </div>
-    </motion.header>
+    </header>
   );
 });
 

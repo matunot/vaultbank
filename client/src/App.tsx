@@ -1,20 +1,29 @@
 ﻿import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Send } from 'lucide-react';
 
 import LoginPage from './components/LoginPage';
-import SignupPage from './components/SignupPage';
-import SettingsModal from './components/SettingsModal';
 import Sidebar from './components/Sidebar';
+import MobileNav from './components/MobileNav';
 import Header from './components/Header';
 import MarketTicker from './components/MarketTicker';
 import DashboardSection from './components/DashboardSection';
 import ErrorBoundary from './components/ErrorBoundary';
 import PreviewOnlyNotice from './components/PreviewOnlyNotice';
-import EmailVerificationPage from './components/EmailVerificationPage';
-import { TransferModal, DepositModal, TradeModal, WithdrawModal } from './components/Modals';
 import { useAppStore } from './store';
 import { api } from './api';
+
+// Screens and modal workflows that are not needed for the first authenticated
+// paint stay out of the entry bundle. Each dynamic import is its own chunk.
+const SignupPage = lazy(() => import('./components/SignupPage'));
+const EmailVerificationPage = lazy(() => import('./components/EmailVerificationPage'));
+const SettingsModal = lazy(() => import('./components/SettingsModal'));
+
+// All money modals live in one module; a single dynamic import keeps them in a
+// shared modal chunk that is fetched the first time any workflow is opened.
+const TransferModal = lazy(() => import('./components/Modals').then((m) => ({ default: m.TransferModal })));
+const DepositModal = lazy(() => import('./components/Modals').then((m) => ({ default: m.DepositModal })));
+const TradeModal = lazy(() => import('./components/Modals').then((m) => ({ default: m.TradeModal })));
+const WithdrawModal = lazy(() => import('./components/Modals').then((m) => ({ default: m.WithdrawModal })));
 
 // Lazy load heavy sections.
 // ponytail: dev-only preview components are excluded from the production
@@ -45,6 +54,18 @@ const SectionLoader = () => (
         <div className="w-6 h-6 rounded-full bg-amber-500/20 animate-pulse" />
       </div>
     </div>
+  </div>
+);
+
+const FullPageLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-[#050508]">
+    <div className="w-10 h-10 rounded-full border-2 border-amber-500/20 border-t-amber-500 animate-spin" />
+  </div>
+);
+
+const ModalLoader = () => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" role="status" aria-label="Loading">
+    <div className="w-10 h-10 rounded-full border-2 border-amber-500/20 border-t-amber-500 animate-spin" />
   </div>
 );
 
@@ -103,12 +124,20 @@ export default function App() {
   }, [store, closeModal]);
 
   if (verifyEmailToken) {
-    return <EmailVerificationPage token={verifyEmailToken} onFinish={finishEmailVerification} />;
+    return (
+      <Suspense fallback={<FullPageLoader />}>
+        <EmailVerificationPage token={verifyEmailToken} onFinish={finishEmailVerification} />
+      </Suspense>
+    );
   }
 
   if (!isAuthenticated) {
     if (authMode === 'signup') {
-      return <SignupPage onSignup={() => setIsAuthenticated(true)} onSwitchToLogin={() => setAuthMode('login')} />;
+      return (
+        <Suspense fallback={<FullPageLoader />}>
+          <SignupPage onSignup={() => setIsAuthenticated(true)} onSwitchToLogin={() => setAuthMode('login')} />
+        </Suspense>
+      );
     }
     return <LoginPage onLogin={() => setIsAuthenticated(true)} onSwitchToSignup={() => setAuthMode('signup')} />;
   }
@@ -128,65 +157,38 @@ export default function App() {
 
       <div className="flex relative z-10">
         <Sidebar active={active} setActive={setActive} onSettings={() => setShowSettings(true)} onLogout={() => setIsAuthenticated(false)} />
+        <MobileNav active={active} setActive={setActive} onSettings={() => setShowSettings(true)} onLogout={() => setIsAuthenticated(false)} />
 
-        <main className="flex-1 overflow-y-auto h-screen min-w-0">
+        <main className="flex-1 overflow-y-auto h-screen min-w-0 pb-20 lg:pb-0">
           <Header theme={theme} onThemeChange={setTheme} />
 
-          {/* Gold toast â€” REAL money sent confirmation */}
-          <AnimatePresence>
-            {sendToast && (
-              <motion.div
-                initial={{ opacity: 0, y: -16, scale: 0.97 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -16, scale: 0.97 }}
-                className="px-5 lg:px-8 pt-4"
-              >
-                <div className="relative overflow-hidden rounded-2xl p-4 border border-amber-400/40 bg-linear-to-r from-amber-500/15 via-yellow-500/10 to-amber-500/15">
-                  <motion.div
-                    initial={{ x: '-100%' }}
-                    animate={{ x: '100%' }}
-                    transition={{ duration: 1.2, ease: 'easeInOut' }}
-                    className="absolute inset-y-0 w-1/4 bg-linear-to-r from-transparent via-amber-300/25 to-transparent"
-                  />
-                  <div className="relative flex items-center gap-3">
-                    <motion.div
-                      initial={{ scale: 0, rotate: -30 }}
-                      animate={{ scale: 1, rotate: 0 }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-                      className="w-10 h-10 rounded-full bg-amber-400/30 border border-amber-300/50 flex items-center justify-center shrink-0"
-                    >
-                      <Send className="w-5 h-5 text-amber-200 -rotate-12" />
-                    </motion.div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-bold text-amber-100">
-                        {store.formatMoney(sendToast.amount)} sent to {sendToast.name}
-                      </p>
-                      <p className="text-[11px] text-amber-300/70 mt-0.5 tracking-wide">
-                        REAL MONEY Â· INSTANT TRANSFER Â· BALANCE UPDATED
-                      </p>
-                    </div>
-                    <motion.div
-                      animate={{ opacity: [1, 0.4, 1] }}
-                      transition={{ repeat: Infinity, duration: 1.4 }}
-                      className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0"
-                    />
+          {/* Gold toast — REAL money sent confirmation */}
+          {sendToast && (
+            <div className="vb-enter px-4 sm:px-5 lg:px-8 pt-4">
+              <div className="relative overflow-hidden rounded-2xl p-4 border border-amber-400/40 bg-linear-to-r from-amber-500/15 via-yellow-500/10 to-amber-500/15">
+                <div className="toast-shimmer absolute inset-y-0 w-1/4 bg-linear-to-r from-transparent via-amber-300/25 to-transparent" />
+                <div className="relative flex items-center gap-3">
+                  <div className="vb-scale-in w-10 h-10 rounded-full bg-amber-400/30 border border-amber-300/50 flex items-center justify-center shrink-0">
+                    <Send className="w-5 h-5 text-amber-200 -rotate-12" />
                   </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-amber-100">
+                      {store.formatMoney(sendToast.amount)} sent to {sendToast.name}
+                    </p>
+                    <p className="text-[11px] text-amber-300/70 mt-0.5 tracking-wide">
+                      REAL MONEY · INSTANT TRANSFER · BALANCE UPDATED
+                    </p>
+                  </div>
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0 animate-pulse" />
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+              </div>
+            </div>
+          )}
 
-          <div className="px-5 lg:px-8 pb-12">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={active}
-                initial={{ opacity: 0, y: 16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-              >
-                <ErrorBoundary>
-                  <Suspense fallback={<SectionLoader />}>
+          <div className="px-4 sm:px-5 lg:px-8 pb-12">
+            <div key={active} className="vb-enter">
+              <ErrorBoundary>
+                <Suspense fallback={<SectionLoader />}>
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
                     {active === 'vault' && (isDev ? <VaultSection /> : <SavingsAccountsSection />)}
                     {active === 'swiss' && <SwissSection previewOnly={!isDev} />}
@@ -203,54 +205,51 @@ export default function App() {
                     {active === 'security' && <VerificationSection />}
                   </Suspense>
                 </ErrorBoundary>
-              </motion.div>
-            </AnimatePresence>
+            </div>
           </div>
 
           {/* Footer */}
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1 }} className="text-center pt-2 pb-8">
+          <div className="vb-fade text-center pt-2 pb-8" style={{ '--vb-delay': '600ms' } as React.CSSProperties}>
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass">
               <Shield className="w-3.5 h-3.5 text-amber-500" />
               <span className="text-[10px] tracking-widest font-semibold text-white/30">
                 LIVE FEATURES ARE LABELED BY AVAILABILITY
               </span>
             </div>
-          </motion.div>
+          </div>
         </main>
       </div>
 
-      {/* Modals - only render when open for performance */}
-      {modal === 'send' && (
-        <TransferModal isOpen={true} onClose={closeModal} onSend={handleSend} />
-      )}
-      {modal === 'deposit' && (
-        <DepositModal isOpen={true} onClose={closeModal} />
-      )}
+      {/* Modals - lazy workflows, mounted only when opened */}
+      <Suspense fallback={<ModalLoader />}>
+        {modal === 'send' && (
+          <TransferModal isOpen={true} onClose={closeModal} onSend={handleSend} />
+        )}
+        {modal === 'deposit' && (
+          <DepositModal isOpen={true} onClose={closeModal} />
+        )}
+        {modal === 'withdraw' && (
+          <WithdrawModal isOpen={true} onClose={closeModal} />
+        )}
+        {modal === 'trade' && (
+          <TradeModal
+            isOpen={true}
+            onClose={closeModal}
+            onTrade={handleTrade}
+            investments={store.investments}
+            available={store.available}
+          />
+        )}
 
-      {modal === 'withdraw' && (
-        <WithdrawModal isOpen={true} onClose={closeModal} />
-      )}
-
-
-
-      {modal === 'trade' && (
-        <TradeModal 
-          isOpen={true} 
-          onClose={closeModal} 
-          onTrade={handleTrade} 
-          investments={store.investments} 
-          available={store.available} 
+        {/* Settings Modal */}
+        <SettingsModal
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+          theme={theme}
+          onThemeChange={setTheme}
+          onLogout={() => { setShowSettings(false); setIsAuthenticated(false); }}
         />
-      )}
-
-      {/* Settings Modal */}
-      <SettingsModal 
-        isOpen={showSettings} 
-        onClose={() => setShowSettings(false)} 
-        theme={theme}
-        onThemeChange={setTheme}
-        onLogout={() => { setShowSettings(false); setIsAuthenticated(false); }} 
-      />
+      </Suspense>
     </div>
   );
 }
