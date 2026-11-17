@@ -1,13 +1,13 @@
 # VaultBank — mobile performance & production hardening
 
-Branch: `perf/mobile-hardening`, rebased onto `d5a8d25` (current `origin/main`).
+Branch: `perf/mobile-hardening`, rebased onto `4f4f1a0` (current `origin/main`).
 Scope: mobile-first performance, resilience, accessibility, observability, and deployment
 safety. No schema changes, no destructive SQL, no infrastructure moves.
 
-> `origin/main` advanced by three commits while this work was in progress (legacy payment
-> gateways and UPI retired). The branch was rebased onto `d5a8d25` and every number below
-> was re-measured against a fresh build of that commit, which is the build currently live
-> (`index-DlR_2GWW.js`). Nothing from the retirement commits was reintroduced.
+> `origin/main` moved twice while this work was in progress (legacy payment gateways,
+> UPI and VaultBank Pay retired). The branch was rebased onto `4f4f1a0` and every number
+> below was re-measured against a fresh build of that commit, which is the build currently
+> live (`index-3BqL9a98.js`). Nothing from the retirement commits was reintroduced.
 
 Status: **verified locally, awaiting human review before merge/deploy** (repo Definition
 of Done requires owner approval). Production database diagnostics are **blocked** — see
@@ -17,18 +17,18 @@ of Done requires owner approval). Production database diagnostics are **blocked*
 
 ## 1. Results at a glance
 
-| Metric | Before (`d5a8d25`, live build) | After | Change |
+| Metric | Before (`4f4f1a0`, live build) | After | Change |
 | --- | --- | --- | --- |
-| Initial JS, raw | 362.83 KB | 320.92 KB | −11.6% |
-| Initial JS, gzip | 102.79 KB | 94.50 KB | **−8.1%** |
-| Initial CSS, gzip | 17.59 KB | 19.29 KB | +1.7 KB |
-| Initial JS+CSS, gzip | 120.38 KB | **113.79 KB** | **−5.5%** |
+| Initial JS, raw | 476.90 KB | 312.32 KB | **−34.5%** |
+| Initial JS, gzip | 139.40 KB | 94.02 KB | **−32.5%** |
+| Initial CSS, gzip | 17.56 KB | 18.90 KB | +1.3 KB |
+| Initial JS+CSS, gzip | 156.96 KB | **112.92 KB** | **−28.1%** |
 | Framer Motion in initial chunk | yes | no — lazy `proxy-*.js` only | critical path freed |
 | Dashboard bootstrap API calls | 3 (`/account`, `/account/balance`, `/account/transactions`) | **2** (`/account`, `/account/transactions`) | −33% |
 | Static asset caching | `public, max-age=0` | `public, max-age=31536000, immutable` | repeat visits ≈ 0 bytes |
-| Origin compression | none (320,908 B identity) | gzip (96,762 B) | −70% on the wire |
-| Login DCL, 1.6 Mbps / 150 ms RTT / 4× CPU | 3.02 s (pre-compression, same build) | **1.18 s** | −61% |
-| Dashboard LCP, same profile | n/a (measured after) | 3.90 s | — |
+| Origin compression | none (319,804 B identity) | gzip (96,515 B) | −70% on the wire |
+| Login DCL, 1.6 Mbps / 150 ms RTT / 4× CPU | 3.02 s (pre-compression, same build) | **1.24 s** | −59% |
+| Dashboard LCP, same profile | n/a (measured after) | 3.89 s | — |
 | Mobile layout < 1024 px | desktop sidebar squeezed content | full-width `<main>` + bottom nav | bug fixed |
 | axe (WCAG 2.1/2.2 A+AA) | 3 blocking Lighthouse audits | **0 serious/critical** on login + dashboard | fixed |
 
@@ -36,13 +36,13 @@ Budget gates (enforced by `npm run budget`, wired into CI):
 
 | Budget | Limit | Actual | Result |
 | --- | --- | --- | --- |
-| Entry JS (gzip) | 100 KiB | 94.50 KiB | PASS |
-| Entry JS + CSS (gzip) | 120 KiB | 113.79 KiB | PASS |
-| Largest single asset | 250 KiB | 122 KB raw (lazy vendor chunk) | PASS |
+| Entry JS (gzip) | 100 KiB | 94.25 KiB | PASS |
+| Entry JS + CSS (gzip) | 120 KiB | 113.51 KiB | PASS |
+| Largest single asset | 250 KiB | 119.13 KB raw (lazy vendor chunk) | PASS |
 
 Measurement method: node `zlib` gzip level 9 over the built files, applied identically to
-both builds; Vite's own reporter shows 97.68 kB for the entry because it uses different
-gzip settings.
+both builds. The budget script uses the default gzip level, so it reports slightly larger
+values (94.25 / 19.26 / 113.51 KiB) — both sets pass.
 
 ---
 
@@ -133,16 +133,16 @@ Recorded output (`reports/audit/after/perf.json`):
 
 | Phase | Transfer | DCL | CLS | Long tasks |
 | --- | --- | --- | --- | --- |
-| Login | 94.96 KB JS + 18.87 KB CSS, 2 resources | 1.182 s | 0 | 2 (225 ms) |
-| Dashboard | +49 KB JS, 2.77 KB fetch, 12 resources | 1.182 s | 0 | 5 (507 ms) |
+| Login | 94.78 KB JS + 18.81 KB CSS, 2 resources | 1.238 s | 0 | 2 (269 ms) |
+| Dashboard | +49 KB JS, 2.77 KB fetch, 12 resources | 1.238 s | 0 | 6 (841 ms) |
 
-Sign-in to fully rendered dashboard: **587 ms**. Dashboard LCP: **3.90 s** at 4× CPU
+Sign-in to fully rendered dashboard: **828 ms**. Dashboard LCP: **3.89 s** at 4× CPU
 throttling, which is where the remaining work is (hydration of the dashboard chunk).
 
-Compression A/B: the same entry ships **320,908 B identity vs 96,762 B gzip** (measured
-above). Without origin compression the login document reached DCL at 3.02 s on a
-pre-rebase build of this branch whose JS was within 0.2% of the current size; with
-compression it is 1.18 s. That isolates the compression/caching work from the code
+Compression A/B: the same entry ships **319,804 B identity vs 96,515 B gzip** (measured
+above). Without origin compression the login document reached DCL at 3.02 s on an
+earlier build of this branch whose entry was within 1% of the current size; with
+compression it is 1.24 s. That isolates the compression/caching work from the code
 changes.
 
 ### 3.2 Layout audit
