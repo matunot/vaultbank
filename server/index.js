@@ -23,7 +23,6 @@ const amlRoutes = require('./routes/aml');
 const reportsRoutes = require('./routes/reports');
 const accountRoutes = require('./routes/accounts');
 const savingsRoutes = require('./routes/savings');
-const issuingRoutes = require('./routes/issuing');
 const creditRoutes = require('./routes/credit');
 const vbPayRoutes = require('./routes/vbpay');
 const usdcWithdrawalRoutes = require('./routes/usdc-withdrawals');
@@ -200,7 +199,6 @@ app.use('/', reportsRoutes);
 // ─── Banking Account Routes (Real Banking) ──────────────────────────────────
 app.use('/', accountRoutes);
 app.use('/', savingsRoutes);
-app.use('/', issuingRoutes);
 app.use('/', creditRoutes);
 app.use('/', vbPayRoutes);
 app.use('/', usdcWithdrawalRoutes);
@@ -216,7 +214,6 @@ app.use('/', require('./routes/currencies'));
 app.use('/', require('./vbr'));
 app.use('/', require('./routes/usdc-deposits'));
 
-// ─── Provider Payout Webhooks (authenticated server-to-server) ─────────────
 
 // ─── Root Route ──────────────────────────────────────────────────────────────
 // ─── Frontend Static Serving (single-origin) ────────────────────────────────

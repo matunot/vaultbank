@@ -398,17 +398,6 @@ export const api = {
     return request<ApiResponse>('api/payments/methods');
   },
 
-  async initiatePayment(data: { method: string; amount: number; currency?: string; to?: string; metadata?: any }): Promise<ApiResponse> {
-    return request<ApiResponse>('api/payments/transfer', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async getPaymentHistory(): Promise<ApiResponse> {
-    return request<ApiResponse>('api/payments/history');
-  },
-
   async getWalletBalance(): Promise<ApiResponse> {
     return request<ApiResponse>('api/payments/wallet/balance');
   },
@@ -618,54 +607,6 @@ export const api = {
 
   async getAdminTransactions(): Promise<ApiResponse> {
     return request<ApiResponse>('api/admin/transactions');
-  },
-
-  // REAL Stripe Issuing cards
-  async getIssuingStatus(): Promise<ApiResponse> {
-    return request<ApiResponse>('api/issuing/status');
-  },
-
-  async createCardholder(data: { line1?: string; city?: string; state?: string; postal_code?: string; country?: string; phone?: string; dob?: { day: number; month: number; year: number } }): Promise<ApiResponse> {
-    return request<ApiResponse>('api/issuing/cardholder', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async issueCard(data: { network?: string; monthlyLimit?: number; perTransactionLimit?: number }): Promise<ApiResponse> {
-    return request<ApiResponse>('api/issuing/cards', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async getIssuingCards(): Promise<ApiResponse> {
-    return request<ApiResponse>('api/issuing/cards');
-  },
-
-  async freezeIssuingCard(id: string, frozen: boolean): Promise<ApiResponse> {
-    return request<ApiResponse>(`api/issuing/cards/${id}/freeze`, {
-      method: 'POST',
-      body: JSON.stringify({ frozen }),
-    });
-  },
-
-  async updateCardLimits(id: string, data: { monthlyLimit?: number; perTransactionLimit?: number }): Promise<ApiResponse> {
-    return request<ApiResponse>(`api/issuing/cards/${id}/limits`, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async getCardEphemeralKey(id: string, apiVersion?: string): Promise<ApiResponse> {
-    return request<ApiResponse>(`api/issuing/cards/${id}/ephemeral-key`, {
-      method: 'POST',
-      body: JSON.stringify({ apiVersion }),
-    });
-  },
-
-  async getIssuingCardActivity(id: string): Promise<ApiResponse> {
-    return request<ApiResponse>(`api/issuing/cards/${id}/transactions`);
   },
 
   // VaultBank Credit Engine
