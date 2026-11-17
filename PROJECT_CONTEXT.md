@@ -2,7 +2,7 @@
 
 > The single source of truth for anyone (AI or human) working on this project.
 > Read this first, then `MEMORY.md` and the runbooks it links to.
-> Last rewritten: 2026-11-05 (previous version described the retired provider era).
+> Last rewritten: 2026-11-17 (merchant payment gateways and provider rails removed).
 
 ---
 
@@ -16,10 +16,12 @@ Two deployment facts override everything else you may read elsewhere:
 
 1. **One origin:** `https://vaultbank-md20.onrender.com` serves both the React
    SPA (`client/dist`) and the API (Render, `workingDirectory: server`).
-2. **Native-only in production:** when `NODE_ENV=production`, legacy provider
-   money adapters (Stripe deposits/payouts, PayPal, Cashfree, Nium) are
-   hard-disabled regardless of environment variables. They fail closed with
-   explicit `*_NOT_CONFIGURED` codes.
+2. **Banking-native payment surface:** merchant gateways and processor adapters
+   (Stripe, PayPal, Cashfree, Nium, Razorpay and similar checkout services) are
+   removed from the application runtime. Payment flows use VaultBank's own
+   ledger plus explicitly configured bank-account instructions and manual bank
+   statement reconciliation. Historical provider/UPI rows are retained; no
+   production financial records are deleted by this code cleanup.
 
 The Vercel alias (`vaultbank-mu.vercel.app`) is a frozen old frontend. Ignore it.
 
@@ -58,8 +60,8 @@ A software licence cannot grant a banking licence.
 | Savings vaults (USD/INR) | ✅ Live | ledger postings, no advertised APY |
 | Additional currencies (AED GBP EUR CAD AUD SGD NZD CHF HKD) | ⚙️ Registered, **disabled** | needs `VB_MULTICURRENCY_ENABLED=true` + a real receiving account per code; no FX exists |
 | Bank-transfer deposits | ⚙️ Code ready, **off** | credit only after admin matches the official bank statement |
-| Direct UPI deposits (INR) | ⚙️ Configured, manual verification | admin matches amount + unique UTR |
-| Manual bank payouts (INR) | ⚙️ Configured, manual operator transfer | beneficiary details AES-256-GCM encrypted; refund only after evidence |
+| Legacy UPI records (INR) | ⛔ New customer requests retired | Admin-only review remains for historical reconciliation; no new intents are created |
+| Manual bank payouts (INR) | ⚙️ Native, operator-executed bank transfer | beneficiary details AES-256-GCM encrypted; operator sends through the bank and confirms the official UTR |
 | USD ACH payout | ⚙️ File export only | no network submission, no ODFI profile |
 | USDC/USDT deposits + withdrawals | ❌ 503 | hot wallet unfunded (balance 0, nonce 0) |
 
@@ -70,8 +72,8 @@ A software licence cannot grant a banking licence.
 - KYC upload + review (bytes stored in PostgreSQL, admin-approved).
 - Card program requests and loan applications with admin review queues.
 - Savings vaults; multi-currency wallets.
-- Admin queues for KYC, card/loan applications, bank deposits, direct UPI,
-  manual payouts, USD ACH — all mounted inside `PaymentsSection` for admins.
+- Admin queues for KYC, card/loan applications, native bank deposits, historical
+  UPI reconciliation, manual bank payouts, and USD ACH file reconciliation.
 
 ### Deliberately absent
 

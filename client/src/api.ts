@@ -456,22 +456,6 @@ export const api = {
     });
   },
 
-  async collectionsMyDetails(): Promise<ApiResponse> {
-    return request<ApiResponse>('api/collections/my-details');
-  },
-
-  async createPayoutRequest(data: { amount: number; bankAccount: string; ifsc: string; address1: string; city: string; state: string; pincode: string }, idempotencyKey?: string): Promise<ApiResponse> {
-    return request<ApiResponse>('api/payouts/requests', {
-      method: 'POST',
-      body: JSON.stringify(data),
-      ...(idempotencyKey ? { headers: { 'idempotency-key': idempotencyKey } } : {}),
-    });
-  },
-
-  async myPayouts(): Promise<ApiResponse> {
-    return request<ApiResponse>('api/payouts/requests');
-  },
-
   async accountDeposit(data: { amount: number; description?: string }): Promise<ApiResponse> {
     return request<ApiResponse>('api/account/deposit', {
       method: 'POST',
@@ -481,38 +465,6 @@ export const api = {
 
   async accountWithdraw(data: { amount: number; description?: string }): Promise<ApiResponse> {
     return request<ApiResponse>('api/account/withdraw', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async stripeDeposit(data: { amount: number; currency?: string }): Promise<ApiResponse> {
-    return request<ApiResponse>('api/stripe/deposit', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async stripeWithdraw(data: { amount: number; bankAccountId?: string }): Promise<ApiResponse> {
-    return request<ApiResponse>('api/stripe/withdraw', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async stripeBalance(): Promise<ApiResponse> {
-    return request<ApiResponse>('api/stripe/balance');
-  },
-
-  async paypalDeposit(data: { amount: number; currency?: string }): Promise<ApiResponse> {
-    return request<ApiResponse>('api/paypal/deposit', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
-  },
-
-  async paypalCapture(data: { orderId: string }): Promise<ApiResponse> {
-    return request<ApiResponse>('api/paypal/capture', {
       method: 'POST',
       body: JSON.stringify(data),
     });

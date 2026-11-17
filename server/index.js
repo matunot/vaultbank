@@ -24,7 +24,6 @@ const reportsRoutes = require('./routes/reports');
 const accountRoutes = require('./routes/accounts');
 const savingsRoutes = require('./routes/savings');
 const issuingRoutes = require('./routes/issuing');
-const stripePaymentRoutes = require('./routes/stripe-payments');
 const creditRoutes = require('./routes/credit');
 const vbPayRoutes = require('./routes/vbpay');
 const usdcWithdrawalRoutes = require('./routes/usdc-withdrawals');
@@ -206,13 +205,9 @@ app.use('/', creditRoutes);
 app.use('/', vbPayRoutes);
 app.use('/', usdcWithdrawalRoutes);
 
-// ─── Stripe Payment Routes (Deposits, Withdrawals, Webhooks) ──────────────
-app.use(stripePaymentRoutes);
-app.use('/', require('./routes/paypal-deposits'));
+// ─── VaultBank-native bank transfer routes ────────────────────────────────
 app.use('/', require('./routes/bank-deposits'));
-app.use('/', require('./routes/collections'));
-app.use('/', require('./routes/external-payouts'));
-app.use('/', directUpiRoutes);
+app.use('/', directUpiRoutes); // Legacy UPI history/reconciliation only; new customer requests are retired.
 app.use('/', directBankPayoutRoutes);
 app.use('/', require('./routes/usd-ach-payouts'));
 app.use('/', productApplicationRoutes);
@@ -222,7 +217,6 @@ app.use('/', require('./vbr'));
 app.use('/', require('./routes/usdc-deposits'));
 
 // ─── Provider Payout Webhooks (authenticated server-to-server) ─────────────
-app.use('/', require('./routes/provider-webhooks'));
 
 // ─── Root Route ──────────────────────────────────────────────────────────────
 // ─── Frontend Static Serving (single-origin) ────────────────────────────────
@@ -299,9 +293,9 @@ app.get('/', (req, res) => {
                 'GET /api/admin/aml-alerts'
             ],
             payments: [
-                'POST /api/payments/upi/initiate',
-                'POST /api/payments/paypal/initiate',
-                'GET /api/payments/history'
+                'GET /api/payments/readiness',
+                'GET /api/payments/methods',
+                'GET /api/payments/wallet/balance'
             ],
             aml: [
                 'GET /api/aml/flags',
@@ -375,9 +369,9 @@ app.get('/api', (req, res) => {
                 'GET /api/admin/aml-alerts'
             ],
             payments: [
-                'POST /api/payments/upi/initiate',
-                'POST /api/payments/paypal/initiate',
-                'GET /api/payments/history'
+                'GET /api/payments/readiness',
+                'GET /api/payments/methods',
+                'GET /api/payments/wallet/balance'
             ],
             aml: [
                 'GET /api/aml/flags',
@@ -456,21 +450,7 @@ const { seedDemoData } = require('./config/database');
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 async function startServer() {
-    // Production is intentionally native-only: legacy third-party provider
-    // credentials are neither required nor a supported way to activate rails.
-    // Emit truthful diagnostics instead of warning about missing Stripe,
-    // Razorpay, PayPal or legacy UPI keys that must not be used in production.
-    try {
-        const { validateProductionConfig } = require('./payments/safety');
-        const nativeOnly = String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
-        const result = validateProductionConfig({ silent: true, nativeOnly });
-        if (result.skipped && result.reason === 'native-only') {
-            console.info('[payments-safety] legacy provider checks skipped: production is locked to VaultBank-native rails; see /api/payments/readiness.');
-        } else if (!result.ok) {
-            console.error('[payments-safety] production configuration gaps:');
-            result.errors.forEach((error) => console.error('  - ' + error));
-        }
-    } catch (_) { /* diagnostic only */ }
+    console.info('[payments] merchant gateways are not mounted; bank flows use VaultBank-native ledger and bank reconciliation.');
 
     // Wait for PostgreSQL database connection
     try {
