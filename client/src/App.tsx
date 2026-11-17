@@ -13,7 +13,6 @@ import ErrorBoundary from './components/ErrorBoundary';
 import PreviewOnlyNotice from './components/PreviewOnlyNotice';
 import EmailVerificationPage from './components/EmailVerificationPage';
 import { TransferModal, DepositModal, TradeModal, WithdrawModal } from './components/Modals';
-import VbPayModal from './components/VbPayModal';
 import { useAppStore } from './store';
 import { api } from './api';
 
@@ -29,7 +28,6 @@ const VaultSection = isDev ? lazy(() => import('./components/VaultSection')) : (
 const SavingsAccountsSection = lazy(() => import('./components/SavingsAccountsSection'));
 const DebtsSection = isDev ? lazy(() => import('./components/DebtsSection')) : (null as unknown as typeof import('./components/DebtsSection').default);
 const CreditSection = isDev ? lazy(() => import('./components/CreditSection')) : (null as unknown as typeof import('./components/CreditSection').default);
-const VbPaySection = lazy(() => import('./components/VbPaySection'));
 
 const SwissSection = lazy(() => import('./components/SwissSection'));
 const BudgetSection = isDev ? lazy(() => import('./components/BudgetSection')) : (null as unknown as typeof import('./components/BudgetSection').default);
@@ -71,8 +69,6 @@ export default function App() {
     setVerifyEmailToken(null);
   }, []);
 
-  // VaultBank Pay checkout requests remain a native VaultBank flow.
-const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   // Gold toast fired the moment a REAL transfer completes
   const [sendToast, setSendToast] = useState<{ name: string; amount: number } | null>(null);
 
@@ -89,15 +85,6 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
     const openDeposit = () => setModal('deposit');
     window.addEventListener('vaultbank:addfunds', openDeposit);
     return () => window.removeEventListener('vaultbank:addfunds', openDeposit);
-  }, []);
-
-  // VaultBank Pay public checkout (?pay=<requestId>)
-  useEffect(() => {
-    const payId = new URLSearchParams(window.location.search).get('pay');
-    if (payId) {
-      window.history.replaceState({}, '', window.location.pathname);
-      setPaymentRequest(payId);
-    }
   }, []);
 
 
@@ -206,7 +193,6 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                     {active === 'cards' && <CardProgramSection />}
                     {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
                     {active === 'invest' && (isDev ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
-{active === 'pay' && <VbPaySection />}
                     {active === 'credit' && (isDev ? <CreditSection /> : <CardProgramSection defaultCardType="credit" />)}
 
                     {active === 'loans' && (isDev ? <DebtsSection /> : <LoanApplicationSection />)}
@@ -239,9 +225,6 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
       )}
       {modal === 'deposit' && (
         <DepositModal isOpen={true} onClose={closeModal} />
-      )}
-      {paymentRequest && (
-        <VbPayModal requestId={paymentRequest} onClose={() => setPaymentRequest(null)} />
       )}
 
       {modal === 'withdraw' && (

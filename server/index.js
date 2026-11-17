@@ -497,9 +497,6 @@ startServer();
 if (typeof creditRoutes.startCreditAutomation === 'function') {
     creditRoutes.startCreditAutomation();
 }
-if (typeof vbPayRoutes.startVbPayAutomation === 'function') {
-    vbPayRoutes.startVbPayAutomation();
-}
 if (typeof usdcWithdrawalRoutes.startHotWalletMonitor === 'function') {
     usdcWithdrawalRoutes.startHotWalletMonitor();
 }

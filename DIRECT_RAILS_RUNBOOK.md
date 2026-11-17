@@ -1,86 +1,54 @@
-# VaultBank Direct Rails — Operations Runbook
+# VaultBank Native Bank Rails — Operations Runbook
 
 ## Scope
 
-VaultBank now has a provider-independent **INR UPI collection intent** and a **manual bank payout request** flow. These routes do not call Cashfree, Stripe, PayPal, or YOUPI. They use VaultBank's own API, Postgres ledger, and a bank account/VPA configured by the operator.
+This runbook covers VaultBank's native bank-account workflows. Internal transfers are posted to VaultBank's own double-entry ledger. External bank movement is performed only through an operator-controlled bank account and reconciled against the official bank statement.
 
-This is not an automatic bank API integration:
-- Incoming UPI money is sent directly to the configured bank-linked VPA. An administrator must match the real bank statement, amount, intent reference, and unique UTR before the VaultBank ledger is credited.
-- Outbound payout requests atomically reserve the user's available INR balance. An authorized operator sends the bank transfer using the bank's own interface, then confirms the real outgoing UTR. The app does not initiate the transfer itself.
-- Neither a browser redirect, screenshot, SMS, nor email is settlement proof.
+There is no automatic international bank-network transfer in this release. Do not represent an internal ledger transfer or a pending bank instruction as an external bank settlement.
 
-## Disabled-by-default environment
+## Manual bank payout configuration
 
-Configure only in a protected environment you control. Do not enable the rails for customer money unless the receiving bank and qualified compliance advisers have confirmed the proposed activity is permitted.
+Configure only in a protected deployment environment:
 
-### Incoming UPI
+- `VB_DIRECT_BANK_PAYOUTS_ENABLED=true`
+- `VB_DIRECT_PAYOUT_ENCRYPTION_KEY`: exactly 64 hexadecimal characters (32 random bytes)
+- `VB_DIRECT_BANK_PAYOUT_CUSTOMER_ACCESS_ENABLED`: leave disabled until the operator's complete bank workflow is approved and ready
 
-- **VB_UPI_DEPOSIT_ENABLED=true**
-- **VB_UPI_RECEIVING_VPA** — your real bank-linked UPI ID
-- **VB_UPI_RECEIVING_NAME** — the real receiving account payee name
-
-If the flag or values are missing/invalid, /api/direct-upi/intents returns **503 DIRECT_UPI_NOT_CONFIGURED**. The readiness endpoint never fabricates payment details.
-
-### Manual bank payout
-
-- **VB_DIRECT_BANK_PAYOUTS_ENABLED=true**
-- **VB_DIRECT_PAYOUT_ENCRYPTION_KEY** — 64 hexadecimal characters representing 32 random bytes
-
-Generate a key locally with Node.js:
+Generate an encryption key locally:
 
 ~~~powershell
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ~~~
 
-Store the key only in the deployment secret manager and a protected offline backup. Do not commit it, send it in chat, paste it into issues, or put it in frontend variables. **Do not delete or rotate this key while encrypted payout requests exist** unless you first implement and verify a full re-encryption migration. Without it, the admin interface cannot decrypt outstanding beneficiary account details.
+Store the key only in the deployment secret manager and a protected offline backup. Do not commit it, send it in chat, or put it in frontend variables. Do not delete or rotate this key while encrypted payout requests exist unless a verified re-encryption migration is completed.
 
-If the flag or key is missing, payout creation returns **503 DIRECT_BANK_PAYOUTS_NOT_CONFIGURED**. Beneficiary account numbers are encrypted with AES-256-GCM in Postgres; user-facing history returns only the last four digits. Only admin endpoints return the decrypted destination.
-
-## Incoming UPI reconciliation
-
-1. User creates an INR intent; the API returns an exact-amount UPI URI, QR, reference, and 30-minute expiry.
-2. The transfer goes to the operator-configured VPA. The intent remains **pending**.
-3. In the receiving bank's official statement, verify an actual credit. Match the exact INR amount and the intent/reference. Confirm the UTR belongs to that transaction.
-4. In the administrator's **Direct UPI Statement Review** panel, enter the exact amount, unique UTR, and a useful statement note, then confirm.
-5. The server locks the intent, checks amount and expiry, reserves the UTR through a database unique index, updates the account balance, adds a ledger transaction, and settles the intent in one database transaction. A repeated request, reused UTR, mismatch, or failed ledger change does not create a second credit.
-
-Do not confirm from a customer screenshot, browser return, SMS, or email alone. If the transfer is late, the note is missing, or the amount differs, leave the intent uncredited and reconcile it manually with the actual bank statement. Do not force it through the normal exact-match endpoint.
+Beneficiary account numbers are encrypted with AES-256-GCM in PostgreSQL. Customer history exposes only the last four digits. Admin endpoints expose decrypted destination details only to authorized administrators.
 
 ## Outbound manual bank payout
 
-1. User requests a payout to a bank account whose beneficiary name must match their VaultBank profile. A request requires an idempotency key.
-2. The server inserts the payout request, decrements balance and available_balance only if sufficient spendable balance exists, and writes a processing withdrawal ledger row in one PostgreSQL transaction.
-3. The operator opens the **Manual Bank Payout Queue**, copies the beneficiary details into the bank's own interface, and initiates the transfer separately.
-4. After the outgoing debit has succeeded, check the bank statement and the correct UTR, then enter the exact debit amount, UTR, and evidence note in the queue. The system will mark the ledger complete once and only once.
-5. If the transfer result is ambiguous, leave the funds reserved and investigate. Do **not** refund until the official bank statement confirms no transfer was sent. The refund path requires an evidence note and atomically returns the reserved funds exactly once.
-6. Never use the refund button to resolve a timeout or an uncertain bank transfer. First reconcile the bank account.
+1. A verified customer submits a payout request with an idempotency key and beneficiary details.
+2. The server reserves the requested spendable balance atomically and writes the withdrawal/payout record in one PostgreSQL transaction.
+3. An authorized operator independently checks the beneficiary details and initiates the bank transfer using the bank's own interface.
+4. After the bank confirms the outgoing debit, the operator checks the official bank statement and records the exact amount, unique bank reference/UTR, and evidence note in the admin queue.
+5. The system marks the payout complete once. Duplicate references, mismatched amounts, or repeated confirmations must not create another settlement.
+6. If the outcome is ambiguous, leave the funds reserved and investigate the official bank statement. Do not refund until the bank confirms that no transfer was sent. The refund path requires an evidence note and returns reserved funds exactly once.
 
-## Pilot controls
+## Legacy UPI records
 
-- ₹1–₹10,000 per incoming UPI intent, 30-minute expiry, at most three open intents per user.
-- ₹10–₹10,000 per manual outbound request for the initial pilot.
-- Exact-amount checks, user-scoped request history, required idempotency key for money-moving POSTs, row locks, unique UTR indexes, and transaction rollback are enforced server-side.
-- No automatic credit from client responses or messages.
-- Both native rails are disabled by default. Legacy third-party collections/payout adapters are hard-disabled in production regardless of stale provider flags.
-- USD external bank payouts and per-user individual bank accounts are **not** provided by these two rails.
+New UPI customer intents are retired in production. Historical UPI rows are preserved for admin-only statement reconciliation; this runbook does not authorize creating new UPI payment requests. Do not enable legacy UPI settings to restore customer access.
 
-## Test & release checklist
+## Reconciliation rules
 
-- Run the direct UPI unit safety suite and manual bank payout unit safety suite.
-- Run PostgreSQL integration tests and frontend TypeScript/build CI.
-- Keep all new environment flags unset/false until a controlled pilot is permitted.
-- Begin with your own receiving account and a minimal controlled test only after confirming bank terms. Reconcile the bank statement independently; never treat CI pass as proof of a real settlement.
-- Do not mix personal and unrelated customer funds or market these manual rails as a bank, payment aggregator, or authorised wallet service without the relevant approvals.
+- Match deposits and withdrawals against the official bank statement, exact amount, expected account, and unique transaction reference.
+- Screenshots, browser redirects, SMS messages, and email alerts are not settlement proof.
+- An internal transfer must use one stable `Idempotency-Key` for its entire attempt. On timeout or unknown outcome, retry with that same key only.
+- Never auto-refund an ambiguous external transfer.
+- Never delete ledger history to reverse a transaction; use a supported compensating entry and retain evidence.
 
+## Verification
 
-## Customer rollout flags (off unless explicitly approved)
-
-The public customer flows are deliberately separate opt-ins:
-- `VB_DIRECT_UPI_CUSTOMER_ACCESS_ENABLED=true` permits authenticated customers with both `email_verified=true` and `kyc_status='verified'` to create/list/cancel their own UPI intents. Admin statement verification remains admin-only.
-- `VB_DIRECT_BANK_PAYOUT_CUSTOMER_ACCESS_ENABLED=true` permits authenticated customers meeting those same verification requirements to submit/list their own manual payout requests. Admin confirmation/refund remains admin-only.
-
-Leave both flags unset/false by default. Do not enable them just to remove an access-denied message. These flags do not create a bank API or make transfers automatic; UPI credit remains manual and payout requests only reserve funds until an operator performs and reconciles the bank transfer. Enable a customer flag only after the responsible entity has confirmed that this activity is permitted, bank/UPI terms are satisfied, appropriate compliance/customer protections are in place, and the receiving/payout accounts are controlled and monitored.
-
-## Production pilot access restriction
-
-The customer-facing intent/history/cancel endpoints for these direct rails are intentionally restricted to authenticated `admin`/`super_admin` accounts during the first production pilot. This is an access-control gate, not proof that the rail is ready for public customers. UPI admin review and all other admin payout endpoints must run both `authenticateToken` and `requireAdmin`; admin-role checks alone do not authenticate a request. Keep real customer access disabled until the receiving VPA/payee are independently verified, transfer evidence and reconciliation are operational, and the operator has confirmed the applicable bank/UPI permissions and compliance requirements.
+- Run `cd server && npm test -- --runInBand --forceExit`.
+- Run PostgreSQL integration tests when the test database is available.
+- Confirm `/health` and `/ready` on the deployed service.
+- Verify a native internal transfer updates both account balances and both sides of the journal exactly once.
+- CI passing proves application behavior, not that an external bank settlement has occurred.

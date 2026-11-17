@@ -1,6 +1,6 @@
 # VaultBank — Agent Instructions
 
-Real licensed bank, production-grade. Node.js + Express (`server/index.js`, port 5000) + React + TS + Tailwind (Vite, `client/src/main.tsx→App`) + PostgreSQL (Neon). Single-origin live `https://vaultbank-md20.onrender.com` serves `client/dist` + API; Vercel alias is stale, ignore. Root `server.js` is a static stub, ignore. Read `PROJECT_CONTEXT.md` + `MEMORY.md` before non-trivial work.
+Bank-user account application built on a VaultBank-owned PostgreSQL ledger. Do not infer banking authorization from the software. Node.js + Express (`server/index.js`, port 5000) + React + TS + Tailwind (Vite, `client/src/main.tsx→App`) + PostgreSQL (Neon). Single-origin live `https://vaultbank-md20.onrender.com` serves `client/dist` + API; Vercel alias is stale, ignore. Root `server.js` is a static stub, ignore. Read `PROJECT_CONTEXT.md` + `MEMORY.md` before non-trivial work.
 
 ## Run (order matters — backend first, Vite proxy needs it)
 - Backend: `cd server; node index.js` (`npm run dev` = nodemon). Frontend: `cd client; npm run dev`. Proxy `/api,/login,/signup,/health` → `:5000`.
@@ -19,7 +19,7 @@ Real licensed bank, production-grade. Node.js + Express (`server/index.js`, port
 - `audit_logs`: `action,resource_type,resource_id,details,ip_address,user_agent,created_at`. No `category`/`timestamp`.
 - Debit atomically: `UPDATE accounts SET balance = balance - $2 WHERE id = $1 AND balance >= $2 RETURNING *`.
 - CORS `origin:true` in `server/index.js` is intentional — do not re-add allowlist.
-- Money is real (`/api/account/transfer|deposit|withdraw`, Stripe Checkout/Issuing webhooks). No fake `setTimeout` flows.
+- Internal account-to-account transfers are ledger-backed and same-currency. Bank deposit instructions remain pending until official statement reconciliation; manual bank payouts require an operator to initiate and reconcile the real bank transfer. Do not claim automatic international bank settlement unless an actual bank-network integration is built and verified. Merchant checkout and payment-processor integrations are out of scope. No fake `setTimeout` flows.
 - PowerShell: `curl.exe`, `;` not `&&`.
 
 ## Routing
