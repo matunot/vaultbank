@@ -326,6 +326,12 @@ export function WithdrawModal({ isOpen, onClose }: ModalProps) {
   );
 }
 
+interface TradeModalProps extends ModalProps {
+  onTrade: (ticker: string, type: 'buy' | 'sell', shares: number) => Promise<boolean>;
+  investments: { ticker: string; name: string; price: number; shares: number }[];
+  available: number;
+}
+
 export function TradeModal({ isOpen, onClose, onTrade, investments, available }: TradeModalProps) {
   const [ticker, setTicker] = useState('AAPL');
   const [type, setType] = useState<'buy' | 'sell'>('buy');
