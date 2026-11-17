@@ -119,10 +119,6 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal, userName 
         <QuickActions
           onSend={() => onOpenModal('send')}
           onDeposit={() => onOpenModal('deposit')}
-          onPayBill={() => onOpenModal('bill')}
-          onConvert={() => onOpenModal('convert')}
-          onWire={() => onOpenModal('wire')}
-          onMobile={() => onOpenModal('mobile')}
         />
       </Section>
 

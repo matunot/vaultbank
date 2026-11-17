@@ -210,8 +210,8 @@ router.get('/api/vbr/intents/:id', authenticateToken, async (req, res) => {
 // pipeline, creating an intent record before and updating it after. The
 // transfer itself runs through the same code path as /api/account/transfer.
 //
-// For external methods (collections, payouts): the VBR module checks the
-// connector's availability and fails closed if unconfigured.
+// External provider-backed methods are retired and rejected before creating
+// any intent or touching an account/ledger row.
 // ============================================================
 router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
     const { direction, method, amount, currency, counterparty, description, metadata } = req.body;

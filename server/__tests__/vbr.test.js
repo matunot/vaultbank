@@ -1,13 +1,9 @@
 /**
  * VBR (VaultBank Rail) contract tests.
  *
- * Covers: state machine transitions, amount validation (string-based,
- * never floating-point), intent creation with idempotency, cancellation,
- * availability reporting, and fail-closed behavior for unconfigured
- * external connectors.
+ * Covers only VaultBank-native account-to-account transfers. Legacy
+ * provider-backed method names are rejected before any database work.
  */
-
-const mockCfg = { collections: false, payouts: false };
 
 jest.mock('../config/database', () => ({
     db: { query: jest.fn(), ensureConnection: jest.fn(), getClient: jest.fn() },
@@ -44,14 +40,6 @@ jest.mock('../middleware/auth', () => ({
         if (!req.user || req.user.role !== 'admin') return res.status(403).json({ success: false, message: 'Admin access required.' });
         next();
     },
-}));
-jest.mock('../collections', () => ({
-    activeCollectionsProvider: jest.fn(() => null),
-    collectionsAvailability: jest.fn(() => ({ available: false, reason: 'no provider', provider: null })),
-}));
-jest.mock('../payouts', () => ({
-    activePayoutProvider: jest.fn(() => null),
-    payoutAvailability: jest.fn(() => ({ available: false, reason: 'no provider', provider: null })),
 }));
 
 const CDB = require('../config/database');
@@ -207,10 +195,9 @@ describe('VBR API routes', () => {
         const res = await call('/api/vbr/availability');
         expect(res.code).toBe(200);
         expect(res.body.internal.available).toBe(true);
-        expect(res.body.collections.available).toBe(false);
-        expect(res.body.payouts.available).toBe(false);
-        expect(res.body.usd_external.available).toBe(false);
-        expect(res.body.usd_external.reason).toContain('no authorized USD');
+        expect(res.body.internal.execution).toBe('atomic-ledger-transfer');
+        expect(res.body.legacyCollections).toEqual({ available: false, reason: 'retired' });
+        expect(res.body.legacyPayouts).toEqual({ available: false, reason: 'retired' });
     });
 
     // ── Internal send intents now EXECUTE the transfer through the shared service ──
@@ -350,32 +337,14 @@ describe('VBR API routes', () => {
         expect(res.code).toBe(400);
     });
 
-    test('POST /api/vbr/intents: unconfigured collections → 503', async () => {
+    test.each(['collections', 'payouts'])('POST /api/vbr/intents: retired %s method is rejected before touching the database', async (method) => {
         const res = await call('/api/vbr/intents', {
             method: 'post',
-            body: { direction: 'receive', method: 'collections', amount: '100', currency: 'INR' },
+            body: { direction: method === 'collections' ? 'receive' : 'send', method, amount: '100', currency: 'INR' },
         });
-        expect(res.code).toBe(503);
-        expect(res.body.code).toBe('VBR_CONNECTOR_NOT_CONFIGURED');
-    });
-
-    test('POST /api/vbr/intents: unconfigured payouts → 503', async () => {
-        const res = await call('/api/vbr/intents', {
-            method: 'post',
-            body: { direction: 'send', method: 'payouts', amount: '100', currency: 'INR' },
-        });
-        expect(res.code).toBe(503);
-        expect(res.body.code).toBe('VBR_CONNECTOR_NOT_CONFIGURED');
-    });
-
-    test('POST /api/vbr/intents: USD external send → explicitly unavailable', async () => {
-        const res = await call('/api/vbr/intents', {
-            method: 'post',
-            body: { direction: 'send', method: 'payouts', amount: '100', currency: 'USD' },
-        });
-        expect(res.code).toBe(503);
-        expect(res.body.code).toBe('VBR_NO_USD_RAIL');
-        expect(res.body.message).toContain('no authorized USD');
+        expect(res.code).toBe(410);
+        expect(res.body.code).toBe('VBR_METHOD_RETIRED');
+        expect(CDB.db.query).not.toHaveBeenCalled();
     });
 
     test('POST /api/vbr/intents: idempotency-key replay with same params returns original', async () => {

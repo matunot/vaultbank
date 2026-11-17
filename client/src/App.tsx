@@ -12,7 +12,7 @@ import DashboardSection from './components/DashboardSection';
 import ErrorBoundary from './components/ErrorBoundary';
 import PreviewOnlyNotice from './components/PreviewOnlyNotice';
 import EmailVerificationPage from './components/EmailVerificationPage';
-import { TransferModal, DepositModal, PayBillModal, ConvertModal, WireModal, MobileModal, TradeModal, WithdrawModal } from './components/Modals';
+import { TransferModal, DepositModal, TradeModal, WithdrawModal } from './components/Modals';
 import VbPayModal from './components/VbPayModal';
 import { useAppStore } from './store';
 import { api } from './api';
@@ -243,21 +243,13 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
       {paymentRequest && (
         <VbPayModal requestId={paymentRequest} onClose={() => setPaymentRequest(null)} />
       )}
-      {modal === 'bill' && (
-        <PayBillModal isOpen={true} onClose={closeModal} onPayBill={store.payBill} />
-      )}
+
       {modal === 'withdraw' && (
         <WithdrawModal isOpen={true} onClose={closeModal} />
       )}
-      {modal === 'convert' && (
-        <ConvertModal isOpen={true} onClose={closeModal} />
-      )}
-      {modal === 'wire' && (
-        <WireModal isOpen={true} onClose={closeModal} />
-      )}
-      {modal === 'mobile' && (
-        <MobileModal isOpen={true} onClose={closeModal} />
-      )}
+
+
+
       {modal === 'trade' && (
         <TradeModal 
           isOpen={true} 

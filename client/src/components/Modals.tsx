@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Send, Plus, Receipt, ArrowRightLeft, Globe, Smartphone, CheckCircle2, Loader2, TrendingUp, UserSearch, Banknote, Building2 } from 'lucide-react';
+import { X, Send, CheckCircle2, Loader2, TrendingUp, UserSearch, Banknote, Building2 } from 'lucide-react';
 import RichIcon from './RichIcon';
 import Avatar from './Avatar';
 import { api } from '../api';
@@ -324,46 +324,6 @@ export function WithdrawModal({ isOpen, onClose }: ModalProps) {
       </div>
     </BaseModal>
   );
-}
-
-export function ConvertModal({ isOpen, onClose }: ModalProps) {
-  return (
-    <BaseModal isOpen={isOpen} onClose={onClose} icon={ArrowRightLeft} title="Currency Convert" subtitle="FOREX EXCHANGE">
-      <div className="text-center py-8 text-white/40">
-        <Globe className="w-12 h-12 mx-auto mb-3 text-amber-400/40" />
-        <p>Advanced FX trading coming soon</p>
-      </div>
-    </BaseModal>
-  );
-}
-
-export function WireModal({ isOpen, onClose }: ModalProps) {
-  return (
-    <BaseModal isOpen={isOpen} onClose={onClose} icon={Globe} title="International Wire" subtitle="SWIFT TRANSFERS">
-      <div className="text-center py-8 text-white/40">
-        <Smartphone className="w-12 h-12 mx-auto mb-3 text-purple-400/40" />
-        <p>Wire transfer setup coming soon</p>
-      </div>
-    </BaseModal>
-  );
-}
-
-export function MobileModal({ isOpen, onClose }: ModalProps) {
-  return (
-    <BaseModal isOpen={isOpen} onClose={onClose} icon={Smartphone} title="Mobile Top-up" subtitle="PHONE RECHARGE">
-      <div className="text-center py-8 text-white/40">
-        <Smartphone className="w-12 h-12 mx-auto mb-3 text-orange-400/40" />
-        <p>Mobile recharge coming soon</p>
-      </div>
-    </BaseModal>
-  );
-}
-
-// Interactive Trading Simulator Modal
-interface TradeModalProps extends ModalProps {
-  onTrade: (ticker: string, type: 'buy' | 'sell', shares: number) => Promise<boolean>;
-  investments: { ticker: string; name: string; price: number; shares: number }[];
-  available: number;
 }
 
 export function TradeModal({ isOpen, onClose, onTrade, investments, available }: TradeModalProps) {
