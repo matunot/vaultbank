@@ -426,6 +426,24 @@ export const api = {
   },
 
   // ── Unified USD + INR payments core ────────────────────────────────────────
+  async getUpiP2PProfile(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/upi-p2p/profile');
+  },
+
+  async saveUpiP2PProfile(data: { handle: string; vpa: string; payeeName: string; isListed: boolean }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/upi-p2p/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async resolveVaultTag(handle: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/upi-p2p/resolve', {
+      method: 'POST',
+      body: JSON.stringify({ handle }),
+    });
+  },
+
   async paymentsReadiness(): Promise<ApiResponse> {
     return request<ApiResponse>('api/payments/readiness');
   },

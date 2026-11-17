@@ -9,6 +9,7 @@ export const navItems = [
   { id: 'invest',   label: 'Invest',     icon: 'TrendingUp' },
   { id: 'loans',    label: 'Debts',      icon: 'Landmark' },
   { id: 'send',     label: 'Transfer',   icon: 'Send' },
+  { id: 'upi-p2p',  label: 'UPI P2P',    icon: 'IndianRupee' },
   { id: 'history',  label: 'History',    icon: 'History' },
   { id: 'rewards',  label: 'Rewards',    icon: 'Gem' },
   { id: 'security', label: 'Security',   icon: 'Shield' },

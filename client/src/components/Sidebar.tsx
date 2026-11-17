@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Home, CreditCard, TrendingUp, Send, History, Gem, Settings, LogOut, Vault, ChevronLeft, Landmark, PieChart, Mountain, Wallet, Zap,
+  Home, CreditCard, TrendingUp, Send, History, Gem, Settings, LogOut, Vault, ChevronLeft, Landmark, PieChart, Mountain, Wallet, Zap, IndianRupee,
 } from 'lucide-react';
 import { navItems } from '../data';
+import { api } from '../api';
 import RichIcon from './RichIcon';
 
 // ponytail: dev-only preview sections keep their nav entries out of production
@@ -14,13 +15,13 @@ const visibleNavItems = import.meta.env.DEV
   : navItems.filter((item) => !DEV_ONLY_SECTIONS.includes(item.id));
 
 const iconMap: Record<string, React.ComponentType<any>> = {
-  Home, Vault, CreditCard, TrendingUp, Send, History, Gem, Landmark, PieChart, Mountain, Wallet, Zap,
+  Home, Vault, CreditCard, TrendingUp, Send, History, Gem, Landmark, PieChart, Mountain, Wallet, Zap, IndianRupee,
 };
 
 const variantMap: Record<string, 'gold' | 'emerald' | 'ruby' | 'sapphire' | 'amethyst' | 'amber' | 'cyan'> = {
   Home: 'gold', Vault: 'amethyst', CreditCard: 'sapphire', TrendingUp: 'emerald',
   Send: 'cyan', History: 'amber', Gem: 'ruby', Landmark: 'emerald', PieChart: 'sapphire', Mountain: 'ruby',
-  Wallet: 'cyan',
+  Wallet: 'cyan', IndianRupee: 'emerald',
 };
 
 interface Props {
@@ -31,6 +32,10 @@ interface Props {
 }
 
 export default function Sidebar({ active, setActive, onSettings, onLogout }: Props) {
+  const isAdmin = ['admin', 'super_admin'].includes(String(api.getUser()?.role || '').toLowerCase());
+  const userNavItems = isAdmin
+    ? [...visibleNavItems, { id: 'bank-api', icon: 'Landmark', label: 'Bank API' }]
+    : visibleNavItems;
   const [collapsed, setCollapsed] = useState(false);
 
   const toggle = useCallback(() => setCollapsed(c => !c), []);
@@ -76,7 +81,7 @@ export default function Sidebar({ active, setActive, onSettings, onLogout }: Pro
 
       {/* Nav */}
       <nav className="px-3 flex-1 space-y-1 mt-2 overflow-y-auto">
-        {visibleNavItems.map((item, i) => {
+        {userNavItems.map((item, i) => {
           const Icon = iconMap[item.icon] ?? Home;
           const isActive = active === item.id;
           return (

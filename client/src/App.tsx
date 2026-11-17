@@ -26,6 +26,8 @@ const CardsSection = lazy(() => import('./components/IssuingCardsSection'));
 const CardProgramSection = lazy(() => import('./components/CardProgramSection'));
 const LoanApplicationSection = lazy(() => import('./components/LoanApplicationSection'));
 const PaymentsSection = lazy(() => import('./components/PaymentsSection'));
+const BankApiSetupSection = lazy(() => import('./components/BankApiSetupSection'));
+const UpiP2PSection = lazy(() => import('./components/UpiP2PSection'));
 const InvestmentsSection = isDev ? lazy(() => import('./components/InvestmentsSection')) : (null as unknown as typeof import('./components/InvestmentsSection').default);
 const VaultSection = isDev ? lazy(() => import('./components/VaultSection')) : (null as unknown as typeof import('./components/VaultSection').default);
 const SavingsAccountsSection = lazy(() => import('./components/SavingsAccountsSection'));
@@ -271,6 +273,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                     {active === 'swiss' && <SwissSection previewOnly={!isDev} />}
                     {active === 'cards' && (isDev ? <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /> : <CardProgramSection />)}
                     {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
+                    {active === 'bank-api' && (['admin', 'super_admin'].includes(String(currentUser?.role || '').toLowerCase()) ? <BankApiSetupSection /> : <PreviewOnlyNotice title="Admin access required" message="Bank integration setup is restricted to VaultBank administrators." />)}
                     {active === 'invest' && (isDev ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
 {active === 'pay' && <VbPaySection />}
                     {active === 'credit' && (isDev ? <CreditSection /> : <CardProgramSection defaultCardType="credit" />)}
@@ -278,6 +281,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                     {active === 'loans' && (isDev ? <DebtsSection /> : <LoanApplicationSection />)}
                     {active === 'budget' && (isDev ? <BudgetSection /> : <PreviewOnlyNotice title="Budget tools are a development preview" message="The current budget figures are example data, not your personal spending history. Live transaction-linked budgets are not connected yet." />)}
                     {active === 'send' && <TransferSection />}
+                    {active === 'upi-p2p' && <UpiP2PSection />}
                     {active === 'history' && <HistorySection />}
                     {active === 'rewards' && (isDev ? <RewardsSection /> : <PreviewOnlyNotice title="Rewards program is not live yet" message="The development preview contains sample points and benefits. Production rewards, interest rates, and fee waivers are not being promised by this screen." />)}
                     {active === 'security' && <VerificationSection />}
