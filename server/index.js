@@ -494,9 +494,6 @@ async function startServer() {
 }
 
 startServer();
-if (typeof issuingRoutes.startIssuingAutomation === 'function') {
-    issuingRoutes.startIssuingAutomation();
-}
 if (typeof creditRoutes.startCreditAutomation === 'function') {
     creditRoutes.startCreditAutomation();
 }
