@@ -5,12 +5,14 @@
  * Usage: node scripts/verify-deploy.js [base-url]
  *        (default: the live single-origin deployment)
  *
- * Checks, with exact printed evidence per check:
- *   1. GET  /health     -> 200, status ok, authProbe ok (liveness)
- *   2. GET  /ready      -> 200, database connected (PostgreSQL readiness)
- *   3. GET  /           -> the SPA shell is served (HTML)
- *   4. GET  /api/payments/readiness -> truthful, non-secret rail state.
- *   5. POST /api/providers/nium/webhook without credentials -> 401 fail-closed.
+ * Checks:
+ *   1. GET  /health -> live API process
+ *   2. GET  /ready  -> connected PostgreSQL database
+ *   3. GET  /       -> customer SPA shell
+ *   4. GET  /api/payments/readiness -> native bank-user rail state only
+ *   5. GET  /api/direct-upi/availability -> new production UPI intents retired
+ *   6. POST legacy Nium webhook -> 404 (route removed)
+ *   7. POST legacy VB Pay merchant route -> 404 (merchant product removed)
  *
  * Exit: 0 all pass · 1 any failure.
  */
@@ -47,61 +49,74 @@ async function main() {
     try {
         const s = await fetchWithTimeout(base + '/');
         const text = await s.text();
-        mark('SPA shell', s.status === 200 && /<\/html>/i.test(text), 'HTTP ' + s.status + ', ' + text.length + ' bytes');
-        if (!(s.status === 200)) ok = false;
+        const spaOk = s.status === 200 && /<\/html>/i.test(text);
+        mark('SPA shell', spaOk, 'HTTP ' + s.status + ', ' + text.length + ' bytes');
+        if (!spaOk) ok = false;
     } catch (e) { mark('SPA shell', false, e.message); ok = false; }
 
-    // Public, money-free probe of VaultBank-native rail availability.
-    // Print only booleans and non-secret reason codes; never VPA, bank details, or credentials.
+    // Public, money-free probe of VaultBank-native bank-user rail availability.
     try {
         const response = await fetchWithTimeout(base + '/api/payments/readiness');
         const body = await response.json();
         const inr = body && body.rails && body.rails.inr;
         const usd = body && body.rails && body.rails.usd;
-        const shapeOk = response.status === 200 && body.success === true && inr && usd && Array.isArray(body.currencies);
+        const shapeOk = response.status === 200 && body.success === true
+            && body.nativeOnly === true && inr && usd && Array.isArray(body.currencies);
         const describe = (value, reason) => (value ? 'ready' : 'disabled') + (reason ? ' (' + reason + ')' : '');
         const note = shapeOk
-            ? 'INR direct-UPI=' + describe(inr.directUpi, inr.directUpiReason)
-                + '; INR bank-receive-instructions=' + describe(inr.bankTransferInstructions)
+            ? 'INR bank-receive-instructions=' + describe(inr.bankTransferInstructions)
                 + '; USD bank-receive-instructions=' + describe(usd.bankTransferInstructions)
                 + '; manual-bank-payout=' + describe(inr.directBankPayouts, inr.directBankPayoutsReason)
-                + '; internal-transfers=' + String(!!inr.internalTransfers)
+                + '; internal-transfers=' + String(!!inr.internalTransfers && !!usd.internalTransfers)
+                + '; USD ACH automatic-transfer=' + String(!!usd.achAutomaticTransfer)
                 + '; USD external-withdrawals=' + String(!!usd.externalWithdrawals)
-            : 'HTTP ' + response.status + ' — readiness payload unavailable';
-        mark('native money-rail readiness', !!shapeOk, note);
+            : 'HTTP ' + response.status + ' — native readiness payload unavailable';
+        mark('native bank-user readiness', !!shapeOk, note);
         if (!shapeOk) ok = false;
 
-        // Production must stay native-only. Old provider credentials or flags
-        // must not reactivate third-party collections/payouts, auto-credit, or
-        // USD external withdrawals.
         const nativeOnlyOk = !!shapeOk
-            && body.nativeOnly === true
-            && inr.collections === false
-            && inr.payouts === false
-            && inr.directUpiAutoCredit === false
+            && inr.internalTransfers === true
+            && usd.internalTransfers === true
             && inr.directBankPayoutsAutoTransfer === false
+            && usd.achAutomaticTransfer === false
             && usd.externalWithdrawals === false;
         mark(
-            'production native-only safety',
+            'native money-movement safety',
             nativeOnlyOk,
             nativeOnlyOk
-                ? 'legacy collections/payouts disabled; UPI auto-credit and automatic bank transfer off; USD external withdrawals off'
-                : 'production native-only invariant is violated or missing'
+                ? 'same-currency internal transfers available; automatic ACH, automatic bank payouts, and USD external withdrawals off'
+                : 'native bank-transfer safety invariant is violated or missing'
         );
         if (!nativeOnlyOk) ok = false;
-    } catch (e) { mark('native money-rail readiness', false, e.message); ok = false; }
+    } catch (e) { mark('native bank-user readiness', false, e.message); ok = false; }
 
+    // Production no longer creates UPI intents. Historical rows remain for admin reconciliation.
     try {
-        const w = await fetchWithTimeout(base + '/api/providers/nium/webhook', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: '{}',
-        });
-        const failClosed = w.status === 401;
-        const note = 'HTTP ' + w.status + (failClosed ? '' : ' — 404 would mean an old build; 200 would be a security bug');
-        mark('provider webhook fail-closed', failClosed, note);
-        if (!failClosed) ok = false;
-    } catch (e) { mark('provider webhook fail-closed', false, e.message); ok = false; }
+        const response = await fetchWithTimeout(base + '/api/direct-upi/availability');
+        const body = await response.json();
+        const retired = response.status === 200 && body.success === true
+            && body.available === false && body.reason === 'retired' && body.autoCredit === false;
+        mark('new production UPI intents retired', retired, 'HTTP ' + response.status + ' reason=' + String(body.reason || 'unknown'));
+        if (!retired) ok = false;
+    } catch (e) { mark('new production UPI intents retired', false, e.message); ok = false; }
+
+    // Merchant checkout and external processor routes must no longer be mounted.
+    const removedRoutes = [
+        ['legacy Nium webhook route removed', '/api/providers/nium/webhook'],
+        ['VB Pay merchant route removed', '/api/vbpay/merchant'],
+    ];
+    for (const [label, route] of removedRoutes) {
+        try {
+            const response = await fetchWithTimeout(base + route, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: '{}',
+            });
+            const removed = response.status === 404;
+            mark(label, removed, 'HTTP ' + response.status + (removed ? '' : ' — route should not be mounted'));
+            if (!removed) ok = false;
+        } catch (e) { mark(label, false, e.message); ok = false; }
+    }
 
     console.log('');
     console.log('Deploy verification for ' + base + ': ' + results.map((r) => (r.ok ? 'PASS ' : 'FAIL ') + r.step).join(' | '));
