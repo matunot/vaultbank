@@ -24,7 +24,6 @@ const reportsRoutes = require('./routes/reports');
 const accountRoutes = require('./routes/accounts');
 const savingsRoutes = require('./routes/savings');
 const creditRoutes = require('./routes/credit');
-const vbPayRoutes = require('./routes/vbpay');
 const usdcWithdrawalRoutes = require('./routes/usdc-withdrawals');
 const anomaliesRoutes = require('./routes/anomalies');
 const directUpiRoutes = require('./routes/direct-upi');
@@ -200,7 +199,6 @@ app.use('/', reportsRoutes);
 app.use('/', accountRoutes);
 app.use('/', savingsRoutes);
 app.use('/', creditRoutes);
-app.use('/', vbPayRoutes);
 app.use('/', usdcWithdrawalRoutes);
 
 // ─── VaultBank-native bank transfer routes ────────────────────────────────
