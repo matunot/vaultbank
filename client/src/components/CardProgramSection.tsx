@@ -93,7 +93,7 @@ export default function CardProgramSection() {
           <p className="bank-eyebrow">Card services</p>
           <h1 id="cards-page-title" className="bank-page-title">Cards</h1>
           <p className="bank-page-subtitle">
-            Choose the card programme you want to request and track its review status in one place.
+            Choose a debit or credit card, select the account currency, and track your request in one place.
           </p>
         </div>
         <div className="bank-cards__header-mark" aria-hidden="true"><CreditCard size={25} /></div>
@@ -108,7 +108,7 @@ export default function CardProgramSection() {
         <div className="bank-cards__form-heading">
           <div>
             <p className="bank-label">Choose your card type</p>
-            <h2>What do you need?</h2>
+            <h2>Select a card type</h2>
             <p>Select the way you intend to use the card. This does not open or approve a credit facility.</p>
           </div>
           <span className="bank-cards__step">01 <span>/</span> 02</span>
@@ -137,7 +137,7 @@ export default function CardProgramSection() {
             <span className="bank-cards__type-icon"><CreditCard size={20} /></span>
             <span className="bank-cards__type-copy">
               <strong>Credit card</strong>
-              <span>Requires a separately approved credit facility and issuer.</span>
+              <span>For borrowing purchases. Requires separate credit approval and an issuer.</span>
             </span>
             <span className="bank-cards__radio" aria-hidden="true" />
           </button>
