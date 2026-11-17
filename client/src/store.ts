@@ -99,6 +99,10 @@ export function useAppStore() {
   }, []);
 
   useEffect(() => {
+    // The legacy Issuing UI is dev-only; production uses CardProgramSection.
+    // Do not call the disabled legacy /api/issuing/cards endpoint on every
+    // production dashboard load.
+    if (!import.meta.env.DEV) return;
     refreshCards();
     const unsub = refreshBus.subscribe(refreshCards);
     return unsub;

@@ -51,10 +51,29 @@ export default function NotificationsPanel() {
   }, []);
 
   useEffect(() => {
-    fetchAlerts();
-    const unsub = refreshBus.subscribe(fetchAlerts);
-    const poll = setInterval(fetchAlerts, 20000);
-    return () => { unsub(); clearInterval(poll); };
+    let disposed = false;
+    let inFlight = false;
+
+    const refreshVisibleAlerts = () => {
+      if (disposed || inFlight || document.visibilityState !== 'visible') return;
+      inFlight = true;
+      void fetchAlerts().finally(() => { inFlight = false; });
+    };
+
+    refreshVisibleAlerts();
+    const unsub = refreshBus.subscribe(refreshVisibleAlerts);
+    const poll = window.setInterval(refreshVisibleAlerts, 60000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshVisibleAlerts();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      disposed = true;
+      unsub();
+      window.clearInterval(poll);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [fetchAlerts]);
 
   const unreadCount = alerts.filter(n => !n.read).length;
