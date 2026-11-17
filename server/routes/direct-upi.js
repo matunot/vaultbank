@@ -49,13 +49,14 @@ function requireVerifiedCustomerOrAdmin(req, res, next) {
 let schemaReady = false;
 
 function readiness() {
+  const retired = process.env.NODE_ENV === 'production';
   const enabledFlag = process.env.VB_UPI_DEPOSIT_ENABLED === 'true';
   const vpa = String(process.env.VB_UPI_RECEIVING_VPA || '').trim();
   const payeeName = String(process.env.VB_UPI_RECEIVING_NAME || '').trim();
   const valid = VPA_RE.test(vpa) && payeeName.length >= 2 && payeeName.length <= 70;
   return {
-    available: enabledFlag && valid,
-    enabled: enabledFlag && valid,
+    available: !retired && enabledFlag && valid,
+    enabled: !retired && enabledFlag && valid,
     configured: valid,
     customerAccessEnabled: process.env.VB_DIRECT_UPI_CUSTOMER_ACCESS_ENABLED === 'true',
     provider: 'vaultbank-direct-upi',
@@ -65,7 +66,7 @@ function readiness() {
     payeeName: enabledFlag && valid ? payeeName : null,
     verification: 'manual-bank-statement',
     autoCredit: false,
-    reason: !enabledFlag ? 'disabled-by-operator' : (!valid ? 'receiving-vpa-or-payee-not-configured' : 'configured-manual-verification'),
+    reason: retired ? 'retired' : (!enabledFlag ? 'disabled-by-operator' : (!valid ? 'receiving-vpa-or-payee-not-configured' : 'configured-manual-verification')),
     minAmount: MIN_AMOUNT_PAISE / 100,
     maxAmount: MAX_AMOUNT_PAISE / 100,
     expiryMinutes: EXPIRY_MINUTES,
@@ -229,6 +230,13 @@ router.get('/api/direct-upi/config', authenticateToken, requireVerifiedCustomerO
 });
 
 router.post('/api/direct-upi/intents', authenticateToken, requireVerifiedCustomerOrAdmin, async (req, res) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(410).json({
+      success: false,
+      code: 'DIRECT_UPI_RETIRED',
+      message: 'New UPI deposit intents are retired. Use an enabled bank-transfer rail instead.',
+    });
+  }
   let idempotencyKey = '';
   let requestAmountPaise = null;
   let cfg = null;
