@@ -23,113 +23,6 @@ export const balance = {
   invested: 125400.00,
 };
 
-export const cards = [
-  {
-    id: 1,
-    type: 'Obsidian Gold',
-    network: 'VISA',
-    last4: '4827',
-    balance: 142350.50,
-    limit: 25000,
-    color: 'gold',
-    gradient: 'from-amber-500/20 via-yellow-500/10 to-amber-700/20',
-    accent: '#d4af37',
-    expiry: '12/28',
-    holder: 'JOHN ANDERSON',
-  },
-  {
-    id: 2,
-    type: 'Emerald Elite',
-    network: 'Mastercard',
-    last4: '9014',
-    balance: 85420.00,
-    limit: 15000,
-    color: 'emerald',
-    gradient: 'from-emerald-500/20 via-teal-500/10 to-emerald-700/20',
-    accent: '#10b981',
-    expiry: '09/27',
-    holder: 'JOHN ANDERSON',
-  },
-  {
-    id: 3,
-    type: 'Sapphire Reserve',
-    network: 'AMEX',
-    last4: '3156',
-    balance: 25126.90,
-    limit: 10000,
-    color: 'sapphire',
-    gradient: 'from-blue-500/20 via-indigo-500/10 to-blue-700/20',
-    accent: '#3b82f6',
-    expiry: '03/29',
-    holder: 'JOHN ANDERSON',
-  },
-  {
-    id: 4,
-    type: 'Platinum Travel',
-    network: 'VISA',
-    last4: '6692',
-    balance: 8930.00,
-    limit: 15000,
-    color: 'ruby',
-    gradient: 'from-rose-500/20 via-red-500/10 to-rose-700/20',
-    accent: '#e11d48',
-    expiry: '08/30',
-    holder: 'JOHN ANDERSON',
-  },
-];
-
-export const cardTransactions: Record<number, { name: string; date: string; amount: number; category: string; }[]> = {
-  1: [
-    { name: 'Saks Fifth Avenue',     date: 'Today',       amount: -2840, category: 'Luxury' },
-    { name: 'Private Jet Membership',date: 'Yesterday',   amount: -12000,category: 'Travel' },
-    { name: 'The Restaurant at DZ',  date: 'Dec 20',      amount: -890,  category: 'Dining' },
-    { name: 'Vault Concierge Fee',   date: 'Dec 15',      amount: -250,  category: 'Service' },
-  ],
-  2: [
-    { name: 'Technogym Equipment',   date: 'Today',       amount: -3400, category: 'Fitness' },
-    { name: 'Mastercard Rewards',    date: 'Yesterday',   amount: 120,   category: 'Cashback' },
-    { name: 'Organic Groceries',     date: 'Dec 21',      amount: -280,  category: 'Groceries' },
-    { name: 'Annual Fee',            date: 'Dec 10',      amount: -95,   category: 'Fee' },
-  ],
-  3: [
-    { name: 'Delta Airlines First',  date: 'Today',       amount: -5200, category: 'Travel' },
-    { name: 'AMEX Platinum Credit',  date: 'Yesterday',   amount: 350,   category: 'Credit' },
-    { name: 'Ritz Carlton Suite',    date: 'Dec 22',      amount: -2800, category: 'Travel' },
-  ],
-  4: [
-    { name: 'Booking.com Hotel',     date: 'Today',       amount: -1450, category: 'Travel' },
-    { name: 'Air France Business',   date: 'Yesterday',   amount: -3200, category: 'Travel' },
-    { name: 'Global Entry Renewal',  date: 'Dec 18',      amount: -100,  category: 'Government' },
-  ],
-};
-
-export const cardSpendingCategories: Record<number, { label: string; amount: number; color: string; }[]> = {
-  1: [
-    { label: 'Luxury Goods',  amount: 8400, color: '#d4af37' },
-    { label: 'Travel',        amount: 5200, color: '#3b82f6' },
-    { label: 'Dining',        amount: 3800, color: '#ef4444' },
-    { label: 'Service',       amount: 2500, color: '#a855f7' },
-  ],
-  2: [
-    { label: 'Fitness',       amount: 5400, color: '#10b981' },
-    { label: 'Groceries',     amount: 3200, color: '#f59e0b' },
-    { label: 'Entertainment', amount: 1800, color: '#ec4899' },
-    { label: 'Other',         amount: 1200, color: '#64748b' },
-  ],
-  3: [
-    { label: 'Travel',        amount: 8200, color: '#3b82f6' },
-    { label: 'Dining',        amount: 2400, color: '#ef4444' },
-    { label: 'Entertainment', amount: 1500, color: '#ec4899' },
-    { label: 'Services',      amount: 800,  color: '#a855f7' },
-  ],
-  4: [
-    { label: 'Travel',        amount: 4800, color: '#3b82f6' },
-    { label: 'Hotels',        amount: 2900, color: '#8b5cf6' },
-    { label: 'Dining',        amount: 1200, color: '#ef4444' },
-    { label: 'Other',         amount: 600,  color: '#64748b' },
-  ],
-};
-
 export const transactions = [
   { id: 1,  name: 'Aman Tokyo',          cat: 'Dining',     amount: -480.00, date: 'Today · 8:42 PM',  icon: '🍣', gem: 'ruby'     },
   { id: 2,  name: 'Salary — Atlas Corp', cat: 'Income',     amount:  8500.00, date: 'Today · 9:00 AM',  icon: '💎', gem: 'emerald'  },
@@ -478,26 +371,6 @@ export const anonymousTransfers = [
   { id: 'TX-5B9E2D', amount: 850,   tier: 'Stealth',     recipient: '0x9D2...4B8e',  time: '1 week ago',   status: 'completed', hops: 5, fee: 4.25 },
 ];
 
-// ── Digital Payment Methods ──────────────────────────────
-export const digitalWallets = [
-  { id: 'applepay',    name: 'Apple Pay',     balance: 4280.50,  brandColor: '#000000', accentColor: '#ffffff', connected: true,  type: 'digital', region: 'Global',     emoji: '', icon: '' },
-  { id: 'googlepay',   name: 'Google Pay',    balance: 3140.00,  brandColor: '#4285F4', accentColor: '#34A853', connected: true,  type: 'digital', region: 'Global',     emoji: '', icon: '' },
-  { id: 'samsungpay',  name: 'Samsung Pay',   balance: 890.00,   brandColor: '#1428A0', accentColor: '#e60012', connected: true,  type: 'digital', region: 'Global',     emoji: '', icon: '' },
-  { id: 'paypal',      name: 'PayPal',        balance: 7820.40,  brandColor: '#003087', accentColor: '#009cde', connected: true,  type: 'digital', region: 'Global',     emoji: '🅿️', icon: '' },
-  { id: 'venmo',       name: 'Venmo',         balance: 1240.00,  brandColor: '#3D95CE', accentColor: '#008CFF', connected: true,  type: 'digital', region: 'USA',        emoji: '💙', icon: '' },
-  { id: 'cashapp',     name: 'Cash App',      balance: 2150.75,  brandColor: '#00D632', accentColor: '#00C853', connected: true,  type: 'digital', region: 'USA',        emoji: '💵', icon: '' },
-];
-
-export const regionalPayments = [
-  { id: 'alipay',      name: 'Alipay',        balance: 24500,    currency: 'CNY', brandColor: '#1677FF', accentColor: '#00A3FF', connected: true, region: 'China',      handle: 'john*anderson',   emoji: '🇨🇳' },
-  { id: 'wechat',      name: 'WeChat Pay',    balance: 12800,    currency: 'CNY', brandColor: '#07C160', accentColor: '#2DC100', connected: true, region: 'China',      handle: 'JohnAnd88',       emoji: '💬' },
-  { id: 'pix',         name: 'Pix',           balance: 18200,    currency: 'BRL', brandColor: '#00B7C3', accentColor: '#32BCAD', connected: true, region: 'Brazil',     handle: 'john@email.com',  emoji: '🇧🇷' },
-  { id: 'revolut',     name: 'Revolut',       balance: 3400,     currency: 'EUR', brandColor: '#0075EB', accentColor: '#06D6A0', connected: true, region: 'Europe',     handle: '@johnvault',      emoji: '🌍' },
-  { id: 'wero',        name: 'Wero',          balance: 2150,     currency: 'EUR', brandColor: '#E5007D', accentColor: '#FF4FA3', connected: false,region: 'Europe',     handle: 'Not connected',   emoji: '⚡' },
-  { id: 'gcash',       name: 'GCash',         balance: 28400,    currency: 'PHP', brandColor: '#007BC4', accentColor: '#00C2FF', connected: true, region: 'Philippines',handle: '0917***8847',     emoji: '🇵🇭' },
-  { id: 'grabpay',     name: 'GrabPay',       balance: 9800,     currency: 'SGD', brandColor: '#00B14F', accentColor: '#1FBC4D', connected: true, region: 'SE Asia',    handle: '+65****8847',     emoji: '🛵' },
-];
-
 export const cryptoWallets = [
   { id: 'btc',   name: 'Bitcoin',  symbol: 'BTC',  balance: 2.8471,   usdValue: 191482.50, change: 5.2,  color: '#F7931A', chain: 'Bitcoin',    address: 'bc1qxy2k...8x7m9k', icon: '₿' },
   { id: 'eth',   name: 'Ethereum', symbol: 'ETH',  balance: 18.4200,  usdValue: 64089.40,  change: 3.1,  color: '#627EEA', chain: 'Ethereum',   address: '0x4f8e...a2b9',    icon: 'Ξ' },
@@ -509,29 +382,7 @@ export const cryptoWallets = [
   { id: 'usdc',  name: 'USD Coin', symbol: 'USDC', balance: 28500,    usdValue: 28500.00,  change: 0.05, color: '#2775CA', chain: 'Ethereum',   address: '0x9a3d...f4c1',    icon: '$' },
 ];
 
-export const availablePaymentMethods = [
-  { id: 'applepay',    name: 'Apple Pay',      category: 'Digital Wallet', color: '#000000', connected: true,  emoji: '' },
-  { id: 'googlepay',   name: 'Google Pay',     category: 'Digital Wallet', color: '#4285F4', connected: true,  emoji: '' },
-  { id: 'samsungpay',  name: 'Samsung Pay',    category: 'Digital Wallet', color: '#1428A0', connected: true,  emoji: '' },
-  { id: 'paypal',      name: 'PayPal',         category: 'Digital Wallet', color: '#003087', connected: true,  emoji: '🅿️' },
-  { id: 'venmo',       name: 'Venmo',          category: 'Digital Wallet', color: '#3D95CE', connected: true,  emoji: '💙' },
-  { id: 'cashapp',     name: 'Cash App',       category: 'Digital Wallet', color: '#00D632', connected: true,  emoji: '💵' },
-  { id: 'alipay',      name: 'Alipay',         category: 'Regional',       color: '#1677FF', connected: true,  emoji: '🇨🇳' },
-  { id: 'wechat',      name: 'WeChat Pay',     category: 'Regional',       color: '#07C160', connected: true,  emoji: '💬' },
-  { id: 'pix',         name: 'Pix',            category: 'Regional',       color: '#00B7C3', connected: true,  emoji: '🇧🇷' },
-  { id: 'gcash',       name: 'GCash',          category: 'Regional',       color: '#007BC4', connected: true,  emoji: '🇵🇭' },
-  { id: 'wero',        name: 'Wero',           category: 'Regional',       color: '#E5007D', connected: false, emoji: '⚡' },
-  { id: 'btc',         name: 'Bitcoin',        category: 'Crypto',         color: '#F7931A', connected: true,  emoji: '₿' },
-  { id: 'eth',         name: 'Ethereum',       category: 'Crypto',         color: '#627EEA', connected: true,  emoji: 'Ξ' },
-  { id: 'usdt',        name: 'Tether USDT',    category: 'Crypto',         color: '#26A17B', connected: true,  emoji: '₮' },
-  { id: 'sol',         name: 'Solana',         category: 'Crypto',         color: '#9945FF', connected: true,  emoji: '◎' },
-];
 
-export const paymentCategories = [
-  { id: 'digital',  label: 'Digital Wallets', icon: '📱', count: 6 },
-  { id: 'regional', label: 'Regional Pay',    icon: '🌍', count: 8 },
-  { id: 'crypto',   label: 'Crypto',          icon: '🪙', count: 8 },
-];
 
 // ─── Security Data ──────────────────────────────────────
 export const securitySessions = [
