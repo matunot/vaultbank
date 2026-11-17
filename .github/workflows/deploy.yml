@@ -40,7 +40,7 @@ jobs:
 
       # Render has autoDeploy=yes on main. Always run a blocking public verification;
       # don't silently skip the check just because an optional deploy-hook secret is absent.
-      - name: Verify Render deployment (health + PostgreSQL readiness + SPA + fail-closed rails)
+      - name: Verify Render deployment (health + PostgreSQL readiness + native bank rails + removed merchant routes)
         if: success()
         timeout-minutes: 7
         shell: bash
@@ -55,7 +55,7 @@ jobs:
             status=$(curl -sS -o /tmp/render-health.json -w "%{http_code}" --max-time 10 "$RENDER_BASE_URL/health" || true)
             if [ "$status" = "200" ]; then
               if node scripts/verify-deploy.js "$RENDER_BASE_URL"; then
-                echo "✅ Render health, PostgreSQL readiness, SPA shell, and fail-closed rail checks passed."
+                echo "✅ Render health, PostgreSQL readiness, native bank rails, and removed merchant-route checks passed."
                 exit 0
               fi
               echo "Health responded 200 but full deployment verification is not ready yet."
@@ -64,7 +64,7 @@ jobs:
             fi
             if [ "$attempt" -lt 30 ]; then sleep 10; fi
           done
-          echo "::error::Render deployment did not pass health + SPA + webhook verification."
+          echo "::error::Render deployment did not pass health + SPA + native bank-rail verification."
           exit 1
 
   # ─── Frontend: Verify Build (Vercel auto-deploys from GitHub) ───────
