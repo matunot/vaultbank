@@ -81,6 +81,7 @@ A software licence cannot grant a banking licence.
   disbursement, interest accrual on customer credit.
 - FX conversion of any kind.
 - Automatic external settlement of any kind.
+- Merchant payment-request, payment-link, QR-checkout, and merchant settlement features.
 - Investment/trading execution, rewards ledger, budget engine (the UI shows a
   "not connected" notice for these in production).
 
