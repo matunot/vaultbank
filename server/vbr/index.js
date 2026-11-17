@@ -3,8 +3,7 @@
  *
  * A provider-neutral payment intent module that:
  *   1. Creates, reads, and cancels payment intents.
- *   2. Routes intents to the correct connector (internal transfer, collections,
- *      payouts) based on the intent's method.
+ *   2. Executes only VaultBank-native account-to-account transfers.
  *   3. Validates ALL state transitions through the centralized state machine.
  *   4. Enforces idempotency via a DB unique index on (user_id, idempotency_key).
  *   5. Stores amounts as exact NUMERIC strings — never parseFloat.
@@ -48,6 +47,8 @@ async function ensureTables() {
             account_id UUID NOT NULL,
             idempotency_key TEXT,
             direction TEXT NOT NULL CHECK (direction IN ('send', 'receive')),
+            -- Legacy values remain valid so historical intents remain readable.
+            -- New intents are restricted to the native internal method below.
             method TEXT NOT NULL CHECK (method IN ('internal', 'collections', 'payouts')),
             amount NUMERIC(15,2) NOT NULL CHECK (amount > 0),
             currency TEXT NOT NULL CHECK (currency IN (${SQL_CURRENCY_LIST})),
@@ -122,40 +123,15 @@ async function markReconciliationRequired(intentId, reason) {
 }
 
 // ── Availability: which VBR methods are genuinely ready? ──
-const { activeCollectionsProvider, collectionsAvailability } = require('../collections');
-const { activePayoutProvider, payoutAvailability } = require('../payouts');
-
 function vbrAvailability() {
-    const collections = collectionsAvailability();
-    const payouts = payoutAvailability();
     return {
-        internal: { available: true, reason: 'always available (VaultBank-to-VaultBank)', execution: 'executes-transfer' },
-        collections: {
-            available: collections.available,
-            reason: collections.reason || (collections.available ? 'provider configured' : 'no collection provider configured'),
-            provider: collections.provider || null,
-            configured: collections.configured,
-            mode: collections.mode,
-            credentialValid: collections.credentialValid,
-            webhookReady: collections.webhookReady,
-            providerLive: collections.providerLive,
-            liveSettlementVerified: collections.liveSettlementVerified,
-            execution: 'tracking-only', // use GET /api/collections/my-details for the provider VBA
+        internal: {
+            available: true,
+            reason: 'VaultBank-to-VaultBank transfer through the native ledger',
+            execution: 'atomic-ledger-transfer',
         },
-        payouts: {
-            available: payouts.available,
-            reason: payouts.reason || (payouts.available ? 'provider configured' : 'no payout provider configured'),
-            provider: payouts.provider || null,
-            configured: payouts.configured,
-            mode: payouts.mode,
-            credentialValid: payouts.credentialValid,
-            webhookReady: payouts.webhookReady,
-            providerLive: payouts.providerLive,
-            liveSettlementVerified: payouts.liveSettlementVerified,
-            reconciliation: payouts.reconciliation,
-            execution: 'tracking-only', // use POST /api/payouts/requests to move money
-        },
-        usd_external: { available: false, reason: 'no authorized USD settlement rail exists today — explicitly unavailable' },
+        legacyCollections: { available: false, reason: 'retired' },
+        legacyPayouts: { available: false, reason: 'retired' },
     };
 }
 
@@ -242,33 +218,18 @@ router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
             return res.status(400).json({ success: false, message: 'Amount must be a positive number with at most 2 decimal places, no scientific notation.' });
         }
         const validDirections = ['send', 'receive'];
-        const validMethods = ['internal', 'collections', 'payouts'];
         if (!validDirections.includes(direction)) {
             return res.status(400).json({ success: false, message: 'Direction must be "send" or "receive".' });
         }
-        if (!validMethods.includes(method)) {
-            return res.status(400).json({ success: false, message: 'Method must be "internal", "collections", or "payouts".' });
+        if (method === 'collections' || method === 'payouts') {
+            return res.status(410).json({
+                success: false,
+                code: 'VBR_METHOD_RETIRED',
+                message: 'External provider methods are retired. Use native VaultBank account transfers or the bank instructions shown in Payments.',
+            });
         }
-
-        // USD external is explicitly unavailable — no authorized rail exists.
-        // Check BEFORE the general payouts availability (the USD-specific
-        // message is more precise than the generic connector message).
-        if (wantedCurrency === 'USD' && method !== 'internal' && direction === 'send') {
-            return res.status(503).json({ success: false, code: 'VBR_NO_USD_RAIL', message: 'USD external bank transfers are explicitly unavailable — no authorized USD settlement rail exists today.' });
-        }
-        // No non-INR currency has an authorized external settlement rail. INR
-        // payouts are handled by the separate manual bank-payout rail, so this
-        // gate stays fail-closed for everything else.
-        if (wantedCurrency !== 'INR' && method !== 'internal' && direction === 'send') {
-            return res.status(503).json({ success: false, code: 'VBR_NO_EXTERNAL_RAIL', message: `${wantedCurrency} external bank transfers are unavailable — no authorized ${wantedCurrency} settlement rail exists today.` });
-        }
-        // ── Availability check: fail closed for unconfigured connectors ──
-        const avail = vbrAvailability();
-        if (method === 'collections' && !avail.collections.available) {
-            return res.status(503).json({ success: false, code: 'VBR_CONNECTOR_NOT_CONFIGURED', message: avail.collections.reason });
-        }
-        if (method === 'payouts' && !avail.payouts.available) {
-            return res.status(503).json({ success: false, code: 'VBR_CONNECTOR_NOT_CONFIGURED', message: avail.payouts.reason });
+        if (method !== 'internal') {
+            return res.status(400).json({ success: false, message: 'Only the native "internal" transfer method is supported.' });
         }
 
         // ── Resolve the user's account in the requested currency ──
@@ -538,34 +499,6 @@ router.post('/api/vbr/intents', authenticateToken, async (req, res) => {
             return res.status(400).json({ success: false, intent: failed[0], message: 'Internal "receive" intents are not supported — internal transfers are always initiated by the sender.' });
         }
 
-        if (method === 'collections' && direction === 'receive') {
-            // Collections: the intent tracks a pending inbound payment.
-            // PERSIST the pending state — never a response-only override.
-            const { rows: pending } = await db.query(
-                `UPDATE payment_intents SET state = 'pending', updated_at = NOW() WHERE id = $1 RETURNING *`,
-                [intent.id]
-            );
-            return res.status(200).json({
-                success: true,
-                intent: pending[0],
-                message: 'Receiving intent created — get your provider-issued details from /api/collections/my-details.',
-            });
-        }
-
-        if (method === 'payouts' && direction === 'send') {
-            // Payouts: the intent tracks an outbound withdrawal.
-            // PERSIST the pending state — never a response-only override.
-            const { rows: pending } = await db.query(
-                `UPDATE payment_intents SET state = 'pending', updated_at = NOW() WHERE id = $1 RETURNING *`,
-                [intent.id]
-            );
-            return res.status(200).json({
-                success: true,
-                intent: pending[0],
-                message: 'Payout intent created — submit the withdrawal through /api/payouts/requests.',
-            });
-        }
-
         // Method/direction combination not supported yet
         return res.status(400).json({
             success: false,
@@ -651,14 +584,13 @@ router.post('/api/vbr/intents/:id/reconcile', authenticateToken, async (req, res
         if (isTerminal(intent.state)) {
             return res.status(200).json({ success: true, intent, message: 'Terminal status already reached.' });
         }
-        // External rails: reconciliation is handled by the specific route
-        // (/api/payouts/requests/:id/reconcile for payouts, or the collections webhook)
-        return res.status(200).json({
-            success: true,
+        // Old external-provider intents remain readable, but the retired provider
+        // integrations are no longer called or presented as reconcilable here.
+        return res.status(410).json({
+            success: false,
+            code: 'VBR_METHOD_RETIRED',
             intent,
-            message: intent.method === 'payouts'
-                ? 'Use POST /api/payouts/requests/:id/reconcile for authoritative payout status.'
-                : 'Inbound collections are reconciled automatically via verified webhooks.',
+            message: 'This is a historical external-provider intent. No merchant provider is connected.',
         });
     } catch (error) {
         console.error('VBR reconcile error:', error.message);
