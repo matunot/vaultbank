@@ -117,6 +117,27 @@ beforeEach(() => {
 });
 
 describe('VaultBank-owned Direct UPI rail', () => {
+  test('retires new UPI intents in production without touching historical records', async () => {
+    const savedNodeEnv = ENV.NODE_ENV;
+    ENV.NODE_ENV = 'production';
+    enable();
+    try {
+      expect(router.readiness().available).toBe(false);
+      expect(router.readiness().reason).toBe('retired');
+      const response = await call('/api/direct-upi/intents', {
+        method: 'post',
+        headers: { 'idempotency-key': 'upi-retired-prod-001' },
+        body: { amount: 1 },
+      });
+      expect(response.code).toBe(410);
+      expect(response.body.code).toBe('DIRECT_UPI_RETIRED');
+      expect(CDB.db.query).not.toHaveBeenCalled();
+    } finally {
+      if (savedNodeEnv === undefined) delete ENV.NODE_ENV;
+      else ENV.NODE_ENV = savedNodeEnv;
+    }
+  });
+
   test('is fail-closed by default and does not expose a VPA', async () => {
     const result = router.readiness();
     expect(result.available).toBe(false);

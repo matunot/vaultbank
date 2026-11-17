@@ -489,7 +489,6 @@ export const digitalWallets = [
 ];
 
 export const regionalPayments = [
-  { id: 'upi',         name: 'UPI',           balance: 84500,    currency: 'INR', brandColor: '#5F259F', accentColor: '#9C27B0', connected: true, region: 'India',      handle: 'john@okbank',     emoji: '🇮🇳' },
   { id: 'alipay',      name: 'Alipay',        balance: 24500,    currency: 'CNY', brandColor: '#1677FF', accentColor: '#00A3FF', connected: true, region: 'China',      handle: 'john*anderson',   emoji: '🇨🇳' },
   { id: 'wechat',      name: 'WeChat Pay',    balance: 12800,    currency: 'CNY', brandColor: '#07C160', accentColor: '#2DC100', connected: true, region: 'China',      handle: 'JohnAnd88',       emoji: '💬' },
   { id: 'pix',         name: 'Pix',           balance: 18200,    currency: 'BRL', brandColor: '#00B7C3', accentColor: '#32BCAD', connected: true, region: 'Brazil',     handle: 'john@email.com',  emoji: '🇧🇷' },
@@ -517,7 +516,6 @@ export const availablePaymentMethods = [
   { id: 'paypal',      name: 'PayPal',         category: 'Digital Wallet', color: '#003087', connected: true,  emoji: '🅿️' },
   { id: 'venmo',       name: 'Venmo',          category: 'Digital Wallet', color: '#3D95CE', connected: true,  emoji: '💙' },
   { id: 'cashapp',     name: 'Cash App',       category: 'Digital Wallet', color: '#00D632', connected: true,  emoji: '💵' },
-  { id: 'upi',         name: 'UPI',            category: 'Regional',       color: '#5F259F', connected: true,  emoji: '🇮🇳' },
   { id: 'alipay',      name: 'Alipay',         category: 'Regional',       color: '#1677FF', connected: true,  emoji: '🇨🇳' },
   { id: 'wechat',      name: 'WeChat Pay',     category: 'Regional',       color: '#07C160', connected: true,  emoji: '💬' },
   { id: 'pix',         name: 'Pix',            category: 'Regional',       color: '#00B7C3', connected: true,  emoji: '🇧🇷' },

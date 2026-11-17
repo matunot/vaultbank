@@ -1,14 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Wallet, Plus, Send, Download, Check, Eye, EyeOff, QrCode,
+  Wallet, Plus, Send, Download, Check, Eye, EyeOff,
   ArrowUpRight, ArrowDownRight, Zap, X, Loader2, UserSearch, Banknote,
   Building2, CreditCard, Globe, ShieldCheck, IndianRupee, RefreshCw,
 } from 'lucide-react';
 import { useAccountData } from '../hooks/useAccountData';
 import { api } from '../api';
 import Avatar from './Avatar';
-import { DirectUpiDepositModal } from './DirectUpiDepositModal';
 import { DirectUpiAdminReview } from './DirectUpiAdminReview';
 import { DirectBankPayoutModal } from './DirectBankPayoutModal';
 import { DirectBankPayoutAdminReview } from './DirectBankPayoutAdminReview';
@@ -197,7 +196,6 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
   };
 
   // One idempotent INR payout form is shared by all Withdraw buttons.
-  const [showDirectUpi, setShowDirectUpi] = useState(false);
   const [showDirectBankPayout, setShowDirectBankPayout] = useState(false);
 
   // ── REAL send-money flow (live user search + real transfer) ──
@@ -295,10 +293,9 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
   const usdRail = readiness?.usd;
   const currentRole = String(api.getUser()?.role || '').trim().toLowerCase();
   const isAdminUser = currentRole === 'admin' || currentRole === 'super_admin';
-  const canUseDirectUpi = !!inrRail?.directUpi && (isAdminUser || inrRail.directUpiCustomerAccessEnabled === true);
   const canUseDirectBankPayout = !!inrRail?.directBankPayouts && (isAdminUser || inrRail.directBankPayoutsCustomerAccessEnabled === true);
   const canOpenBankDeposit = currency === 'USD' || currencyMeta?.bankReceivingConfigured === true;
-  const canAddMoney = canOpenBankDeposit || (currency === 'INR' && canUseDirectUpi);
+  const canAddMoney = canOpenBankDeposit;
 
   const rails: Array<{
     key: string; name: string; desc: string; ready: boolean | null;
@@ -323,16 +320,6 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       key: 'bankusd', name: 'Bank Transfer (USD)', desc: 'Unique reference + manual statement verification',
       ready: usdRail ? usdRail.bankTransferInstructions : null, icon: Building2, color: '#f59e0b',
       hint: usdRail?.bankTransferInstructions ? 'Instructions available in Deposits' : 'Not configured — receiving account env required',
-    },
-    {
-      key: 'directupi', name: 'VaultBank Direct UPI', desc: 'VaultBank-owned UPI intent; bank-statement verification required',
-      ready: inrRail ? canUseDirectUpi : null, icon: QrCode, color: '#10b981',
-      hint: !inrRail?.directUpi
-        ? 'Not configured — own bank-linked VPA required'
-        : (canUseDirectUpi
-          ? 'Available for this account · manual bank-statement verification; no automatic credit'
-          : 'Admin-only pilot — customer access is disabled'),
-      action: canUseDirectUpi ? () => { setCurrency('INR'); setShowDirectUpi(true); } : undefined, actionLabel: 'Open',
     },
     {
       key: 'collections', name: 'INR Receiving Details', desc: 'Provider-issued per-user account + IFSC, auto-credited',
@@ -452,8 +439,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                 <motion.button
                   whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
                   onClick={() => {
-                    if (currency === 'INR' && canUseDirectUpi) setShowDirectUpi(true);
-                    else if (canOpenBankDeposit && onOpenModal) onOpenModal('deposit');
+                    if (canOpenBankDeposit && onOpenModal) onOpenModal('deposit');
                   }}
                   disabled={!canAddMoney}
                   title={!canAddMoney ? `${currency} receiving is not configured yet` : undefined}
@@ -520,8 +506,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { icon: Send, label: 'Send Money', desc: `VaultBank user (${currency})`, color: '#3b82f6', action: () => setShowSend(true) },
-          ...(canUseDirectUpi ? [{ icon: QrCode, label: 'Receive', desc: 'VaultBank Direct UPI', color: '#10b981', action: () => { setCurrency('INR'); setShowDirectUpi(true); } }] : []),
-          { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : (canUseDirectUpi ? 'VaultBank Direct UPI' : canOpenBankDeposit ? `Bank transfer (${currency})` : 'Receiving rail not enabled'), color: '#06b6d4', action: () => { if (currency === 'INR' && canUseDirectUpi) { setShowDirectUpi(true); } else if (canOpenBankDeposit && onOpenModal) { onOpenModal('deposit'); } } },
+          { icon: Plus, label: 'Add Money', desc: currency === 'USD' ? 'Deposits & rails' : (canOpenBankDeposit ? `Bank transfer (${currency})` : 'Receiving rail not enabled'), color: '#06b6d4', action: () => { if (canOpenBankDeposit && onOpenModal) onOpenModal('deposit'); } },
           ...(canUseDirectBankPayout ? [{ icon: Banknote, label: 'Withdraw INR', desc: 'VaultBank manual bank payout', color: '#f59e0b', action: () => { setCurrency('INR'); setShowDirectBankPayout(true); } }] : []),
         ].map((a, i) => (
           <motion.button
@@ -712,7 +697,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
               <p className="font-bold text-white text-sm">{r.name}</p>
               <p className="text-xs text-white/40 flex-1">{r.desc}</p>
               {r.hint && <p className="text-[10px] text-white/30">{r.hint}</p>}
-              {((r.ready && r.action) || ((r.key === 'directupi' || r.key === 'directbankpayout') && r.action)) && (
+              {r.ready && r.action && (
                 <button onClick={r.action} className="mt-1 px-3 py-2 rounded-lg bg-white/10 text-xs font-bold text-white hover:bg-white/15 flex items-center gap-1.5 w-fit">
                   {r.actionLabel === 'Send' && <Send className="w-3 h-3" />}
                   {r.actionLabel === 'Withdraw' && <Banknote className="w-3 h-3" />}
@@ -902,19 +887,21 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       </AnimatePresence>
 
       {/* Keep the payout modal mounted while hidden so ambiguous outcomes retain the same idempotency key. */}
-      <DirectUpiDepositModal
-        isOpen={showDirectUpi}
-        onClose={() => setShowDirectUpi(false)}
-        accountState={inrState}
-        onOpenInrAccount={openWallet}
-      />
       <DirectBankPayoutModal
         isOpen={showDirectBankPayout}
         onClose={() => setShowDirectBankPayout(false)}
         accountState={inrState}
         onOpenInrAccount={openWallet}
       />
-      {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectUpiAdminReview />}
+      {isAdminUser && (
+        <section aria-label="Legacy UPI reconciliation" className="space-y-2">
+          <div>
+            <h3 className="text-sm font-bold text-white/80">Legacy UPI reconciliation</h3>
+            <p className="mt-1 text-xs text-white/40">New UPI deposits are retired. This admin-only queue is retained to inspect and reconcile existing historical requests; it cannot create new deposits.</p>
+          </div>
+          <DirectUpiAdminReview />
+        </section>
+      )}
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <DirectBankPayoutAdminReview />}
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <BankDepositAdminReview />}
       {((api.getUser()?.role === 'admin') || (api.getUser()?.role === 'super_admin')) && <ProductApplicationsAdminReview />}

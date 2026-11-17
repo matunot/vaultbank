@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
-import { Send, Globe, Plus, Loader2 } from 'lucide-react';
+import { Send, Loader2 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { api } from '../api';
 import { TransferModal } from './Modals';
@@ -78,7 +78,7 @@ export default function TransferSection() {
           <p className="font-display text-5xl lg:text-6xl text-white mt-2">
             Send Money<span className="text-cyan-400">.</span>
           </p>
-          <p className="text-sm text-white/40 mt-2">Instant, free, and secure transfers to anyone.</p>
+          <p className="text-sm text-white/40 mt-2">Send in the same currency to verified VaultBank accounts.</p>
 
           <div className="flex flex-wrap gap-3 mt-6">
             <motion.button
@@ -88,12 +88,6 @@ export default function TransferSection() {
               className="flex items-center gap-2 px-6 py-3 rounded-xl bg-linear-to-r from-cyan-400 via-blue-500 to-indigo-500 text-white font-bold shadow-lg glow-blue"
             >
               <Send className="w-4 h-4" /> New Transfer
-            </motion.button>
-            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex items-center gap-2 px-5 py-3 rounded-xl glass-btn text-sm font-semibold text-white/80">
-              <Globe className="w-4 h-4" /> International Wire
-            </motion.button>
-            <motion.button whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="flex items-center gap-2 px-5 py-3 rounded-xl glass-btn text-sm font-semibold text-white/80">
-              <Plus className="w-4 h-4" /> Schedule Payment
             </motion.button>
           </div>
         </div>
