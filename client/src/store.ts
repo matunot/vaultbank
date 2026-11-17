@@ -52,7 +52,8 @@ export function useAppStore() {
   const [investments, setInvestments] = useState<Investment[]>(import.meta.env.DEV ? initialInvestments : []);
   const [transferLoading, setTransferLoading] = useState(false);
   const formatMoney = (amount: number) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+    const currency = api.getAccount()?.currency || 'USD';
+    return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', { style: 'currency', currency }).format(amount);
   };
 
   // REAL money transfer — calls the backend /api/account/transfer

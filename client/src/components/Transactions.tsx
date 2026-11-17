@@ -1,106 +1,110 @@
 import { memo } from 'react';
-import { ArrowUpRight, Clock, Coffee, Plane, CreditCard, Gem, TrendingUp, Smartphone, Zap } from 'lucide-react';
-import RichIcon from './RichIcon';
+import {
+  ArrowDownLeft, ArrowUpRight, Clock3, Coffee, CreditCard, Gem, Plane, Smartphone, TrendingUp, Zap,
+} from 'lucide-react';
 
 interface Transaction {
-  id: string | number; name: string; cat: string; amount: number; date: string; icon: string; gem: string;
+  id: string | number;
+  name: string;
+  cat: string;
+  amount: number;
+  date: string;
+  icon?: string;
+  gem?: string;
+  status?: string;
 }
-
 interface Props {
   transactions: Transaction[];
   loading?: boolean;
+  currency?: string;
+  onViewAll?: () => void;
 }
 
-const catIcons: Record<string, { icon: React.ComponentType<any>; variant: 'gold' | 'emerald' | 'ruby' | 'sapphire' | 'amethyst' | 'amber' | 'cyan' }> = {
-  'Dining': { icon: Coffee, variant: 'ruby' },
-  'Income': { icon: TrendingUp, variant: 'emerald' },
-  'Auto': { icon: Zap, variant: 'cyan' },
-  'Luxury': { icon: Gem, variant: 'gold' },
-  'Tech': { icon: Smartphone, variant: 'amethyst' },
-  'Investment': { icon: TrendingUp, variant: 'emerald' },
-  'Travel': { icon: Plane, variant: 'sapphire' },
-  'Transfer': { icon: CreditCard, variant: 'amber' },
+const catIcons: Record<string, React.ComponentType<any>> = {
+  Dining: Coffee,
+  Income: TrendingUp,
+  Auto: Zap,
+  Luxury: Gem,
+  Tech: Smartphone,
+  Investment: TrendingUp,
+  Travel: Plane,
+  Transfer: CreditCard,
+  Deposit: ArrowDownLeft,
 };
 
-const TxItem = memo(function TxItem({ tx, index }: { tx: Transaction; index: number }) {
-  const positive = tx.amount > 0;
-  const catConfig = catIcons[tx.cat] || { icon: CreditCard, variant: 'amber' as const };
-  const IconComp = catConfig.icon;
+function formatMoney(amount: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', {
+      style: 'currency',
+      currency,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount);
+  } catch {
+    return currency + ' ' + amount.toFixed(2);
+  }
+}
 
+const TxItem = memo(function TxItem({ tx, currency }: { tx: Transaction; currency: string }) {
+  const incoming = tx.amount > 0;
+  const Icon = catIcons[tx.cat] || CreditCard;
   return (
-    <div
-      className="vb-slide-left glass glass-hover flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-transform duration-200 hover:translate-x-1"
-      style={{ '--vb-delay': `${Math.min(200 + index * 40, 480)}ms` } as React.CSSProperties}
-    >
-      <RichIcon icon={<IconComp size={16} strokeWidth={2} />} variant={positive ? 'emerald' : catConfig.variant} size="sm" glow />
-      <div className="flex-1 min-w-0">
-        <p className="font-semibold text-white text-sm truncate">{tx.name}</p>
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <span className="text-[11px] text-white/40">{tx.cat}</span>
-          <span className="text-white/20">·</span>
-          <span className="text-[11px] text-white/40 flex items-center gap-1">
-            <Clock className="w-3 h-3" /> {tx.date}
-          </span>
-        </div>
-      </div>
-      <div className="flex items-center gap-2 shrink-0">
-        <RichIcon
-          icon={positive ? <ArrowDownLeft className="w-3 h-3" /> : <ArrowUpRight className="w-3 h-3" />}
-          variant={positive ? 'emerald' : 'ruby'}
-          size="sm"
-        />
-        <span className={`font-bold text-sm ${positive ? 'text-emerald-400' : 'text-white'}`}>
-          {positive ? '+' : ''}{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(tx.amount)}
+    <li className="flex min-w-0 items-center gap-3 border-b border-white/[0.055] py-3.5 last:border-0">
+      <span className={'grid h-10 w-10 shrink-0 place-items-center rounded-xl border ' + (incoming ? 'border-emerald-300/15 bg-emerald-400/10 text-emerald-200' : 'border-slate-300/10 bg-slate-300/5 text-slate-300')}>
+        <Icon size={17} strokeWidth={1.8} />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[13px] font-semibold text-slate-100">{tx.name}</span>
+        <span className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
+          <span>{tx.cat}</span>
+          <span aria-hidden="true">·</span>
+          <span className="inline-flex items-center gap-1"><Clock3 size={11} />{tx.date}</span>
+          {tx.status && <><span aria-hidden="true">·</span><span className="capitalize">{tx.status.replace(/_/g, ' ')}</span></>}
         </span>
-      </div>
-    </div>
+      </span>
+      <span className={'shrink-0 text-right text-[13px] font-bold tabular-nums ' + (incoming ? 'text-emerald-200' : 'text-slate-100')}>
+        {incoming ? '+' : '−'}{formatMoney(Math.abs(tx.amount), currency)}
+      </span>
+      {incoming ? <ArrowDownLeft size={15} className="hidden shrink-0 text-emerald-300 sm:block" /> : <ArrowUpRight size={15} className="hidden shrink-0 text-slate-500 sm:block" />}
+    </li>
   );
 });
 
-const Transactions = memo(function Transactions({ transactions, loading = false }: Props) {
+const Transactions = memo(function Transactions({ transactions, loading = false, currency = 'USD', onViewAll }: Props) {
   return (
-    <div
-      className="vb-enter glass-panel rounded-3xl p-6 relative overflow-hidden"
-      style={{ '--vb-delay': '200ms' } as React.CSSProperties}
-    >
-      <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/5 rounded-full blur-3xl" />
-
-      <div className="relative z-10 flex items-center justify-between mb-5">
+    <section className="bank-surface p-5 sm:p-6" aria-labelledby="recent-activity-heading">
+      <div className="mb-2 flex items-center justify-between gap-3">
         <div>
-          <h3 className="font-display text-2xl text-white">Recent Activity</h3>
-          <p className="text-xs text-white/40 mt-1 tracking-wider">LATEST TRANSACTIONS</p>
+          <h2 id="recent-activity-heading" className="bank-section-title">Recent activity</h2>
+          <p className="bank-section-caption">The latest transactions on your account</p>
         </div>
-        <button className="text-xs font-semibold text-amber-300 hover:text-amber-200 flex items-center gap-1 glass-btn px-3 py-1.5 rounded-lg">
-          View all <ArrowUpRight className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-      <div
-        className="relative z-10 space-y-2 max-h-105 overflow-y-auto pr-1"
-        tabIndex={0}
-        role="region"
-        aria-label="Recent transactions"
-      >
-        {loading ? (
-          <div className="text-sm text-white/50 py-4">Loading recent activity...</div>
-        ) : transactions.length ? (
-          transactions.map((tx, i) => (
-            <TxItem key={tx.id} tx={tx} index={i} />
-          ))
-        ) : (
-          <div className="text-sm text-white/50 py-4">No recent transactions.</div>
+        {onViewAll && (
+          <button type="button" onClick={onViewAll} className="rounded-lg px-3 py-2 text-xs font-semibold text-teal-200 transition-colors hover:bg-teal-300/10">
+            View all
+          </button>
         )}
       </div>
-    </div>
+      <ul className="min-w-0" role="region" aria-label="Recent transactions">
+        {loading ? (
+          <li className="space-y-3 py-4" aria-busy="true" aria-label="Loading transactions">
+            <div className="h-11 animate-pulse rounded-xl bg-white/5" />
+            <div className="h-11 animate-pulse rounded-xl bg-white/5" />
+            <div className="h-11 animate-pulse rounded-xl bg-white/5" />
+          </li>
+        ) : transactions.length ? (
+          transactions.map((tx) => <TxItem key={tx.id} tx={tx} currency={currency} />)
+        ) : (
+          <li className="py-10 text-center">
+            <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-400">
+              <CreditCard size={19} />
+            </span>
+            <p className="mt-3 text-sm font-semibold text-slate-200">No activity yet</p>
+            <p className="mt-1 text-xs text-slate-500">Your account transactions will appear here.</p>
+          </li>
+        )}
+      </ul>
+    </section>
   );
 });
-
-function ArrowDownLeft(props: { className?: string }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={props.className}>
-      <path d="M17 3l4 4-4 4" /><path d="M21 7H7a4 4 0 00-4 4v10" />
-    </svg>
-  );
-}
 
 export default Transactions;

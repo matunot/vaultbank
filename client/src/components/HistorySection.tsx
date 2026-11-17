@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowDownLeft, ArrowUpRight, Search, Download, Loader2, RefreshCw } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Search, Download, Loader2, RefreshCw, ReceiptText } from 'lucide-react';
 import { api } from '../api';
 import { refreshBus } from '../refreshBus';
 
@@ -68,6 +68,7 @@ export default function HistorySection() {
     return matchType && matchSearch;
   }), [txs, filter, search]);
 
+  const currency = api.getAccount()?.currency || 'USD';
   const totalIn = txs.filter(t => t.amount > 0).reduce((s, t) => s + t.amount, 0);
   const totalOut = txs.filter(t => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
 
@@ -151,7 +152,7 @@ export default function HistorySection() {
         <div className="space-y-2 max-h-150 overflow-y-auto pr-1">
           {loading ? (
             <div className="flex items-center gap-2 text-white/40 text-sm py-8 justify-center">
-              <Loader2 className="w-5 h-5 animate-spin" /> Loading real transactions…
+              <Loader2 className="w-5 h-5 animate-spin" /> Loading transactions…
             </div>
           ) : filtered.length === 0 ? (
             <div className="text-sm text-white/40 py-8 text-center">
@@ -174,8 +175,8 @@ export default function HistorySection() {
                   whileHover={{ x: 4, backgroundColor: 'rgba(255,255,255,0.04)' }}
                   className="flex items-center gap-4 p-4 rounded-2xl bg-white/2 border border-white/5 hover:border-white/10 cursor-pointer transition-all"
                 >
-                  <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-xl border border-white/10">
-                    {positive ? '💰' : '💸'}
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-white/10 bg-white/5 text-slate-300">
+                    <ReceiptText size={18} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-white truncate">{tx.name}</p>
@@ -188,7 +189,7 @@ export default function HistorySection() {
                       <IconComp className={`w-4 h-4 ${positive ? 'text-emerald-400' : 'text-rose-400'}`} />
                     </div>
                     <span className={`font-bold ${positive ? 'text-emerald-400' : 'text-white'}`}>
-                      {positive ? '+' : ''}{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(tx.amount)}
+                      {positive ? '+' : ''}{new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', { style: 'currency', currency }).format(tx.amount)}
                     </span>
                   </div>
                 </motion.div>
