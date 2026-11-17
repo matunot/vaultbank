@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 import {
-  Home, CreditCard, TrendingUp, Send, History, Gem, Settings, LogOut, Vault, ChevronLeft, Landmark, PieChart, Mountain, Wallet, Zap,
+  Home, CreditCard, TrendingUp, Send, History, Gem, Settings, LogOut, Vault, ChevronLeft, Landmark, PieChart, Mountain, Wallet, Zap, CircleDollarSign,
 } from 'lucide-react';
 import { navItems } from '../data';
 
@@ -10,7 +10,7 @@ const visibleNavItems = import.meta.env.DEV
   : navItems.filter((item) => !DEV_ONLY_SECTIONS.includes(item.id));
 
 const iconMap: Record<string, React.ComponentType<any>> = {
-  Home, Vault, CreditCard, TrendingUp, Send, History, Gem, Landmark, PieChart, Mountain, Wallet, Zap,
+  Home, Vault, CreditCard, TrendingUp, Send, History, Gem, Landmark, PieChart, Mountain, Wallet, Zap, CircleDollarSign,
 };
 
 const groups = [

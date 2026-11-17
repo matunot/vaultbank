@@ -36,7 +36,7 @@ const InvestmentsSection = isDev ? lazy(() => import('./components/InvestmentsSe
 const VaultSection = isDev ? lazy(() => import('./components/VaultSection')) : (null as unknown as typeof import('./components/VaultSection').default);
 const SavingsAccountsSection = lazy(() => import('./components/SavingsAccountsSection'));
 const DebtsSection = isDev ? lazy(() => import('./components/DebtsSection')) : (null as unknown as typeof import('./components/DebtsSection').default);
-const CreditSection = isDev ? lazy(() => import('./components/CreditSection')) : (null as unknown as typeof import('./components/CreditSection').default);
+const CreditOverviewSection = lazy(() => import('./components/CreditOverviewSection'));
 
 const SwissSection = lazy(() => import('./components/SwissSection'));
 const BudgetSection = isDev ? lazy(() => import('./components/BudgetSection')) : (null as unknown as typeof import('./components/BudgetSection').default);
@@ -184,7 +184,7 @@ export default function App() {
                     {active === 'cards' && <CardProgramSection />}
                     {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
                     {active === 'invest' && (isDev ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
-                    {active === 'credit' && (isDev ? <CreditSection /> : <CardProgramSection defaultCardType="credit" />)}
+                    {active === 'credit' && <CreditOverviewSection onOpenCards={() => setActive('cards')} />}
 
                     {active === 'loans' && (isDev ? <DebtsSection /> : <LoanApplicationSection />)}
                     {active === 'budget' && (isDev ? <BudgetSection /> : <PreviewOnlyNotice title="Budget tools are a development preview" message="The current budget figures are example data, not your personal spending history. Live transaction-linked budgets are not connected yet." />)}

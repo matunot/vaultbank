@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { CheckCircle2, CreditCard, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  CreditCard,
+  Loader2,
+  RefreshCw,
+  ShieldCheck,
+  Wallet,
+} from 'lucide-react';
 import { api } from '../api';
 
 type CardType = 'debit' | 'credit';
@@ -29,8 +37,8 @@ const statusLabel: Record<string, string> = {
   closed: 'Closed',
 };
 
-export default function CardProgramSection({ defaultCardType = 'debit' }: { defaultCardType?: CardType }) {
-  const [cardType, setCardType] = useState<CardType>(defaultCardType);
+export default function CardProgramSection() {
+  const [cardType, setCardType] = useState<CardType>('debit');
   const [currency, setCurrency] = useState<Currency>('INR');
   const [requests, setRequests] = useState<CardRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,91 +87,139 @@ export default function CardProgramSection({ defaultCardType = 'debit' }: { defa
   };
 
   return (
-    <section className="space-y-6">
-      <header>
-        <p className="text-[10px] font-bold tracking-[0.28em] text-sky-300/70">VAULTBANK · CARD PROGRAM</p>
-        <h2 className="mt-2 font-display text-3xl font-semibold text-white">Debit &amp; Credit Cards</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/50">
-          Submit a tracked request for a VaultBank debit or credit card. Your request and review status are saved to VaultBank's database.
-        </p>
+    <section className="bank-cards" aria-labelledby="cards-page-title">
+      <header className="bank-page-intro">
+        <div>
+          <p className="bank-eyebrow">Card services</p>
+          <h1 id="cards-page-title" className="bank-page-title">Cards</h1>
+          <p className="bank-page-subtitle">
+            Choose the card programme you want to request and track its review status in one place.
+          </p>
+        </div>
+        <div className="bank-cards__header-mark" aria-hidden="true"><CreditCard size={25} /></div>
       </header>
 
-      <div className="grid gap-3 md:grid-cols-3">
-        <div className="glass-panel rounded-2xl border border-white/10 p-4">
-          <CreditCard className="text-sky-200" size={19} />
-          <h3 className="mt-3 text-sm font-semibold text-white">Debit card request</h3>
-          <p className="mt-1 text-xs leading-relaxed text-white/45">Intended to spend verified available funds from an eligible VaultBank account.</p>
-        </div>
-        <div className="glass-panel rounded-2xl border border-white/10 p-4">
-          <CreditCard className="text-amber-200" size={19} />
-          <h3 className="mt-3 text-sm font-semibold text-white">Credit card request</h3>
-          <p className="mt-1 text-xs leading-relaxed text-white/45">Requires a funded credit facility and issuer program; submitting a request does not create credit.</p>
-        </div>
-        <div className="glass-panel rounded-2xl border border-amber-400/15 p-4">
-          <ShieldCheck className="text-amber-200" size={19} />
-          <h3 className="mt-3 text-sm font-semibold text-white">Honest status</h3>
-          <p className="mt-1 text-xs leading-relaxed text-white/45">No PAN, CVV, card number, or fake issued-card record is created here.</p>
-        </div>
+      <div className="bank-cards__notice">
+        <ShieldCheck size={18} />
+        <p>Requests are tracked here. A submitted request does not mean a card has been approved, issued or activated.</p>
       </div>
 
-      {error && <div role="alert" className="rounded-xl border border-rose-400/25 bg-rose-400/10 px-4 py-3 text-sm text-rose-200">{error}</div>}
-      {message && <div role="status" className="rounded-xl border border-emerald-400/25 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">{message}</div>}
-
-      <form onSubmit={(event) => void submit(event)} className="glass-panel rounded-3xl border border-white/10 p-5 md:p-7">
-        <h3 className="font-display text-xl text-white">Request a card</h3>
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
+      <form onSubmit={(event) => void submit(event)} className="bank-cards__form">
+        <div className="bank-cards__form-heading">
           <div>
-            <label htmlFor="card-program-type" className="mb-2 block text-xs font-semibold text-white/60">Card type</label>
-            <select id="card-program-type" value={cardType} onChange={(event) => { setCardType(event.target.value as CardType); attempt.current = null; }} className="w-full rounded-xl border border-white/10 bg-[#111521] px-3 py-3 text-sm text-white">
-              <option value="debit">Debit card</option>
-              <option value="credit">Credit card</option>
-            </select>
+            <p className="bank-label">Choose your card type</p>
+            <h2>What do you need?</h2>
+            <p>Select the way you intend to use the card. This does not open or approve a credit facility.</p>
           </div>
-          <div>
-            <label htmlFor="card-program-currency" className="mb-2 block text-xs font-semibold text-white/60">Account currency</label>
-            <select id="card-program-currency" value={currency} onChange={(event) => { setCurrency(event.target.value as Currency); attempt.current = null; }} className="w-full rounded-xl border border-white/10 bg-[#111521] px-3 py-3 text-sm text-white">
-              <option value="INR">INR · Indian rupee</option>
-              <option value="USD">USD · US dollar</option>
-            </select>
-          </div>
-          <div className="flex items-end">
-            <button type="submit" disabled={busy} className="flex w-full items-center justify-center gap-2 rounded-xl bg-sky-300 px-4 py-3 text-sm font-bold text-slate-950 disabled:opacity-50">
-              {busy ? <Loader2 size={16} className="animate-spin" /> : <CheckCircle2 size={16} />}
-              {busy ? 'Saving request…' : 'Submit card request'}
-            </button>
-          </div>
+          <span className="bank-cards__step">01 <span>/</span> 02</span>
         </div>
-        <p className="mt-4 text-[11px] leading-relaxed text-white/35">
-          Important: external card-network issuing is not active in production. This action records your request; it does not issue a physical or virtual card and cannot yet be used at outside merchants.
+
+        <div className="bank-cards__type-grid" role="group" aria-label="Card type">
+          <button
+            type="button"
+            aria-pressed={cardType === 'debit'}
+            onClick={() => { setCardType('debit'); attempt.current = null; }}
+            className={`bank-cards__type ${cardType === 'debit' ? 'is-selected' : ''}`}
+          >
+            <span className="bank-cards__type-icon"><Wallet size={20} /></span>
+            <span className="bank-cards__type-copy">
+              <strong>Debit card</strong>
+              <span>Uses eligible funds held in your account.</span>
+            </span>
+            <span className="bank-cards__radio" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-pressed={cardType === 'credit'}
+            onClick={() => { setCardType('credit'); attempt.current = null; }}
+            className={`bank-cards__type ${cardType === 'credit' ? 'is-selected' : ''}`}
+          >
+            <span className="bank-cards__type-icon"><CreditCard size={20} /></span>
+            <span className="bank-cards__type-copy">
+              <strong>Credit card</strong>
+              <span>Requires a separately approved credit facility and issuer.</span>
+            </span>
+            <span className="bank-cards__radio" aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="bank-cards__form-bottom">
+          <div className="bank-cards__currency">
+            <label className="bank-label" id="card-currency-label">Account currency</label>
+            <div className="bank-cards__currency-options" role="group" aria-labelledby="card-currency-label">
+              {(['INR', 'USD'] as const).map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  aria-pressed={currency === code}
+                  onClick={() => { setCurrency(code); attempt.current = null; }}
+                  className={`bank-cards__currency-option ${currency === code ? 'is-selected' : ''}`}
+                >
+                  {code}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button type="submit" disabled={busy} className="bank-cards__submit">
+            {busy ? <Loader2 size={17} className="animate-spin" /> : <ArrowRight size={17} />}
+            {busy ? 'Saving request…' : 'Submit card request'}
+          </button>
+        </div>
+        <p className="bank-cards__disclosure">
+          <ShieldCheck size={14} />
+          No PAN, CVV or usable card credentials are created. Physical and virtual card issuance is not active in this experience.
         </p>
       </form>
 
-      <div className="glass-panel rounded-2xl border border-white/10 p-5">
-        <div className="flex items-center justify-between gap-3">
-          <h3 className="font-display text-xl text-white">Your requests</h3>
-          <button type="button" onClick={() => void refresh()} disabled={loading || busy} aria-label="Refresh card requests" className="rounded-lg p-2 text-white/50 hover:bg-white/5 hover:text-white disabled:opacity-50">
+      {error && <div role="alert" className="bank-cards__feedback bank-cards__feedback--error">{error}</div>}
+      {message && <div role="status" className="bank-cards__feedback bank-cards__feedback--success"><CheckCircle2 size={16} />{message}</div>}
+
+      <section className="bank-cards__requests" aria-labelledby="card-requests-title">
+        <div className="bank-cards__requests-heading">
+          <div>
+            <p className="bank-label">Request history</p>
+            <h2 id="card-requests-title">Your card requests</h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => void refresh()}
+            disabled={loading || busy}
+            aria-label="Refresh card requests"
+            className="bank-cards__refresh"
+          >
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+            Refresh
           </button>
         </div>
+
         {loading ? (
-          <p className="mt-4 flex items-center gap-2 text-sm text-white/45"><Loader2 size={15} className="animate-spin" />Loading requests…</p>
+          <div className="bank-cards__empty" aria-busy="true">Loading your requests…</div>
         ) : requests.length === 0 ? (
-          <p className="mt-4 text-sm text-white/40">No card-program requests yet.</p>
+          <div className="bank-cards__empty">
+            <span><CreditCard size={21} /></span>
+            <strong>No card requests yet</strong>
+            <p>When you submit a request, its review status will appear here.</p>
+          </div>
         ) : (
-          <div className="mt-4 space-y-3">
+          <div className="bank-cards__request-list">
             {requests.map((request) => (
-              <div key={request.id} className="flex flex-col gap-2 rounded-xl border border-white/8 bg-white/[0.025] p-4 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-semibold capitalize text-white">{request.cardType} card · {request.currency}</p>
-                  <p className="mt-1 text-[11px] text-white/35">Request #{request.id}{request.createdAt ? ` · ${new Date(request.createdAt).toLocaleDateString()}` : ''}</p>
-                  {request.reviewNote && <p className="mt-2 text-xs text-white/50">{request.reviewNote}</p>}
+              <article key={request.id} className="bank-cards__request">
+                <span className="bank-cards__request-icon">
+                  {request.cardType === 'debit' ? <Wallet size={18} /> : <CreditCard size={18} />}
+                </span>
+                <div className="bank-cards__request-main">
+                  <strong>{request.cardType === 'debit' ? 'Debit card' : 'Credit card'} <span>· {request.currency}</span></strong>
+                  <p>Request #{request.id}{request.createdAt ? ` · ${new Date(request.createdAt).toLocaleDateString()}` : ''}</p>
+                  {request.reviewNote && <p className="bank-cards__review-note">{request.reviewNote}</p>}
                 </div>
-                <span className="w-fit rounded-full border border-amber-400/20 bg-amber-400/5 px-3 py-1.5 text-[10px] font-bold text-amber-100">{statusLabel[request.status] || request.status}</span>
-              </div>
+                <span className={`bank-cards__status ${request.status === 'closed' ? 'is-closed' : ''}`}>
+                  {statusLabel[request.status] || request.status.replace(/_/g, ' ')}
+                </span>
+              </article>
             ))}
           </div>
         )}
-      </div>
+      </section>
     </section>
   );
 }
