@@ -1,1 +1,35 @@
-{"framework":"vite","installCommand":"echo 'deps install in build step'","buildCommand":"sh -c 'S=scripts/vercel-build.sh; [ -f \"$S\" ] || S=../scripts/vercel-build.sh; sh \"$S\"'","outputDirectory":"dist"}
+{
+  "framework": "vite",
+  "installCommand": "echo 'deps install in build step'",
+  "buildCommand": "sh -c 'S=scripts/vercel-build.sh; [ -f \"$S\" ] || S=../scripts/vercel-build.sh; sh \"$S\"'",
+  "outputDirectory": "dist",
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=0, must-revalidate"
+        }
+      ]
+    }
+  ]
+}
