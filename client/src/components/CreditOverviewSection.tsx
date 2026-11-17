@@ -1,6 +1,5 @@
 import {
   ArrowRight,
-  CalendarClock,
   CircleDollarSign,
   ClipboardCheck,
   CreditCard,
@@ -8,7 +7,6 @@ import {
   Info,
   Landmark,
   ShieldCheck,
-  Wallet,
 } from 'lucide-react';
 
 interface Props {
