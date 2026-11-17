@@ -1,6 +1,6 @@
 ﻿import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, PartyPopper, Send } from 'lucide-react';
+import { Shield, Send } from 'lucide-react';
 
 import LoginPage from './components/LoginPage';
 import SignupPage from './components/SignupPage';
@@ -12,17 +12,15 @@ import DashboardSection from './components/DashboardSection';
 import ErrorBoundary from './components/ErrorBoundary';
 import PreviewOnlyNotice from './components/PreviewOnlyNotice';
 import EmailVerificationPage from './components/EmailVerificationPage';
-import { TransferModal, DepositModal, PayBillModal, ConvertModal, WireModal, MobileModal, TradeModal, WithdrawModal } from './components/Modals';
+import { TransferModal, DepositModal, TradeModal, WithdrawModal } from './components/Modals';
 import VbPayModal from './components/VbPayModal';
 import { useAppStore } from './store';
 import { api } from './api';
-import { refreshBus } from './refreshBus';
 
 // Lazy load heavy sections.
 // ponytail: dev-only preview components are excluded from the production
 // bundle at build time (gated imports, not just gated rendering).
 const isDev = import.meta.env.DEV;
-const CardsSection = lazy(() => import('./components/IssuingCardsSection'));
 const CardProgramSection = lazy(() => import('./components/CardProgramSection'));
 const LoanApplicationSection = lazy(() => import('./components/LoanApplicationSection'));
 const PaymentsSection = lazy(() => import('./components/PaymentsSection'));
@@ -73,58 +71,11 @@ export default function App() {
     setVerifyEmailToken(null);
   }, []);
 
-  // Handle the REAL return from Stripe Checkout (?deposit=success / cancelled)
-  // and PayPal Checkout (?deposit=paypal-success&token=ORDERID)
-  const [depositBanner, setDepositBanner] = useState<string | null>(null);
+  // VaultBank Pay checkout requests remain a native VaultBank flow.
 const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
   // Gold toast fired the moment a REAL transfer completes
   const [sendToast, setSendToast] = useState<{ name: string; amount: number } | null>(null);
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const depositState = params.get('deposit');
-    if (!depositState) return;
 
-    // Production never treats a third-party checkout redirect as settlement
-    // proof. Legacy provider rails are disabled; only statement-reconciled
-    // native deposits can credit available funds.
-    if (import.meta.env.PROD && (depositState === 'success' || depositState === 'paypal-success')) {
-      window.history.replaceState({}, '', window.location.pathname);
-      setDepositBanner('This legacy payment return is not proof of settlement. No funds were credited by this redirect; check verified VaultBank activity.');
-      setTimeout(() => setDepositBanner(null), 8000);
-      return;
-    }
-
-    if (depositState === 'cancelled') {
-      window.history.replaceState({}, '', window.location.pathname);
-      setDepositBanner('Deposit cancelled — no money was moved.');
-      setTimeout(() => setDepositBanner(null), 6000);
-    } else if (depositState === 'success') {
-      // Development-only legacy flow; production is guarded above.
-      window.history.replaceState({}, '', window.location.pathname);
-      setDepositBanner('Deposit return received. Confirm settlement in the development test flow before treating it as credited.');
-      setTimeout(() => setDepositBanner(null), 8000);
-    } else if (depositState === 'paypal-success') {
-      // Development-only legacy capture; production is guarded above.
-      const orderId = params.get('token') || '';
-      window.history.replaceState({}, '', window.location.pathname);
-      if (!orderId) {
-        setDepositBanner('PayPal return missing order — no money was moved.');
-        setTimeout(() => setDepositBanner(null), 6000);
-      } else {
-        api.paypalCapture({ orderId })
-          .then((r) => {
-            setDepositBanner(r.success
-              ? 'Payment capture returned success in the development flow; verify the ledger before treating funds as available.'
-              : 'Payment capture failed — no money was moved.');
-          })
-          .catch(() => setDepositBanner('Payment capture failed — no money was moved.'))
-          .finally(() => {
-            refreshBus.emit();
-            setTimeout(() => setDepositBanner(null), 8000);
-          });
-      }
-    }
-  }, []);
   // One-tap funding deep link (?addfunds=1) — card-declined notifications point here
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('addfunds') === '1') {
@@ -194,23 +145,6 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
         <main className="flex-1 overflow-y-auto h-screen min-w-0">
           <Header theme={theme} onThemeChange={setTheme} />
 
-          {/* Stripe deposit return banner */}
-          <AnimatePresence>
-            {depositBanner && (
-              <motion.div
-                initial={{ opacity: 0, y: -16 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -16 }}
-                className="px-5 lg:px-8 pt-4"
-              >
-                <div className="flex items-center gap-3 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30">
-                  <PartyPopper className="w-5 h-5 text-emerald-300 shrink-0" />
-                  <p className="text-sm font-semibold text-emerald-200">{depositBanner}</p>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
           {/* Gold toast â€” REAL money sent confirmation */}
           <AnimatePresence>
             {sendToast && (
@@ -269,7 +203,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
                     {active === 'vault' && (isDev ? <VaultSection /> : <SavingsAccountsSection />)}
                     {active === 'swiss' && <SwissSection previewOnly={!isDev} />}
-                    {active === 'cards' && (isDev ? <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /> : <CardProgramSection />)}
+                    {active === 'cards' && <CardProgramSection />}
                     {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
                     {active === 'invest' && (isDev ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
 {active === 'pay' && <VbPaySection />}
@@ -309,21 +243,13 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
       {paymentRequest && (
         <VbPayModal requestId={paymentRequest} onClose={() => setPaymentRequest(null)} />
       )}
-      {modal === 'bill' && (
-        <PayBillModal isOpen={true} onClose={closeModal} onPayBill={store.payBill} />
-      )}
+
       {modal === 'withdraw' && (
         <WithdrawModal isOpen={true} onClose={closeModal} />
       )}
-      {modal === 'convert' && (
-        <ConvertModal isOpen={true} onClose={closeModal} />
-      )}
-      {modal === 'wire' && (
-        <WireModal isOpen={true} onClose={closeModal} />
-      )}
-      {modal === 'mobile' && (
-        <MobileModal isOpen={true} onClose={closeModal} />
-      )}
+
+
+
       {modal === 'trade' && (
         <TradeModal 
           isOpen={true} 

@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Wallet, Plus, Send, Download, Check, Eye, EyeOff,
   ArrowUpRight, ArrowDownRight, Zap, X, Loader2, UserSearch, Banknote,
-  Building2, CreditCard, Globe, ShieldCheck, IndianRupee, RefreshCw,
+  Building2, ShieldCheck, IndianRupee, RefreshCw,
 } from 'lucide-react';
 import { useAccountData } from '../hooks/useAccountData';
 import { api } from '../api';
@@ -37,8 +37,8 @@ interface CurrencyOption {
 type Currency = string;
 
 interface RailsReadiness {
-  usd: { cardStripe: boolean; paypal: boolean; bankTransferInstructions: boolean; internalTransfers: boolean; externalWithdrawals: boolean; achFileExport?: boolean; achCustomerAccessEnabled?: boolean; achFileExportReason?: string; achAutomaticTransfer?: boolean };
-  inr: { directUpi: boolean; directUpiProvider?: string; directUpiVerification?: string; directUpiCustomerAccessEnabled?: boolean; directUpiAutoCredit?: boolean; directBankPayouts: boolean; directBankPayoutsProvider?: string; directBankPayoutsAutoTransfer?: boolean; directBankPayoutsCustomerAccessEnabled?: boolean; directBankPayoutsReason?: string; bankTransferInstructions?: boolean; collections: boolean; collectionsProvider: string | null; internalTransfers: boolean; payouts: boolean; payoutsProvider: string | null };
+  usd: { bankTransferInstructions: boolean; internalTransfers: boolean; externalWithdrawals: boolean; achFileExport?: boolean; achCustomerAccessEnabled?: boolean; achFileExportReason?: string; achAutomaticTransfer?: boolean };
+  inr: { directBankPayouts: boolean; directBankPayoutsAutoTransfer?: boolean; directBankPayoutsCustomerAccessEnabled?: boolean; directBankPayoutsReason?: string; bankTransferInstructions?: boolean; internalTransfers: boolean };
 }
 
 interface InrTransaction {
@@ -53,18 +53,6 @@ interface InrTransaction {
   externalReference?: string | null;
 }
 
-interface PayoutRecord {
-  id: string;
-  transfer_id: string;
-  amount: string;
-  currency: string;
-  destination_account_masked: string;
-  destination_ifsc: string;
-  status: string;
-  utr: string | null;
-  failure_reason: string | null;
-  created_at: string;
-}
 
 export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal: string) => void }) {
   const [currency, setCurrency] = useState<Currency>('USD');
@@ -81,19 +69,6 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
     api.paymentsReadiness()
       .then((r) => setReadiness((r && r.rails) || null))
       .catch(() => setReadiness(null));
-  }, []);
-
-  // Third-party card rails exist only in isolated development/testing.
-  // Production uses the VaultBank-native ledger and settlement workflows.
-  const [railMode, setRailMode] = useState<'live' | 'demo' | null>(null);
-  useEffect(() => {
-    if (import.meta.env.PROD) {
-      setRailMode(null);
-      return;
-    }
-    api.stripeBalance()
-      .then(r => setRailMode(r.mode === 'live' ? 'live' : 'demo'))
-      .catch(() => setRailMode('demo'));
   }, []);
 
   // ── Enabled currencies (single source of truth: server registry) ──
@@ -117,19 +92,13 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
   // ── INR wallet state ──
   const [walletState, setWalletState] = useState<'idle' | 'loading' | 'none' | 'ready' | 'error'>('idle');
   const [wallet, setWallet] = useState<{ currency: string; account: { accountNumber: string; balance: number }; transactions: InrTransaction[] } | null>(null);
-  const [payoutRecords, setPayoutRecords] = useState<PayoutRecord[]>([]);
   const walletSeq = useRef(0);
 
   const loadWallet = async (code: string) => {
     const seq = ++walletSeq.current;
     setWalletState('loading');
     try {
-      const [walletRes, payoutsRes] = await Promise.all([
-        api.getCurrencyWallet(code),
-        code === 'INR'
-          ? api.myPayouts().catch(() => ({ success: false, requests: [] }))
-          : Promise.resolve({ success: false, requests: [] }),
-      ]);
+      const walletRes = await api.getCurrencyWallet(code);
       if (seq !== walletSeq.current) return;
       if (walletRes.success && walletRes.account) {
         setWallet({ currency: code, account: walletRes.account, transactions: (walletRes.transactions as InrTransaction[]) || [] });
@@ -138,7 +107,6 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
         setWallet(null);
         setWalletState('none');
       }
-      if (code === 'INR') setPayoutRecords((payoutsRes.requests as PayoutRecord[]) || []);
     } catch (err: any) {
       if (seq !== walletSeq.current) return;
       if (err?.status === 404) {
@@ -174,24 +142,6 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
     } catch (err: any) {
       setOpenWalletStatus('error');
       setOpenWalletMsg(err?.message || `Could not open your ${currency} wallet.`);
-    }
-  };
-
-  // ── INR receiving details (provider-issued only) ──
-  const [inrDetails, setInrDetails] = useState<{ accountNumber: string; ifsc: string; bankCode?: string | null } | null>(null);
-  const [detailsStatus, setDetailsStatus] = useState<'idle' | 'loading' | 'error'>('idle');
-  const [detailsMsg, setDetailsMsg] = useState('');
-  const fetchMyDetails = async () => {
-    setDetailsStatus('loading');
-    setDetailsMsg('');
-    try {
-      const res = await api.collectionsMyDetails();
-      if (!res.success || !res.details) throw new Error(res.message || 'Receiving details are not available right now.');
-      setInrDetails(res.details);
-      setDetailsStatus('idle');
-    } catch (err: any) {
-      setDetailsStatus('error');
-      setDetailsMsg(err?.message || 'Could not load your receiving details.');
     }
   };
 
@@ -307,25 +257,9 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       ready: true, icon: Send, color: '#3b82f6', action: () => { setCurrency(currency); setShowSend(true); }, actionLabel: 'Send',
     },
     {
-      key: 'card', name: 'Card via Stripe', desc: 'Real card deposits through Stripe Checkout',
-      ready: usdRail ? usdRail.cardStripe : null, icon: CreditCard, color: '#6366f1',
-      hint: railMode === 'live' ? 'LIVE keys detected' : 'Not configured — set the Stripe secret key',
-    },
-    {
-      key: 'paypal', name: 'PayPal', desc: 'PayPal Checkout deposits with verified capture',
-      ready: usdRail ? usdRail.paypal : null, icon: Globe, color: '#0ea5e9',
-      hint: usdRail?.paypal ? 'Configured' : 'Not configured — PayPal credentials required',
-    },
-    {
       key: 'bankusd', name: 'Bank Transfer (USD)', desc: 'Unique reference + manual statement verification',
       ready: usdRail ? usdRail.bankTransferInstructions : null, icon: Building2, color: '#f59e0b',
       hint: usdRail?.bankTransferInstructions ? 'Instructions available in Deposits' : 'Not configured — receiving account env required',
-    },
-    {
-      key: 'collections', name: 'INR Receiving Details', desc: 'Provider-issued per-user account + IFSC, auto-credited',
-      ready: inrRail ? inrRail.collections : null, icon: IndianRupee, color: '#10b981',
-      hint: inrRail?.collections ? `Provider: ${inrRail.collectionsProvider}` : 'Not configured — collection provider required',
-      action: inrRail?.collections ? () => { setCurrency('INR'); fetchMyDetails(); } : undefined, actionLabel: 'Get details',
     },
     {
       key: 'directbankpayout', name: 'VaultBank Manual Bank Payout', desc: 'Funds reserved; operator sends via bank and reconciles the statement',
@@ -336,12 +270,6 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
           ? 'Available for this account · operator must send manually and confirm the bank UTR'
           : 'Admin-only pilot — customer access is disabled'),
       action: canUseDirectBankPayout ? () => { setCurrency('INR'); setShowDirectBankPayout(true); } : undefined, actionLabel: 'Open',
-    },
-    {
-      key: 'payouts', name: 'INR Bank Withdrawals', desc: 'Reserved funds, provider status, exactly-once refunds',
-      ready: inrRail ? inrRail.payouts : null, icon: Banknote, color: '#d97706',
-      hint: inrRail?.payouts ? `Provider: ${inrRail.payoutsProvider}` : 'Not configured — payout provider required',
-      action: inrRail?.payouts ? () => setCurrency('INR') : undefined, actionLabel: 'Withdraw',
     },
     {
       key: 'usdach', name: 'USD ACH File Export', desc: 'Bank-compatible credit file; file export is not settlement',
@@ -355,12 +283,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
     },
   ];
 
-  // Do not advertise third-party processors or per-user provider-issued
-  // accounts in the production UI. Those systems are not part of VaultBank's
-  // native production rails.
-  const visibleRails = import.meta.env.PROD
-    ? rails.filter((r) => !['card', 'paypal', 'collections', 'payouts'].includes(r.key))
-    : rails;
+  const visibleRails = rails;
 
   return (
     <div className="space-y-5">
@@ -381,15 +304,6 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                 <div className="flex items-center gap-2 mb-2">
                   <Wallet className="w-5 h-5 text-cyan-300" />
                   <p className="text-xs tracking-[0.3em] text-white/40 font-bold">VAULTBANK PAYMENTS</p>
-                  {railMode && (
-                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold border ${
-                      railMode === 'live'
-                        ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                        : 'bg-amber-500/15 border-amber-500/30 text-amber-300'
-                    }`}>
-                      {railMode === 'live' ? '● LIVE RAIL' : '○ SANDBOX'}
-                    </span>
-                  )}
                 </div>
                 {/* Currency selector — every operator-enabled currency */}
                 <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -488,14 +402,14 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
               <div className="glass-btn rounded-xl p-4">
                 <div className="flex items-center gap-2 mb-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-amber-300" />
-                  <p className="text-[10px] text-white/40 tracking-wider">RAILS READY</p>
+                  <p className="text-[10px] text-white/40 tracking-wider">BANK RAILS READY</p>
                 </div>
                 <p className="text-xl font-bold text-white">
                   {readiness
                     ? [...Object.values(readiness.usd), ...Object.values(readiness.inr)].filter(Boolean).length
                     : '…'}
                 </p>
-                <p className="text-[10px] text-white/40 mt-0.5">of 9 verified live</p>
+                <p className="text-[10px] text-white/40 mt-0.5">configured bank options</p>
               </div>
             </div>
           </div>
@@ -581,42 +495,6 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
             )}
           </div>
 
-          {/* Receiving details — provider-issued only */}
-          <div className="glass-panel rounded-3xl p-6">
-            <h3 className="font-display text-xl text-white mb-1 flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-cyan-300" /> Receive INR
-            </h3>
-            {!inrRail?.collections ? (
-              <p className="text-sm text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 my-3">
-                Automatic INR receiving details are not available yet — the collection provider isn't configured. You'll get your own real account number + IFSC the moment it is.
-              </p>
-            ) : inrState !== 'ready' ? (
-              <p className="text-sm text-white/40 py-4">Open your INR wallet first to get receiving details.</p>
-            ) : !inrDetails ? (
-              <div className="py-3">
-                <p className="text-sm text-white/50 mb-4">Get your personal provider-issued bank details. Send INR from any Indian bank app — it's credited automatically after the provider confirms.</p>
-                <button onClick={fetchMyDetails} disabled={detailsStatus === 'loading'}
-                  className="px-5 py-3 rounded-xl bg-linear-to-r from-cyan-400 to-blue-500 text-white font-bold text-sm flex items-center gap-2 disabled:opacity-50">
-                  {detailsStatus === 'loading' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Building2 className="w-4 h-4" />} Get My Receiving Details
-                </button>
-                {detailsStatus === 'error' && <p className="text-xs text-rose-400 font-bold mt-3">{detailsMsg}</p>}
-              </div>
-            ) : (
-              <div className="py-2 space-y-2.5">
-                <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 space-y-2">
-                  <p className="text-[9px] text-emerald-300/70 tracking-wider font-bold">YOUR INR ACCOUNT — PROVIDER-ISSUED</p>
-                  <button onClick={() => copy(inrDetails.accountNumber, 'va-acct')} className="w-full font-mono text-sm text-emerald-200 bg-black/20 rounded-lg p-2.5 break-all hover:text-white transition-colors">
-                    {copied === 'va-acct' ? 'Account number copied!' : inrDetails.accountNumber}
-                  </button>
-                  <button onClick={() => copy(inrDetails.ifsc, 'va-ifsc')} className="w-full font-mono text-sm text-emerald-200 bg-black/20 rounded-lg p-2.5 hover:text-white transition-colors">
-                    {copied === 'va-ifsc' ? 'IFSC copied!' : inrDetails.ifsc}
-                  </button>
-                </div>
-                <p className="text-[10px] text-white/40 leading-relaxed">Send INR to these details from any Indian banking app. Your balance is credited automatically once the provider verifies the payment — no manual step.</p>
-              </div>
-            )}
-          </div>
-
           {/* INR payout entry point — all requests use the same guarded, idempotent modal */}
           <div className="glass-panel rounded-3xl p-6 lg:col-span-2">
             <div className="flex items-center justify-between mb-3">
@@ -636,30 +514,6 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
                 This VaultBank-owned path reserves funds atomically. The operator sends the transfer from the bank and confirms its official statement UTR; no processor API sends the money.
               </p>
             )}
-            {payoutRecords.length > 0 && (
-              <div className="mt-5 space-y-2">
-                <p className="text-[10px] text-white/40 tracking-wider font-bold">MY WITHDRAWAL REQUESTS</p>
-                {payoutRecords.map((p) => (
-                  <div key={p.id} className="flex items-center gap-3 p-3 rounded-2xl bg-white/3 border border-white/5">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-amber-500/10 border border-amber-500/20">
-                      <Banknote className="w-4 h-4 text-amber-300" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-white truncate">₹{parseFloat(p.amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })} to {p.destination_account_masked}</p>
-                      <p className="text-[11px] text-white/40">{new Date(p.created_at).toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })}{p.utr ? ` · UTR ${p.utr}` : ''}</p>
-                    </div>
-                    <span className={`text-[9px] font-bold px-2 py-1 rounded-full border whitespace-nowrap ${
-                      p.status === 'succeeded' ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
-                      : p.status === 'failed_refunded' || p.status === 'failed_unreserved' ? 'bg-rose-500/15 border-rose-500/30 text-rose-300'
-                      : p.status === 'reconciliation_required' ? 'bg-amber-500/15 border-amber-500/30 text-amber-300'
-                      : 'bg-blue-500/15 border-blue-500/30 text-blue-300'
-                    }`}>
-                      {p.status === 'succeeded' ? '✓ COMPLETED' : p.status === 'reconciliation_required' ? '⚑ RECONCILING' : p.status.startsWith('failed') ? '✕ FAILED — REFUNDED' : '○ PENDING'}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </motion.div>
       )}
@@ -670,7 +524,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
 
       {/* ── REAL rails readiness — no fake providers ── */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="glass-panel rounded-3xl p-6">
-        <h3 className="font-display text-xl text-white mb-1">Payment Rails</h3>
+        <h3 className="font-display text-xl text-white mb-1">Banking Rails</h3>
         <p className="text-xs text-white/40 mb-5">VaultBank-native ledger and settlement workflows. External bank settlement is shown only when its receiving details and reconciliation controls are configured.</p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {visibleRails.map((r, i) => (

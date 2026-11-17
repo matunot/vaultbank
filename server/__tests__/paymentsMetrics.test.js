@@ -10,25 +10,25 @@ describe('metrics/payments', () => {
         // getSingleMetricAsString throws for a metric that does not exist yet.
         metrics.recordPaymentAttempt({ provider: 'warmup', method: 'warmup', outcome: 'mock' });
         const before = await metrics.registry.getSingleMetricAsString('vaultbank_payment_attempts_total');
-        metrics.recordPaymentAttempt({ provider: 'stripe', method: 'stripe_card', outcome: 'success', durationMs: 123 });
-        metrics.recordPaymentAttempt({ provider: 'stripe', method: 'stripe_card', outcome: 'failure', reason: 'card_declined' });
-        metrics.recordPaymentAttempt({ provider: 'razorpay', method: 'upi', outcome: 'mock' });
+        metrics.recordPaymentAttempt({ provider: 'bank_ledger', method: 'bank_transfer', outcome: 'success', durationMs: 123 });
+        metrics.recordPaymentAttempt({ provider: 'bank_ledger', method: 'bank_transfer', outcome: 'failure', reason: 'card_declined' });
+        metrics.recordPaymentAttempt({ provider: 'vaultbank', method: 'internal_transfer', outcome: 'mock' });
         const after = await metrics.registry.getSingleMetricAsString('vaultbank_payment_attempts_total');
         expect(after.length).toBeGreaterThan(before.length);
     });
 
     test('recordWebhookEvent and recordWebhookSignatureFailure', async () => {
-        metrics.recordWebhookEvent({ provider: 'stripe', eventType: 'payment_intent.succeeded', result: 'processed' });
-        metrics.recordWebhookSignatureFailure('paypal');
+        metrics.recordWebhookEvent({ provider: 'bank', eventType: 'bank_deposit.settled', result: 'processed' });
+        metrics.recordWebhookSignatureFailure('bank');
         const out = await metrics.registry.getSingleMetricAsString('vaultbank_webhook_events_total');
         expect(out).toContain('vaultbank_webhook_events_total');
         const sig = await metrics.registry.getSingleMetricAsString('vaultbank_webhook_signature_failures_total');
-        expect(sig).toContain('paypal');
+        expect(sig).toContain('bank');
     });
 
     test('recordReconciliationMismatches no-ops on zero', async () => {
         const before = await metrics.registry.getSingleMetricAsString('vaultbank_reconciliation_mismatches_total');
-        metrics.recordReconciliationMismatches('stripe', 'mismatch', 0);
+        metrics.recordReconciliationMismatches('bank', 'mismatch', 0);
         const after = await metrics.registry.getSingleMetricAsString('vaultbank_reconciliation_mismatches_total');
         expect(after).toBe(before);
     });

@@ -1,33 +1,36 @@
 name: Integration Tests (PostgreSQL)
 
 "on":
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch:
   pull_request:
     branches: [main]
   push:
     branches: [main]
     paths:
+      - 'server/index.js'
+      - 'server/package.json'
+      - 'server/package-lock.json'
       - 'server/routes/accounts.js'
-      - 'server/routes/external-payouts.js'
+      - 'server/routes/payments.js'
       - 'server/routes/direct-upi.js'
       - 'server/routes/direct-bank-payouts.js'
       - 'server/routes/bank-deposits.js'
+      - 'server/routes/usd-ach-payouts.js'
       - 'server/__tests__/directUpi.test.js'
       - 'server/__tests__/directUpiPgIntegration.test.js'
       - 'server/__tests__/directBankPayouts.test.js'
       - 'server/__tests__/bankDeposits.test.js'
+      - 'server/__tests__/nativePaymentsReadiness.test.js'
+      - 'server/__tests__/inrSchemaFailClosed.test.js'
       - 'client/src/components/DirectUpiDepositModal.tsx'
       - 'client/src/components/DirectUpiAdminReview.tsx'
       - 'client/src/components/DirectBankPayoutModal.tsx'
       - 'client/src/components/DirectBankPayoutAdminReview.tsx'
       - 'client/src/components/PaymentsSection.tsx'
       - 'client/src/api.ts'
-      - 'server/routes/collections.js'
-      - 'server/collections/**'
-      - 'server/payouts/**'
+      - 'client/src/App.tsx'
       - 'server/services/**'
-      - 'server/payments/**'
-      - 'server/__tests__/paymentsSafety.test.js'
+      - 'server/payments/usdc*.js'
       - 'server/vbr/**'
       - 'server/config/**'
       - 'server/__tests__/databaseProductionSafety.test.js'
@@ -37,17 +40,12 @@ name: Integration Tests (PostgreSQL)
       - 'server/__tests__/pgIntegration.test.js'
       - 'server/__tests__/pgHttpIntegration.test.js'
       - 'server/__tests__/vbrHttpIntegration.test.js'
-      - 'server/__tests__/inrPgIntegration.test.js'
+      - 'server/__tests__/directUpiPgIntegration.test.js'
       - 'server/__tests__/vbr.test.js'
-      - 'server/__tests__/inrRails.test.js'
-      - 'server/__tests__/cashfreeAdapters.test.js'
-      - 'server/__tests__/inrSchemaFailClosed.test.js'
       - 'server/__tests__/helpers/pgTestSetup.js'
-      - 'server/scripts/run-migrations.js'
       - '.github/workflows/integration-tests.yml'
 
 jobs:
-
   frontend-verify:
     name: Frontend - TypeScript and Build
     runs-on: ubuntu-latest
@@ -57,25 +55,20 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
-
       - name: Install frontend dependencies
         run: npm ci
-
       - name: TypeScript check
         run: npx tsc --noEmit
-
       - name: Production build
         run: npm run build
 
   integration:
     name: PostgreSQL Integration Tests
     runs-on: ubuntu-latest
-
     services:
       postgres:
         image: postgres:16
@@ -90,99 +83,70 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-
     defaults:
       run:
         working-directory: server
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-
       - name: Setup Node.js
         uses: actions/setup-node@v7
         with:
           node-version: 24
-
       - name: Install dependencies
         run: npm ci
-
       - name: Run complete backend unit suite
         run: npm test -- --runInBand
-
       - name: Run production database safety tests
         run: npx --yes jest@30.5.2 __tests__/databaseProductionSafety.test.js --runInBand --testPathIgnorePatterns /node_modules/
-
-      - name: Verify provider isolation and native-ledger fail-closed schema
+      - name: Run native schema readiness and payment surface tests
         run: |
-          npx --yes jest@30.5.2 __tests__/cashfreeAdapters.test.js __tests__/inrSchemaFailClosed.test.js __tests__/inrRails.test.js \
+          npx --yes jest@30.5.2 __tests__/inrSchemaFailClosed.test.js __tests__/nativePaymentsReadiness.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --runInBand --testTimeout=60000 --verbose --forceExit
-
-      - name: Run direct UPI safety tests
+      - name: Run historical UPI reconciliation safety tests
         run: |
           npx --yes jest@30.5.2 __tests__/directUpi.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --runInBand --testTimeout=60000 --verbose --forceExit
-
-      - name: Run manual bank payout safety tests
+      - name: Run VaultBank manual bank payout tests
         run: |
           npx --yes jest@30.5.2 __tests__/directBankPayouts.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --runInBand --testTimeout=60000 --verbose --forceExit
-
-      - name: Run native bank deposit safety tests
+      - name: Run VaultBank bank deposit tests
         run: |
           npx --yes jest@30.5.2 __tests__/bankDeposits.test.js \
             --testPathIgnorePatterns /node_modules/ \
             --runInBand --testTimeout=60000 --verbose --forceExit
-
-
-      - name: Create test database
+      - name: Create isolated test database
         run: |
           PGPASSWORD=vaultbank_test_pw psql -h localhost -U vaultbank -d vaultbank -c "CREATE DATABASE vaultbank_test"
-
-      - name: Run SQL-direct integration tests (real PostgreSQL concurrency)
+      - name: Run SQL ledger integration tests
         run: |
           npx --yes jest@30.5.2 __tests__/pgIntegration.test.js \
             --testPathIgnorePatterns /node_modules/ \
-            --testTimeout=60000 \
-            --verbose --forceExit
+            --testTimeout=60000 --verbose --forceExit
         env:
           TEST_DATABASE_URL: postgres://vaultbank:vaultbank_test_pw@localhost:5432/vaultbank_test
-
-      - name: Run HTTP handler integration tests (real route + real middleware + real PostgreSQL)
+      - name: Run HTTP and PostgreSQL account integration tests
         run: |
           npx --yes jest@30.5.2 __tests__/pgHttpIntegration.test.js \
             --testPathIgnorePatterns /node_modules/ \
-            --testTimeout=120000 \
-            --verbose --forceExit
+            --testTimeout=120000 --verbose --forceExit
         env:
           TEST_DATABASE_URL: postgres://vaultbank:vaultbank_test_pw@localhost:5432/vaultbank_test
-
-      - name: Run VBR intent execution integration tests (real VBR route + real PostgreSQL)
+      - name: Run VBR internal payment integration tests
         run: |
           npx --yes jest@30.5.2 __tests__/vbrHttpIntegration.test.js \
             --testPathIgnorePatterns /node_modules/ \
-            --testTimeout=120000 \
-            --verbose --forceExit
+            --testTimeout=120000 --verbose --forceExit
         env:
           TEST_DATABASE_URL: postgres://vaultbank:vaultbank_test_pw@localhost:5432/vaultbank_test
-
-      - name: Run INR collections/payouts integration tests (real routes + real PostgreSQL)
-        run: |
-          npx --yes jest@30.5.2 __tests__/inrPgIntegration.test.js \
-            --testPathIgnorePatterns /node_modules/ \
-            --testTimeout=180000 \
-            --verbose --forceExit
-        env:
-          TEST_DATABASE_URL: postgres://vaultbank:vaultbank_test_pw@localhost:5432/vaultbank_test
-
-      - name: Run Direct UPI settlement + internal INR transfer integration tests
+      - name: Run historical UPI reconciliation ledger integration tests
         run: |
           npx --yes jest@30.5.2 __tests__/directUpiPgIntegration.test.js \
             --testPathIgnorePatterns /node_modules/ \
-            --testTimeout=120000 \
-            --verbose --forceExit
+            --testTimeout=120000 --verbose --forceExit
         env:
           TEST_DATABASE_URL: postgres://vaultbank:vaultbank_test_pw@localhost:5432/vaultbank_test
