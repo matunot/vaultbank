@@ -8,7 +8,7 @@ import RichIcon from './RichIcon';
 
 // ponytail: dev-only preview sections keep their nav entries out of production
 // so customers never land on an "unavailable" dead end.
-const DEV_ONLY_SECTIONS = ['swiss', 'invest', 'rewards'];
+const DEV_ONLY_SECTIONS = ['invest', 'rewards'];
 const visibleNavItems = import.meta.env.DEV
   ? navItems
   : navItems.filter((item) => !DEV_ONLY_SECTIONS.includes(item.id));

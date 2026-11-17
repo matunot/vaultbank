@@ -9,7 +9,7 @@ import { swissAccounts, swissServices, preciousMetals, stealthAddresses, privacy
 
 type Tab = 'accounts' | 'metals' | 'services' | 'anonymous';
 
-export default function SwissSection() {
+export default function SwissSection({ previewOnly = false }: { previewOnly?: boolean } = {}) {
   const [tab, setTab] = useState<Tab>('accounts');
   const [revealed, setRevealed] = useState<number | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
@@ -51,6 +51,19 @@ export default function SwissSection() {
 
   return (
     <div className="space-y-5">
+      {previewOnly && (
+        <section role="status" aria-live="polite" className="rounded-2xl border border-amber-400/25 bg-amber-400/5 p-5">
+          <div className="text-[10px] font-bold tracking-[0.2em] text-amber-300">DEMO PREVIEW ONLY</div>
+          <h2 className="mt-2 text-lg font-semibold text-white">Swiss banking concept</h2>
+          <p className="mt-2 text-sm leading-relaxed text-white/65">
+            Every account, balance, metal holding, recipient, fee and activity below is fictional sample data for the interface preview.
+            VaultBank has no connected Swiss bank partner, numbered-account service, custody arrangement, deposit protection or Swiss transfer rail.
+          </p>
+          <p className="mt-2 text-xs text-white/45">
+            No account can be opened and no money can be sent from this preview. Real services would require a licensed provider, KYC/AML checks and separate agreements.
+          </p>
+        </section>
+      )}
       {/* ── Hero: Swiss Wealth ── */}
       <motion.div
         initial={{ opacity: 0, y: 24 }}
@@ -82,7 +95,7 @@ export default function SwissSection() {
                 <Mountain className="w-7 h-7 text-red-400" />
               </motion.div>
               <div>
-                <p className="text-xs tracking-[0.4em] text-red-300/80 font-bold">SWISS PRIVATE BANK</p>
+                <p className="text-xs tracking-[0.4em] text-red-300/80 font-bold">{previewOnly ? 'SWISS BANKING PREVIEW' : 'SWISS PRIVATE BANK'}</p>
                 <p className="text-sm text-white/40">Zurich • Geneva • Lugano • Basel</p>
               </div>
             </div>
@@ -90,20 +103,20 @@ export default function SwissSection() {
             <p className="font-display text-5xl lg:text-7xl text-gold mt-4">
               ${(grandTotal / 1_000_000).toFixed(2)}M
             </p>
-            <p className="text-sm text-white/40 mt-1">Total assets under Swiss protection</p>
+            <p className="text-sm text-white/40 mt-1">{previewOnly ? 'Illustrative sample value — not held with a bank' : 'Total assets under Swiss protection'}</p>
 
             <div className="flex flex-wrap items-center gap-3 mt-5">
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass-btn border border-red-500/30">
                 <Shield className="w-3.5 h-3.5 text-red-300" />
-                <span className="text-xs font-bold text-red-200">Bank Secrecy Act</span>
+                <span className="text-xs font-bold text-red-200">{previewOnly ? 'Concept preview' : 'Bank Secrecy Act'}</span>
               </div>
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass-btn border border-amber-500/30">
                 <Crown className="w-3.5 h-3.5 text-amber-300" />
-                <span className="text-xs font-bold text-amber-200">PRIVATE CLIENT</span>
+                <span className="text-xs font-bold text-amber-200">{previewOnly ? 'No live bank account' : 'PRIVATE CLIENT'}</span>
               </div>
               <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full glass-btn border border-emerald-500/30">
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
-                <span className="text-xs font-bold text-emerald-200">CHF Insured</span>
+                <span className="text-xs font-bold text-emerald-200">{previewOnly ? 'No insurance coverage' : 'CHF Insured'}</span>
               </div>
             </div>
 
@@ -126,7 +139,7 @@ export default function SwissSection() {
               </div>
             </div>
 
-            <div className="flex gap-3 mt-6 flex-wrap">
+            <div className={previewOnly ? "hidden" : "flex gap-3 mt-6 flex-wrap"}>
               <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
                 onClick={() => setShowOpen(true)}
                 className="flex items-center gap-2 px-5 py-3 rounded-xl bg-linear-to-r from-red-500 to-red-600 text-white font-bold text-sm shadow-lg shadow-red-500/30"
@@ -149,7 +162,7 @@ export default function SwissSection() {
         {[
           { id: 'accounts' as Tab,  label: 'Numbered Accounts', icon: KeyRound, count: swissAccounts.length },
           { id: 'metals' as Tab,    label: 'Precious Metals',    icon: Award,    count: preciousMetals.length },
-          { id: 'anonymous' as Tab, label: 'Anonymous Transfers', icon: Fingerprint, count: anonymousTransfers.length },
+          { id: 'anonymous' as Tab, label: previewOnly ? 'Privacy Preview' : 'Anonymous Transfers', icon: Fingerprint, count: anonymousTransfers.length },
           { id: 'services' as Tab,  label: 'Premium Services',   icon: Crown,    count: swissServices.length },
         ].map(t => (
           <button
@@ -337,12 +350,12 @@ export default function SwissSection() {
             <div className="glass-panel rounded-3xl p-6">
               <div className="flex items-center justify-between mb-5">
                 <div>
-                  <h3 className="font-display text-xl text-white">Privacy Tiers</h3>
-                  <p className="text-xs text-white/40 mt-0.5">Choose your level of anonymity</p>
+                  <h3 className="font-display text-xl text-white">{previewOnly ? "Privacy concepts" : "Privacy Tiers"}</h3>
+                  <p className="text-xs text-white/40 mt-0.5">{previewOnly ? "Illustrative UI only — no anonymous transfer rail is connected" : "Choose your level of anonymity"}</p>
                 </div>
                 <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
                   onClick={() => setShowAnonSend(true)}
-                  className="px-5 py-2.5 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm flex items-center gap-2 glow-amber"
+                  className={previewOnly ? "hidden" : "px-5 py-2.5 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm flex items-center gap-2 glow-amber"}
                 >
                   <Fingerprint className="w-4 h-4" /> Send Anonymously
                 </motion.button>
@@ -356,8 +369,8 @@ export default function SwissSection() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.06 }}
                     whileHover={{ y: -4, scale: 1.02 }}
-                    onClick={() => { setSelectedTier(p.tier); setShowAnonSend(true); }}
-                    className={`relative p-4 rounded-2xl cursor-pointer border transition-all overflow-hidden ${
+                    onClick={() => { setSelectedTier(p.tier); if (!previewOnly) setShowAnonSend(true); }}
+                    className={`relative p-4 rounded-2xl ${previewOnly ? "cursor-default" : "cursor-pointer"} border transition-all overflow-hidden ${
                       selectedTier === p.tier
                         ? 'border-amber-500/40 bg-amber-500/5'
                         : 'border-white/5 bg-white/2 hover:bg-white/4 hover:border-white/15'
@@ -396,7 +409,7 @@ export default function SwissSection() {
                   <h3 className="font-display text-xl text-white">Stealth Addresses</h3>
                   <p className="text-xs text-white/40 mt-0.5">Untraceable recipients</p>
                 </div>
-                <button className="text-xs font-bold text-amber-300 hover:text-amber-200 flex items-center gap-1">
+                <button disabled={previewOnly} className={`text-xs font-bold text-amber-300 hover:text-amber-200 flex items-center gap-1 ${previewOnly ? "hidden" : ""}`}>
                   <Plus className="w-3.5 h-3.5" /> Add Address
                 </button>
               </div>
@@ -408,8 +421,8 @@ export default function SwissSection() {
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.06 }}
                     whileHover={{ x: 4 }}
-                    onClick={() => { setAnonRecipient(s.address); setShowAnonSend(true); }}
-                    className="flex items-center gap-3 p-4 rounded-2xl bg-white/2 border border-white/5 hover:bg-white/4 hover:border-white/15 cursor-pointer transition-all"
+                    onClick={() => { if (!previewOnly) { setAnonRecipient(s.address); setShowAnonSend(true); } }}
+                    className={`flex items-center gap-3 p-4 rounded-2xl bg-white/2 border border-white/5 hover:bg-white/4 hover:border-white/15 transition-all ${previewOnly ? "cursor-default" : "cursor-pointer"}`}
                   >
                     <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: `${s.color}20`, border: `1px solid ${s.color}40` }}>
                       <Fingerprint className="w-5 h-5" style={{ color: s.color }} />
@@ -425,7 +438,7 @@ export default function SwissSection() {
                       <p className="text-[10px] text-white/40">Last used</p>
                       <p className="text-xs font-bold text-white/70">{s.lastUsed}</p>
                     </div>
-                    <Send className="w-4 h-4 text-white/40" />
+                    {!previewOnly && <Send className="w-4 h-4 text-white/40" />}
                   </motion.div>
                 ))}
               </div>
@@ -522,7 +535,7 @@ export default function SwissSection() {
 
       {/* ── Anonymous Transfer Modal ── */}
       <AnimatePresence>
-        {showAnonSend && (
+        {!previewOnly && showAnonSend && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -689,7 +702,7 @@ export default function SwissSection() {
 
       {/* ── Open Numbered Account Modal ── */}
       <AnimatePresence>
-        {showOpen && (
+        {!previewOnly && showOpen && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

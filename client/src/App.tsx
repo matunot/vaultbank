@@ -11,7 +11,6 @@ import MarketTicker from './components/MarketTicker';
 import DashboardSection from './components/DashboardSection';
 import ErrorBoundary from './components/ErrorBoundary';
 import PreviewOnlyNotice from './components/PreviewOnlyNotice';
-import EmailVerificationNotice from './components/EmailVerificationNotice';
 import EmailVerificationPage from './components/EmailVerificationPage';
 import { TransferModal, DepositModal, PayBillModal, ConvertModal, WireModal, MobileModal, TradeModal, WithdrawModal } from './components/Modals';
 import VbPayModal from './components/VbPayModal';
@@ -34,7 +33,7 @@ const DebtsSection = isDev ? lazy(() => import('./components/DebtsSection')) : (
 const CreditSection = isDev ? lazy(() => import('./components/CreditSection')) : (null as unknown as typeof import('./components/CreditSection').default);
 const VbPaySection = lazy(() => import('./components/VbPaySection'));
 
-const SwissSection = isDev ? lazy(() => import('./components/SwissSection')) : (null as unknown as typeof import('./components/SwissSection').default);
+const SwissSection = lazy(() => import('./components/SwissSection'));
 const BudgetSection = isDev ? lazy(() => import('./components/BudgetSection')) : (null as unknown as typeof import('./components/BudgetSection').default);
 const TransferSection = lazy(() => import('./components/TransferSection'));
 const HistorySection = lazy(() => import('./components/HistorySection'));
@@ -194,7 +193,6 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
 
         <main className="flex-1 overflow-y-auto h-screen min-w-0">
           <Header theme={theme} onThemeChange={setTheme} />
-          <EmailVerificationNotice />
 
           {/* Stripe deposit return banner */}
           <AnimatePresence>
@@ -270,7 +268,7 @@ const [paymentRequest, setPaymentRequest] = useState<string | null>(null);
                   <Suspense fallback={<SectionLoader />}>
                     {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
                     {active === 'vault' && (isDev ? <VaultSection /> : <SavingsAccountsSection />)}
-                    {active === 'swiss' && (isDev ? <SwissSection /> : <PreviewOnlyNotice title="Swiss banking is not connected" message="The development view is illustrative only. No Swiss bank account, banking partnership, or deposit-protection arrangement is offered through this section." />)}
+                    {active === 'swiss' && <SwissSection previewOnly={!isDev} />}
                     {active === 'cards' && (isDev ? <CardsSection cards={store.cards} onLockCard={store.lockCard} formatMoney={store.formatMoney} /> : <CardProgramSection />)}
                     {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
                     {active === 'invest' && (isDev ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
