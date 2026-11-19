@@ -192,7 +192,7 @@ export default function App() {
                     {active === 'vault' && (isDev ? <VaultSection /> : <SavingsAccountsSection />)}
                     {active === 'swiss' && <SwissSection previewOnly={!isDev} />}
                     {active === 'cards' && <CardProgramSection />}
-                    {active === 'payments' && <PaymentsSection onOpenModal={openModal} />}
+                    {active === 'payments' && <PaymentsSection onOpenModal={openModal} onOpenVerification={() => setActive('security')} />}
                     {active === 'invest' && (isDev ? <InvestmentsSection investments={store.investments} onOpenTrade={() => openModal('trade')} /> : <PreviewOnlyNotice title="Investment features are not connected" message="The development preview uses sample holdings. Live investment balances and trade execution are not available through this section." />)}
 
                     {active === 'loans' && (isDev ? <DebtsSection /> : <LoanApplicationSection />)}
@@ -224,7 +224,7 @@ export default function App() {
           <TransferModal isOpen={true} onClose={closeModal} onSend={handleSend} />
         )}
         {modal === 'deposit' && (
-          <DepositModal isOpen={true} onClose={closeModal} />
+          <DepositModal isOpen={true} onClose={closeModal} onOpenVerification={() => { closeModal(); setActive('security'); }} />
         )}
         {modal === 'withdraw' && (
           <WithdrawModal isOpen={true} onClose={closeModal} />
