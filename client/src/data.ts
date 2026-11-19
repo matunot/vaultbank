@@ -9,7 +9,7 @@ export const navItems = [
   { id: 'send',     label: 'Transfer',   icon: 'Send' },
   { id: 'history',  label: 'History',    icon: 'History' },
   { id: 'rewards',  label: 'Rewards',    icon: 'Gem' },
-  { id: 'security', label: 'Security',   icon: 'Shield' },
+  { id: 'security', label: 'Verification Center', icon: 'Shield' },
 ];
 
 export const balance = {
