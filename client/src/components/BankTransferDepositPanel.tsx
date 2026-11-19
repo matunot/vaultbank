@@ -53,7 +53,7 @@ function statusLabel(status: string) {
   }
 }
 
-export function BankTransferDepositPanel() {
+export function BankTransferDepositPanel({ onOpenVerification }: { onOpenVerification?: () => void } = {}) {
   const [config, setConfig] = useState<BankDepositConfig | null>(null);
   const [selectedCurrency, setSelectedCurrency] = useState('USD');
   const [instructions, setInstructions] = useState<BankDepositInstruction[]>([]);
@@ -63,12 +63,14 @@ export function BankTransferDepositPanel() {
   const [busy, setBusy] = useState(false);
   const [busyCancel, setBusyCancel] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [verificationRequired, setVerificationRequired] = useState(false);
   const [notice, setNotice] = useState('');
   const [copied, setCopied] = useState('');
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError('');
+    setVerificationRequired(false);
     try {
       const [configResult, historyResult] = await Promise.all([
         api.bankDepositConfig(),
@@ -90,6 +92,7 @@ export function BankTransferDepositPanel() {
     } catch (err) {
       const apiErr = err as ApiErrorLike;
       if (apiErr.status === 403) {
+        setVerificationRequired(true);
         setError('Real-money deposit instructions are available only after email and identity verification.');
       } else {
         setError(apiErr.message || 'Could not load bank-transfer deposit status.');
@@ -187,7 +190,16 @@ export function BankTransferDepositPanel() {
         </button>
       </div>
 
-      {error && <div role="alert" className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">{error}</div>}
+      {error && (
+        <div role="alert" className="mt-4 rounded-xl border border-rose-500/30 bg-rose-500/10 p-3 text-sm text-rose-200">
+          <p>{error}</p>
+          {verificationRequired && onOpenVerification && (
+            <button type="button" onClick={onOpenVerification} className="mt-3 rounded-lg border border-amber-300/30 bg-amber-300/10 px-3 py-2 text-xs font-bold text-amber-100 hover:bg-amber-300/15">
+              Open Verification Center
+            </button>
+          )}
+        </div>
+      )}
       {notice && <div role="status" className="mt-4 flex items-start gap-2 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-200"><CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />{notice}</div>}
 
       {loading ? (
