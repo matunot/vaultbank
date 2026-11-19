@@ -123,7 +123,7 @@ export default function NotificationsPanel() {
             <div className="p-6 border-b border-white/5 flex items-center justify-between">
               <div>
                 <h3 className="font-display text-xl text-white">Notifications</h3>
-                <p className="text-xs text-white/40 mt-0.5">{unreadCount} unread · Account updates</p>
+                <p className="text-xs text-white/40 mt-0.5">{unreadCount} unread · REAL account alerts</p>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -157,7 +157,7 @@ export default function NotificationsPanel() {
                 </div>
               ) : alerts.length === 0 ? (
                 <div className="text-sm text-white/40 py-8 text-center">
-                  No updates yet. Account activity and service messages will appear here.
+                  No alerts yet. Money you send or receive will show up here.
                 </div>
               ) : (
                 alerts.map((alert, i) => {

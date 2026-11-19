@@ -3,7 +3,10 @@ import {
   Home, CreditCard, TrendingUp, Send, History, Gem, Settings, LogOut, Vault, ChevronLeft, Landmark, PieChart, Mountain, Wallet, Zap,
 } from 'lucide-react';
 import { navItems } from '../data';
+import RichIcon from './RichIcon';
 
+// ponytail: dev-only preview sections keep their nav entries out of production
+// so customers never land on an "unavailable" dead end.
 const DEV_ONLY_SECTIONS = ['invest', 'rewards'];
 const visibleNavItems = import.meta.env.DEV
   ? navItems
@@ -13,11 +16,11 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   Home, Vault, CreditCard, TrendingUp, Send, History, Gem, Landmark, PieChart, Mountain, Wallet, Zap,
 };
 
-const groups = [
-  { label: 'Overview', ids: ['home'] },
-  { label: 'Banking', ids: ['vault', 'cards', 'payments', 'send', 'history'] },
-  { label: 'Services', ids: ['swiss', 'invest', 'loans', 'rewards', 'security'] },
-];
+const variantMap: Record<string, 'gold' | 'emerald' | 'ruby' | 'sapphire' | 'amethyst' | 'amber' | 'cyan'> = {
+  Home: 'gold', Vault: 'amethyst', CreditCard: 'sapphire', TrendingUp: 'emerald',
+  Send: 'cyan', History: 'amber', Gem: 'ruby', Landmark: 'emerald', PieChart: 'sapphire', Mountain: 'ruby',
+  Wallet: 'cyan',
+};
 
 interface Props {
   active: string;
@@ -28,83 +31,100 @@ interface Props {
 
 export default function Sidebar({ active, setActive, onSettings, onLogout }: Props) {
   const [collapsed, setCollapsed] = useState(false);
-  const toggle = useCallback(() => setCollapsed((value) => !value), []);
+
+  const toggle = useCallback(() => setCollapsed(c => !c), []);
 
   return (
     <aside
       aria-label="Primary navigation"
-      style={{ width: collapsed ? 84 : 264 }}
-      className="bank-sidebar hidden lg:flex h-screen sticky top-0 flex-col relative z-20 shrink-0 overflow-hidden transition-[width] duration-200"
+      style={{ width: collapsed ? 88 : 260 }}
+      className="vb-slide-left hidden lg:flex h-screen glass-sidebar flex-col relative z-20 shrink-0 overflow-hidden transition-[width] duration-300 ease-out"
     >
-      <div className="h-0.5 bg-gradient-to-r from-teal-400 via-emerald-400 to-sky-400" />
-      <div className="bank-sidebar__brand flex items-center gap-3 relative">
-        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl border border-teal-300/20 bg-teal-400/10 text-teal-200">
-          <Landmark size={21} strokeWidth={1.9} />
-        </div>
+      <div className="h-0.5 bg-linear-to-r from-amber-400 via-purple-500 to-cyan-400" />
+
+      {/* Logo */}
+      <div className="p-5 lg:p-6 flex items-center gap-3 relative">
+        <RichIcon icon={<Gem size={20} strokeWidth={2.5} />} variant="gold" size="lg" glow pulse />
         {!collapsed && (
-          <div className="min-w-0">
-            <div className="font-display text-xl leading-none text-slate-100">VaultBank</div>
-            <div className="mt-1 text-[9px] font-bold tracking-[0.18em] text-slate-500">PERSONAL BANKING</div>
+          <div className="vb-fade">
+            <div className="font-display text-xl text-gold leading-none">VAULT</div>
+            <div className="text-[9px] tracking-[0.3em] text-amber-300/50 mt-1">PRIVATE BANKING</div>
           </div>
         )}
+
+        {/* Collapse toggle */}
         <button
           onClick={toggle}
           aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
           aria-expanded={!collapsed}
-          className="absolute -right-3 top-1/2 z-20 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full border border-white/10 bg-[#10283d] text-slate-400 shadow-lg hover:text-white"
+          className="absolute -right-3 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-[#0f1629] border border-white/10 flex items-center justify-center z-50 shadow-xl transition-transform duration-200 hover:scale-110 active:scale-90"
         >
-          <ChevronLeft className={'h-4 w-4 transition-transform ' + (collapsed ? 'rotate-180' : '')} />
+          <span
+            className="transition-transform duration-300"
+            style={{ transform: collapsed ? 'rotate(180deg)' : 'rotate(0deg)' }}
+          >
+            <ChevronLeft className="w-4 h-4 text-gray-400" />
+          </span>
         </button>
       </div>
 
-      <nav className="bank-sidebar__nav" aria-label="Banking sections">
-        {groups.map((group) => {
-          const items = group.ids
-            .map((id) => visibleNavItems.find((item) => item.id === id))
-            .filter(Boolean) as typeof navItems;
-          if (!items.length) return null;
+      {/* Nav */}
+      <nav className="px-3 flex-1 space-y-1 mt-2 overflow-y-auto">
+        {visibleNavItems.map((item, i) => {
+          const Icon = iconMap[item.icon] ?? Home;
+          const isActive = active === item.id;
           return (
-            <div key={group.label}>
-              {!collapsed && <p className="bank-sidebar__group">{group.label}</p>}
-              <div className="space-y-1">
-                {items.map((item) => {
-                  const Icon = iconMap[item.icon] ?? Home;
-                  const isActive = active === item.id;
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => setActive(item.id)}
-                      aria-current={isActive ? 'page' : undefined}
-                      aria-label={item.label}
-                      title={collapsed ? item.label : undefined}
-                      className="bank-sidebar__item"
-                      style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}
-                    >
-                      <Icon size={18} strokeWidth={isActive ? 2.25 : 1.8} />
-                      {!collapsed && <span className="truncate">{item.label}</span>}
-                    </button>
-                  );
-                })}
+            <button
+              key={item.id}
+              onClick={() => setActive(item.id)}
+              aria-current={isActive ? 'page' : undefined}
+              aria-label={item.label}
+              style={{ '--vb-delay': `${Math.min(i, 8) * 40}ms` } as React.CSSProperties}
+              className={`vb-slide-left w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all relative group hover:translate-x-1 active:scale-[0.99] ${
+                isActive ? 'text-amber-200' : 'text-white/40 hover:text-white/80'
+              }`}
+            >
+              {isActive && (
+                <div className="absolute inset-0 rounded-xl glass-btn border-amber-500/20 vb-fade" />
+              )}
+              <div className="relative z-10 shrink-0">
+                <RichIcon
+                  icon={<Icon size={17} strokeWidth={isActive ? 2.5 : 2} />}
+                  variant={isActive ? (variantMap[item.icon] || 'gold') : 'gold'}
+                  size="sm"
+                  glow={isActive}
+                  pulse={isActive}
+                  className={isActive ? '' : 'opacity-40 group-hover:opacity-70'}
+                />
               </div>
-            </div>
+              {!collapsed && (
+                <span
+                  className={`vb-fade relative z-10 text-sm whitespace-nowrap overflow-hidden text-left ${isActive ? 'font-semibold' : 'font-medium'}`}
+                >
+                  {item.label}
+                </span>
+              )}
+              {isActive && (
+                <div
+                  className="vb-scale-in absolute left-0 top-1/2 -translate-y-1/2 w-0.75 h-6 rounded-r-full bg-linear-to-b from-amber-300 to-amber-600"
+                  style={{ boxShadow: '0 0 12px rgba(212,175,55,0.6)' }}
+                />
+              )}
+            </button>
           );
         })}
       </nav>
 
-      <div className="bank-sidebar__footer space-y-1">
-        <button onClick={onSettings} className="flex w-full items-center gap-3 px-3 text-sm font-semibold" aria-label="Settings" title={collapsed ? 'Settings' : undefined} style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}>
-          <Settings size={18} />
-          {!collapsed && <span>Settings</span>}
+      {/* Bottom */}
+      <div className="p-3 border-t border-white/5 space-y-1">
+        <button onClick={onSettings} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-white/40 hover:text-white/80 hover:bg-white/5 transition-all active:scale-[0.99]" aria-label="Settings">
+          <RichIcon icon={<Settings size={17} />} variant="sapphire" size="sm" />
+          {!collapsed && <span className="vb-fade text-sm font-medium whitespace-nowrap">Settings</span>}
         </button>
-        <button onClick={onLogout} className="flex w-full items-center gap-3 px-3 text-sm font-semibold hover:!text-rose-300" aria-label="Sign out" title={collapsed ? 'Sign out' : undefined} style={{ justifyContent: collapsed ? 'center' : 'flex-start' }}>
-          <LogOut size={18} />
-          {!collapsed && <span>Sign out</span>}
+        <button onClick={onLogout} className="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-white/40 hover:text-rose-400 hover:bg-rose-500/5 transition-all active:scale-[0.99]" aria-label="Sign out">
+          <RichIcon icon={<LogOut size={17} />} variant="ruby" size="sm" />
+          {!collapsed && <span className="vb-fade text-sm font-medium whitespace-nowrap">Sign out</span>}
         </button>
-        {!collapsed && (
-          <div className="px-3 pt-4 text-[10px] leading-relaxed text-slate-600">
-            Your accounts and services, in one place.
-          </div>
-        )}
       </div>
     </aside>
   );

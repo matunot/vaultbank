@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
-import { Send } from 'lucide-react';
+﻿import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
+import { Shield, Send } from 'lucide-react';
 
 import LoginPage from './components/LoginPage';
 import Sidebar from './components/Sidebar';
@@ -142,15 +142,24 @@ export default function App() {
   }
 
   return (
-    <div className={`bank-app min-h-screen relative overflow-hidden theme-${theme}`}>
-      {isDev && <MarketTicker />}
+    <div className={`min-h-screen text-white grain relative overflow-hidden theme-${theme}`}>
+      {/* Luxury diamond/gold background only */}
+      <div className="luxury-bg" />
+      <div className="fixed inset-0 pointer-events-none will-change-transform z-0">
+        <div className="diamond-aura gold -top-32 left-[12%] w-136 h-136" />
+        <div className="diamond-aura diamond top-[8%] right-[6%] w-120 h-120" style={{ animationDelay: '1.5s' }} />
+        <div className="diamond-aura purple -bottom-40 right-[22%] w-xl h-144" style={{ animationDelay: '3s' }} />
+        <div className="diamond-aura gold bottom-[8%] left-[2%] w-88 h-88" style={{ animationDelay: '4.5s' }} />
+      </div>
+
+      <MarketTicker />
 
       <div className="flex relative z-10">
         <Sidebar active={active} setActive={setActive} onSettings={() => setShowSettings(true)} onLogout={() => setIsAuthenticated(false)} />
         <MobileNav active={active} setActive={setActive} onSettings={() => setShowSettings(true)} onLogout={() => setIsAuthenticated(false)} />
 
         <main className="flex-1 overflow-y-auto h-screen min-w-0 pb-20 lg:pb-0">
-          <Header user={currentUser} />
+          <Header theme={theme} onThemeChange={setTheme} />
 
           {/* Gold toast — REAL money sent confirmation */}
           {sendToast && (
@@ -165,7 +174,9 @@ export default function App() {
                     <p className="text-sm font-bold text-amber-100">
                       {store.formatMoney(sendToast.amount)} sent to {sendToast.name}
                     </p>
-                    <p className="text-[11px] text-emerald-100/70 mt-0.5 tracking-wide">Your account activity has been updated.</p>
+                    <p className="text-[11px] text-amber-300/70 mt-0.5 tracking-wide">
+                      REAL MONEY · INSTANT TRANSFER · BALANCE UPDATED
+                    </p>
                   </div>
                   <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 shrink-0 animate-pulse" />
                 </div>
@@ -173,11 +184,11 @@ export default function App() {
             </div>
           )}
 
-          <div className="bank-content">
+          <div className="px-4 sm:px-5 lg:px-8 pb-12">
             <div key={active} className="vb-enter">
               <ErrorBoundary>
                 <Suspense fallback={<SectionLoader />}>
-                    {active === 'home' && <DashboardSection onOpenModal={openModal} onViewAll={() => setActive('history')} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
+                    {active === 'home' && <DashboardSection onOpenModal={openModal} userName={firstName} accountNumber={currentAccount ? currentAccount.accountNumber : undefined} />}
                     {active === 'vault' && (isDev ? <VaultSection /> : <SavingsAccountsSection />)}
                     {active === 'swiss' && <SwissSection previewOnly={!isDev} />}
                     {active === 'cards' && <CardProgramSection />}
@@ -197,7 +208,12 @@ export default function App() {
 
           {/* Footer */}
           <div className="vb-fade text-center pt-2 pb-8" style={{ '--vb-delay': '600ms' } as React.CSSProperties}>
-            <span className="text-[11px] text-slate-600">VaultBank · Personal banking</span>
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass">
+              <Shield className="w-3.5 h-3.5 text-amber-500" />
+              <span className="text-[10px] tracking-widest font-semibold text-white/30">
+                LIVE FEATURES ARE LABELED BY AVAILABILITY
+              </span>
+            </div>
           </div>
         </main>
       </div>
