@@ -288,7 +288,7 @@ export function TransferModal({ isOpen, onClose, onSend }: TransferModalProps) {
   );
 }
 
-export function DepositModal({ isOpen, onClose }: ModalProps) {
+export function DepositModal({ isOpen, onClose, onOpenVerification }: ModalProps & { onOpenVerification?: () => void }) {
   return (
     <BaseModal
       isOpen={isOpen}
@@ -297,7 +297,7 @@ export function DepositModal({ isOpen, onClose }: ModalProps) {
       title="Bank transfer deposit"
       subtitle="VAULTBANK NATIVE BANK RAIL"
     >
-      <BankTransferDepositPanel />
+      <BankTransferDepositPanel onOpenVerification={onOpenVerification} />
     </BaseModal>
   );
 }
