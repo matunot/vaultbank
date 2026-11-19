@@ -8,10 +8,6 @@ jest.mock('../config/db', () => ({
   isDemo: false,
 }));
 
-jest.mock('nodemailer', () => ({
-  createTransport: jest.fn(),
-}));
-
 jest.mock('../middleware/auth', () => ({
   authenticateToken: (req, _res, next) => {
     if (!req.user) req.user = { id: 'user-1', email: 'person@example.test', email_verified: false };
@@ -24,7 +20,6 @@ jest.mock('../middleware/rateLimiter', () => ({
 }));
 
 const database = require('../config/db');
-const nodemailer = require('nodemailer');
 const service = require('../services/emailVerificationService');
 const router = require('../routes/email-verification');
 
@@ -59,48 +54,61 @@ async function callRoute(path, method, options = {}) {
   return res;
 }
 
-const SMTP_KEYS = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM', 'VAULTBANK_APP_URL'];
+const ENV_KEYS = [
+  'RESEND_API_KEY',
+  'EMAIL_FROM',
+  'SMTP_HOST',
+  'SMTP_PORT',
+  'SMTP_USER',
+  'SMTP_PASS',
+  'SMTP_FROM',
+  'VAULTBANK_APP_URL',
+];
 const SAVED_ENV = {};
+const originalFetch = global.fetch;
 
 beforeAll(() => {
-  for (const key of SMTP_KEYS) SAVED_ENV[key] = process.env[key];
+  for (const key of ENV_KEYS) SAVED_ENV[key] = process.env[key];
 });
 
 afterAll(() => {
-  for (const key of SMTP_KEYS) {
+  for (const key of ENV_KEYS) {
     if (SAVED_ENV[key] === undefined) delete process.env[key];
     else process.env[key] = SAVED_ENV[key];
   }
+  global.fetch = originalFetch;
 });
 
 beforeEach(() => {
   jest.clearAllMocks();
-  for (const key of SMTP_KEYS) delete process.env[key];
+  for (const key of ENV_KEYS) delete process.env[key];
+  global.fetch = jest.fn();
   database.query.mockResolvedValue({ rows: [], rowCount: 0 });
 });
 
 describe('email verification delivery and endpoints', () => {
-  test('does not create verification tokens when SMTP is not configured', async () => {
+  test('does not create verification tokens when Resend is not configured', async () => {
     const result = await service.sendVerificationForUser({
       userId: 'user-1',
       email: 'person@example.test',
     });
 
-    expect(result).toEqual({ sent: false, reason: 'smtp-not-configured' });
+    expect(result).toEqual({ sent: false, reason: 'resend-not-configured' });
     expect(database.query).not.toHaveBeenCalled();
     expect(database.getClient).not.toHaveBeenCalled();
-    expect(nodemailer.createTransport).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
   });
 
-  test('request endpoint fails closed and explains SMTP setup is missing', async () => {
+  test('request endpoint fails closed and explains Resend setup is missing', async () => {
     const res = await callRoute('/api/auth/email-verification/request', 'post');
 
     expect(res.statusCode).toBe(503);
     expect(res.body).toMatchObject({
       success: false,
       code: 'EMAIL_VERIFICATION_UNAVAILABLE',
-      reason: 'smtp-not-configured',
+      reason: 'resend-not-configured',
     });
+    expect(res.body.message).toContain('RESEND_API_KEY');
   });
 
   test('confirm endpoint rejects malformed or expired links without DB access', async () => {
@@ -114,20 +122,17 @@ describe('email verification delivery and endpoints', () => {
     expect(database.getClient).not.toHaveBeenCalled();
   });
 
-  test('delivery stores only a token hash and sends a 30-minute one-time link', async () => {
-    process.env.SMTP_HOST = 'smtp.example.test';
-    process.env.SMTP_PORT = '587';
-    process.env.SMTP_USER = 'mailer@example.test';
-    process.env.SMTP_PASS = 'test-password';
-    process.env.VAULTBANK_APP_URL = 'https://vaultbank-md20.onrender.com';
+  test('delivery stores only a token hash and sends a 30-minute one-time link through Resend HTTPS API', async () => {
+    process.env.RESEND_API_KEY = 're_test_api_key';
+    process.env.EMAIL_FROM = 'VaultBank <onboarding@resend.dev>';
+    process.env.VAULTBANK_APP_URL = 'https://vaultbank-978m.vercel.app';
 
     const client = {
       query: jest.fn().mockResolvedValue({ rows: [], rowCount: 1 }),
       release: jest.fn(),
     };
     database.getClient.mockResolvedValue(client);
-    const sendMail = jest.fn().mockResolvedValue({ messageId: 'email-1' });
-    nodemailer.createTransport.mockReturnValue({ sendMail });
+    global.fetch.mockResolvedValue({ ok: true, status: 200 });
 
     const result = await service.sendVerificationForUser({
       userId: 'user-1',
@@ -141,9 +146,59 @@ describe('email verification delivery and endpoints', () => {
     expect(insertCall[1][0]).toBe('user-1');
     expect(insertCall[1][1]).toMatch(/^[a-f0-9]{64}$/);
     expect(insertCall[1][1]).not.toMatch(/^[A-Za-z0-9_-]{40,60}$/);
-    const sentText = sendMail.mock.calls[0][0].text;
-    expect(sentText).toContain('verify-email=');
-    expect(sentText).toContain('within 30 minutes');
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toBe('https://api.resend.com/emails');
+    expect(options.method).toBe('POST');
+    expect(options.headers.Authorization).toBe('Bearer re_test_api_key');
+    expect(options.headers['Idempotency-Key']).toMatch(/^vaultbank-email-verification-[a-f0-9]{64}$/);
+    const payload = JSON.parse(options.body);
+    expect(payload.from).toBe('VaultBank <onboarding@resend.dev>');
+    expect(payload.to).toEqual(['person@example.test']);
+    expect(payload.text).toContain('verify-email=');
+    expect(payload.text).toContain('within 30 minutes');
+    expect(client.release).toHaveBeenCalled();
+  });
+
+  test('uses the previous SMTP_PASS value when it contains a Resend API key', async () => {
+    process.env.SMTP_PASS = 're_legacy_test_api_key';
+    const client = {
+      query: jest.fn().mockResolvedValue({ rows: [], rowCount: 1 }),
+      release: jest.fn(),
+    };
+    database.getClient.mockResolvedValue(client);
+    global.fetch.mockResolvedValue({ ok: true, status: 200 });
+
+    const result = await service.sendVerificationForUser({
+      userId: 'user-1',
+      email: 'person@example.test',
+    });
+
+    expect(result).toMatchObject({ sent: true, expiresInMinutes: 30 });
+    expect(global.fetch.mock.calls[0][1].headers.Authorization).toBe('Bearer re_legacy_test_api_key');
+    expect(client.release).toHaveBeenCalled();
+  });
+
+  test('invalidates the one-time token when Resend rejects delivery', async () => {
+    process.env.RESEND_API_KEY = 're_test_api_key';
+    const client = {
+      query: jest.fn().mockResolvedValue({ rows: [], rowCount: 1 }),
+      release: jest.fn(),
+    };
+    database.getClient.mockResolvedValue(client);
+    global.fetch.mockResolvedValue({ ok: false, status: 403 });
+
+    const result = await service.sendVerificationForUser({
+      userId: 'user-1',
+      email: 'person@example.test',
+    });
+
+    expect(result).toEqual({ sent: false, reason: 'delivery-failed' });
+    expect(database.query).toHaveBeenCalledWith(
+      'UPDATE email_verification_tokens SET consumed_at = NOW() WHERE token_hash = $1 AND consumed_at IS NULL',
+      [expect.stringMatching(/^[a-f0-9]{64}$/)],
+    );
     expect(client.release).toHaveBeenCalled();
   });
 
@@ -167,7 +222,6 @@ describe('email verification delivery and endpoints', () => {
     };
     database.getClient.mockResolvedValue(client);
 
-    // Prime schema readiness here only if the service has not already done so.
     const result = await service.confirmEmailVerification(token);
 
     expect(result).toEqual({ ok: true });
