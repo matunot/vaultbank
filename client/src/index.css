@@ -350,6 +350,137 @@ body::after {
   }
 }
 
+/* ─── CSS-only motion primitives (entry bundle) ───────
+   The authenticated critical path must not download an animation runtime.
+   These keep the same feel for the shell and dashboard. */
+@keyframes vbFadeUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes vbFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes vbSlideInLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes vbSlideInRight {
+  from { opacity: 0; transform: translateX(24px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes vbScaleIn {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.vb-enter {
+  animation: vbFadeUp 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--vb-delay, 0ms);
+}
+.vb-fade {
+  animation: vbFadeIn 0.4s ease-out both;
+  animation-delay: var(--vb-delay, 0ms);
+}
+.vb-slide-left {
+  animation: vbSlideInLeft 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: var(--vb-delay, 0ms);
+}
+.vb-slide-right {
+  animation: vbSlideInRight 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.vb-scale-in {
+  animation: vbScaleIn 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Rich icon shimmer / pulse / float, formerly framer-motion loops */
+@keyframes richShimmer {
+  0%, 55% { transform: translateX(-150%) skewX(-15deg); }
+  85%, 100% { transform: translateX(350%) skewX(-15deg); }
+}
+.rich-shimmer {
+  animation: richShimmer 7s ease-in-out infinite;
+}
+@keyframes richPulse {
+  0%, 100% { transform: scale(1); opacity: 0.4; }
+  50% { transform: scale(1.45); opacity: 0; }
+}
+.rich-pulse {
+  animation: richPulse 2.4s ease-in-out infinite;
+}
+@keyframes richFloat {
+  0%, 100% { transform: translateY(-2px); }
+  50% { transform: translateY(2px); }
+}
+.rich-float {
+  animation: richFloat 3s ease-in-out infinite;
+}
+
+/* Market ticker: composited on desktop, swipeable static row on touch */
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+.ticker-track {
+  animation: ticker 30s linear infinite;
+  will-change: transform;
+}
+
+/* Modal / drawer surfaces */
+@keyframes toastSweep {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(500%); }
+}
+.toast-shimmer {
+  animation: toastSweep 1.2s ease-in-out 1 both;
+}
+@keyframes vbDrawerIn {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes vbSheetIn {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+.vb-drawer-in { animation: vbDrawerIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.vb-sheet-in { animation: vbSheetIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* Mobile bottom navigation: keep touch targets >= 44px and respect safe areas */
+.mobile-nav {
+  padding-bottom: max(0.375rem, env(safe-area-inset-bottom));
+}
+.mobile-nav-item {
+  min-height: 48px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Login card surface: class (not inline) so the mobile budget can drop the blur */
+.login-card {
+  background: linear-gradient(145deg, rgba(255,255,255,0.06), rgba(255,255,255,0.015));
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 40px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.03), inset 0 1px 0 rgba(255,255,255,0.08);
+}
+
+/* Login page decorative sparkles (CSS instead of per-node JS animation) */
+@keyframes vbTwinkle {
+  0%, 100% { opacity: 0.15; transform: translate3d(0, 0, 0) scale(1); }
+  50% { opacity: 0.9; transform: translate3d(var(--drift-x, 0), -10px, 0) scale(1.25); }
+}
+.vb-sparkle {
+  position: absolute;
+  border-radius: 9999px;
+  animation: vbTwinkle var(--dur, 6s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+  will-change: opacity, transform;
+}
+@media (max-width: 767px) {
+  /* Fewer live particles on phones; the field still reads as the same design. */
+  .vb-sparkle:nth-child(n + 25) { display: none; }
+}
+
+
 
 /* ─── Mobile rendering budget ─────────────────────────
    Keep the glass look, but avoid repeatedly compositing large blurred layers
@@ -383,6 +514,7 @@ body::after {
   .glass-btn,
   .glass-input,
   .glass-sidebar,
+  .login-card,
   .frosted-overlay {
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
@@ -395,4 +527,17 @@ body::after {
   .iridescent-border::before {
     animation: none !important;
   }
+
+  /* A continuously translating marquee is pure background cost on a phone.
+     Keep the ticker readable as a swipeable strip instead. */
+  .ticker-track {
+    animation: none !important;
+    will-change: auto;
+  }
+  .ticker-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .ticker-wrap::-webkit-scrollbar { display: none; }
 }

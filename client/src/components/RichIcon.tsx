@@ -1,5 +1,3 @@
-import { motion } from 'framer-motion';
-
 interface RichIconProps {
   icon: React.ReactNode;
   variant?: 'gold' | 'emerald' | 'ruby' | 'sapphire' | 'amethyst' | 'amber' | 'cyan' | 'rose';
@@ -97,10 +95,8 @@ export default function RichIcon({
   const s = sizes[size];
 
   return (
-    <motion.div
-      whileHover={{ scale: 1.08, rotate: 3 }}
-      transition={{ type: 'spring', stiffness: 300, damping: 15 }}
-      className={`relative ${s.wrapper} flex items-center justify-center shrink-0 ${className}`}
+    <div
+      className={`group relative ${s.wrapper} flex items-center justify-center shrink-0 transition-transform duration-300 ease-out hover:scale-105 hover:rotate-3 ${className}`}
     >
       {/* Ambient glow behind */}
       {glow && (
@@ -142,11 +138,9 @@ export default function RichIcon({
         <div className="absolute inset-0 bg-linear-to-br from-white/20 via-transparent to-transparent opacity-50" />
 
         {/* Shimmer sweep */}
-        <motion.div
-          animate={{ x: ['-150%', '150%'] }}
-          transition={{ duration: 3, repeat: Infinity, repeatDelay: 4, ease: 'easeInOut' }}
-          className={`absolute inset-0 bg-linear-to-r ${v.shimmer}`}
-          style={{ width: '40%', transform: 'skewX(-15deg)' }}
+        <div
+          className={`rich-shimmer absolute inset-0 bg-linear-to-r ${v.shimmer}`}
+          style={{ width: '40%' }}
         />
 
         {/* Icon */}
@@ -157,24 +151,20 @@ export default function RichIcon({
 
       {/* Pulse ring */}
       {pulse && (
-        <motion.div
-          animate={{ scale: [1, 1.5, 1], opacity: [0.4, 0, 0.4] }}
-          transition={{ duration: 2, repeat: Infinity }}
-          className={`absolute ${s.wrapper} rounded-xl border ${v.border} -z-10`}
+        <div
+          className={`rich-pulse absolute ${s.wrapper} rounded-xl border ${v.border} -z-10`}
         />
       )}
 
       {/* Float animation */}
       {float && (
-        <motion.div
-          animate={{ y: [-2, 2, -2] }}
-          transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-          className={`absolute ${s.wrapper} ${v.text} flex items-center justify-center`}
+        <div
+          className={`rich-float absolute ${s.wrapper} ${v.text} flex items-center justify-center`}
         >
           {icon}
-        </motion.div>
+        </div>
       )}
-    </motion.div>
+    </div>
   );
 }
 

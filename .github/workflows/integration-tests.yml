@@ -63,8 +63,15 @@ jobs:
         run: npm ci
       - name: TypeScript check
         run: npx tsc --noEmit
+
+      - name: Unit tests (retry policy, polling, ledger normalization)
+        run: npm test
+
       - name: Production build
         run: npm run build
+
+      - name: Bundle performance budget
+        run: npm run budget
 
   integration:
     name: PostgreSQL Integration Tests

@@ -1,10 +1,9 @@
 import { memo } from 'react';
-import { motion } from 'framer-motion';
 import { ArrowUpRight, Clock, Coffee, Plane, CreditCard, Gem, TrendingUp, Smartphone, Zap } from 'lucide-react';
 import RichIcon from './RichIcon';
 
 interface Transaction {
-  id: number; name: string; cat: string; amount: number; date: string; icon: string; gem: string;
+  id: string | number; name: string; cat: string; amount: number; date: string; icon: string; gem: string;
 }
 
 interface Props {
@@ -29,12 +28,9 @@ const TxItem = memo(function TxItem({ tx, index }: { tx: Transaction; index: num
   const IconComp = catConfig.icon;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, x: -16 }}
-      animate={{ opacity: 1, x: 0 }}
-      transition={{ delay: 0.2 + index * 0.04, duration: 0.4 }}
-      whileHover={{ x: 4 }}
-      className="glass glass-hover flex items-center gap-3 p-3 rounded-2xl cursor-pointer"
+    <div
+      className="vb-slide-left glass glass-hover flex items-center gap-3 p-3 rounded-2xl cursor-pointer transition-transform duration-200 hover:translate-x-1"
+      style={{ '--vb-delay': `${Math.min(200 + index * 40, 480)}ms` } as React.CSSProperties}
     >
       <RichIcon icon={<IconComp size={16} strokeWidth={2} />} variant={positive ? 'emerald' : catConfig.variant} size="sm" glow />
       <div className="flex-1 min-w-0">
@@ -57,17 +53,15 @@ const TxItem = memo(function TxItem({ tx, index }: { tx: Transaction; index: num
           {positive ? '+' : ''}{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(tx.amount)}
         </span>
       </div>
-    </motion.div>
+    </div>
   );
 });
 
 const Transactions = memo(function Transactions({ transactions, loading = false }: Props) {
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 24 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5, delay: 0.2 }}
-      className="glass-panel rounded-3xl p-6 relative overflow-hidden"
+    <div
+      className="vb-enter glass-panel rounded-3xl p-6 relative overflow-hidden"
+      style={{ '--vb-delay': '200ms' } as React.CSSProperties}
     >
       <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/5 rounded-full blur-3xl" />
 
@@ -81,7 +75,12 @@ const Transactions = memo(function Transactions({ transactions, loading = false 
         </button>
       </div>
 
-      <div className="relative z-10 space-y-2 max-h-105 overflow-y-auto pr-1">
+      <div
+        className="relative z-10 space-y-2 max-h-105 overflow-y-auto pr-1"
+        tabIndex={0}
+        role="region"
+        aria-label="Recent transactions"
+      >
         {loading ? (
           <div className="text-sm text-white/50 py-4">Loading recent activity...</div>
         ) : transactions.length ? (
@@ -92,7 +91,7 @@ const Transactions = memo(function Transactions({ transactions, loading = false 
           <div className="text-sm text-white/50 py-4">No recent transactions.</div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 });
 

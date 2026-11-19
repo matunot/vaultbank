@@ -32,9 +32,9 @@ router.post(
           success: false,
           code: 'EMAIL_VERIFICATION_UNAVAILABLE',
           reason: result.reason || 'delivery-unavailable',
-          message: result.reason === 'smtp-not-configured'
-            ? 'Email verification delivery is not configured yet. Your account remains safe, but fiat customer access stays locked until verification is completed.'
-            : 'VaultBank could not send the verification email. Check mail delivery configuration and retry.',
+          message: result.reason === 'resend-not-configured'
+            ? 'Email verification delivery is not configured yet. Add RESEND_API_KEY to the server environment, then retry.'
+            : 'VaultBank could not send the verification email. Check Resend API configuration and retry.',
         });
       }
 

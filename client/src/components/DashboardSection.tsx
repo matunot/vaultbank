@@ -1,26 +1,26 @@
-import { memo } from 'react';
-import { motion } from 'framer-motion';
+import { memo, lazy, Suspense } from 'react';
 import { Sparkles, Send } from 'lucide-react';
 import HeroBalance from './HeroBalance';
 import QuickActions from './QuickActions';
-import SpendingPanel from './SpendingPanel';
 import Transactions from './Transactions';
-import SavingsGoals from './SavingsGoals';
-import BudgetPanel from './BudgetPanel';
-import CurrencyConverter from './CurrencyConverter';
-import InvestmentsPanel from './InvestmentsPanel';
-import CalendarEvents from './CalendarEvents';
-import QuickContacts from './QuickContacts';
-import AchievementsPanel from './AchievementsPanel';
-import SmartInsights from './SmartInsights';
 import PreviewOnlyNotice from './PreviewOnlyNotice';
+import DashboardPreviewPanels from './DashboardPreviewPanels';
 import { useAppStore } from '../store';
 import { useAccountData, TransactionData } from '../hooks/useAccountData';
 
+// Dev-only sample panels are code-split so their animation runtime and sample
+// data never enter the production entry graph. In a production build the
+// conditional collapses to `null` and the dynamic import is dropped.
+const DevSpendingPanel = import.meta.env.DEV ? lazy(() => import('./SpendingPanel')) : null;
+const DevDashboardPanels = import.meta.env.DEV ? lazy(() => import('./DashboardDevPanels')) : null;
+
 const Section = memo(({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) => (
-  <motion.div initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay, ease: [0.22, 1, 0.36, 1] }}>
+  <div
+    className="vb-enter"
+    style={{ '--vb-delay': `${Math.round(delay * 1000)}ms` } as React.CSSProperties}
+  >
     {children}
-  </motion.div>
+  </div>
 ));
 
 Section.displayName = 'Section';
@@ -32,7 +32,7 @@ interface Props {
 }
 
 interface MappedTransaction {
-  id: number;
+  id: string | number;
   name: string;
   cat: string;
   amount: number;
@@ -43,7 +43,7 @@ interface MappedTransaction {
 
 function mapTransaction(tx: TransactionData, index: number): MappedTransaction {
   return {
-    id: typeof tx.id === 'number' ? tx.id : index,
+    id: tx.id || index,
     name: tx.description || 'Transaction',
     cat: (tx.category || 'Other').charAt(0).toUpperCase() + (tx.category || 'other').slice(1),
     amount: tx.type === 'debit' ? -Math.abs(tx.amount) : Math.abs(tx.amount),
@@ -86,22 +86,20 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal, userName 
               <h1 className="font-display text-3xl lg:text-5xl text-white tracking-tight">
                 Good <span className="text-gold">evening</span>, {firstName}
               </h1>
-              <motion.div animate={{ rotate: 360 }} transition={{ duration: 12, repeat: Infinity, ease: 'linear' }} className="hidden md:block">
+              <div className="vb-scale-in hidden md:block" style={{ animation: 'spin-slow 12s linear infinite' }}>
                 <Sparkles className="w-5 h-5 lg:w-6 lg:h-6 text-amber-400/60" />
-              </motion.div>
+              </div>
             </div>
             <p className="text-sm text-white/40">
               {dayLabel}, {dateLabel} · {realTransactions.length} transaction{realTransactions.length === 1 ? '' : 's'} this account
             </p>
           </div>
-          <motion.button
-            whileHover={{ scale: 1.03, y: -2 }}
-            whileTap={{ scale: 0.97 }}
+          <button
             onClick={() => onOpenModal('send')}
-            className="hidden lg:flex items-center gap-2 px-5 py-2.5 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm shadow-lg glow-amber"
+            className="hidden lg:flex items-center gap-2 px-5 py-2.5 rounded-xl bg-linear-to-r from-amber-400 to-yellow-500 text-amber-950 font-bold text-sm shadow-lg glow-amber transition-transform duration-200 hover:scale-105 active:scale-95"
           >
             <Send className="w-4 h-4" /> Quick Send
-          </motion.button>
+          </button>
         </div>
       </Section>
 
@@ -126,25 +124,22 @@ const DashboardSection = memo(function DashboardSection({ onOpenModal, userName 
         <div className="lg:col-span-2">
           <Section delay={0.2}><Transactions transactions={realTransactions} loading={loading} /></Section>
         </div>
-        {import.meta.env.DEV ? <SpendingPanel /> : <PreviewOnlyNotice title="Spending insights are a preview" message="This panel currently uses example data in local development. Live account spending analytics are not connected yet." />}
+        {import.meta.env.DEV && DevSpendingPanel ? (
+          <Suspense fallback={<div className="glass-panel rounded-3xl min-h-80 animate-pulse" />}>
+            <DevSpendingPanel />
+          </Suspense>
+        ) : (
+          <PreviewOnlyNotice title="Spending insights are a preview" message="This panel currently uses example data in local development. Live account spending analytics are not connected yet." />
+        )}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Section delay={0.3}>{import.meta.env.DEV ? <SavingsGoals goals={store.goals} onAddToGoal={store.addToGoal} /> : <PreviewOnlyNotice title="Savings goals are not connected yet" message="Example goals are shown only in local development. Goal balances are not linked to your account ledger." />}</Section>
-        <Section delay={0.35}>{import.meta.env.DEV ? <BudgetPanel budget={store.budget} /> : <PreviewOnlyNotice title="Budget tracking is a preview" message="The budget widget uses sample values in local development and is not yet connected to your verified transaction history." />}</Section>
-        <Section delay={0.4}>{import.meta.env.DEV ? <CurrencyConverter /> : <PreviewOnlyNotice title="Currency conversion is an estimate only" message="The local development converter uses example rates. It does not provide a live FX quote or execute a currency exchange." />}</Section>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <Section delay={0.5}>{import.meta.env.DEV ? <InvestmentsPanel /> : <PreviewOnlyNotice title="Portfolio holdings are not connected" message="Sample holdings and market movements are shown only in local development. No live investments are represented here." />}</Section>
-        <Section delay={0.55}>{import.meta.env.DEV ? <CalendarEvents /> : <PreviewOnlyNotice title="Calendar is a preview" message="Sample dates and bills are shown only in local development. No real bill schedule is linked yet." />}</Section>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <Section delay={0.6}>{import.meta.env.DEV ? <QuickContacts /> : <PreviewOnlyNotice title="Trusted recipients will appear here" message="Example contacts are limited to local development. Use Payments to search registered recipients from the backend." />}</Section>
-        <Section delay={0.65}>{import.meta.env.DEV ? <AchievementsPanel /> : <PreviewOnlyNotice title="Achievements are a preview" message="Example milestones are shown only in local development; live achievements have not been connected to verified activity." />}</Section>
-        <Section delay={0.7}>{import.meta.env.DEV ? <SmartInsights /> : <PreviewOnlyNotice title="Personalized insights are not active yet" message="The current insights are fixed examples and are not generated from your actual transactions. They are shown only in local development." />}</Section>
-      </div>
+      {import.meta.env.DEV && DevDashboardPanels ? (
+        <Suspense fallback={<div className="glass-panel rounded-3xl min-h-64 animate-pulse" />}>
+          <DevDashboardPanels />
+        </Suspense>
+      ) : (
+        <DashboardPreviewPanels />
+      )}
     </div>
   );
 });
