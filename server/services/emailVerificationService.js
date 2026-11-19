@@ -5,9 +5,17 @@ const database = require('../config/db');
 
 let schemaReady = false;
 
+function resendApiKey() {
+  const dedicated = String(process.env.RESEND_API_KEY || '').trim();
+  if (dedicated && !/placeholder|your[_ -]?value|changeme/i.test(dedicated)) return dedicated;
+
+  // Migration fallback: the previous setup stored the Resend API key in SMTP_PASS.
+  const legacyPassword = String(process.env.SMTP_PASS || '').trim();
+  return legacyPassword.startsWith('re_') ? legacyPassword : '';
+}
+
 function resendConfigured() {
-  const value = String(process.env.RESEND_API_KEY || '').trim();
-  return value.length > 0 && !/placeholder|your[_ -]?value|changeme/i.test(value);
+  return Boolean(resendApiKey());
 }
 
 // Kept for compatibility with any legacy diagnostics; email verification now uses
@@ -124,7 +132,7 @@ async function sendVerificationForUser({ userId, email }) {
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        Authorization: 'Bearer ' + String(process.env.RESEND_API_KEY).trim(),
+        Authorization: 'Bearer ' + resendApiKey(),
         'Content-Type': 'application/json',
         'Idempotency-Key': 'vaultbank-email-verification-' + tokenHash,
       },
