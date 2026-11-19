@@ -1,11 +1,17 @@
 'use strict';
 
 const crypto = require('node:crypto');
-const nodemailer = require('nodemailer');
 const database = require('../config/db');
 
 let schemaReady = false;
 
+function resendConfigured() {
+  const value = String(process.env.RESEND_API_KEY || '').trim();
+  return value.length > 0 && !/placeholder|your[_ -]?value|changeme/i.test(value);
+}
+
+// Kept for compatibility with any legacy diagnostics; email verification now uses
+// Resend's HTTPS API because SMTP ports are not reachable from Render Free services.
 function smtpConfigured() {
   const required = ['SMTP_HOST', 'SMTP_USER', 'SMTP_PASS'];
   return required.every((key) => {
@@ -50,9 +56,20 @@ function hashToken(token) {
   return crypto.createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
+async function invalidateToken(tokenHash) {
+  try {
+    await database.query(
+      'UPDATE email_verification_tokens SET consumed_at = NOW() WHERE token_hash = $1 AND consumed_at IS NULL',
+      [tokenHash]
+    );
+  } catch (_) {
+    // The delivery error is the actionable failure; do not mask it with cleanup errors.
+  }
+}
+
 async function sendVerificationForUser({ userId, email }) {
   if (!userId || !email) return { sent: false, reason: 'user-details-missing' };
-  if (!smtpConfigured()) return { sent: false, reason: 'smtp-not-configured' };
+  if (!resendConfigured()) return { sent: false, reason: 'resend-not-configured' };
 
   let baseUrl;
   try {
@@ -99,40 +116,45 @@ async function sendVerificationForUser({ userId, email }) {
   }
 
   const verifyUrl = new URL('/?verify-email=' + encodeURIComponent(token), baseUrl).toString();
-  const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number.parseInt(process.env.SMTP_PORT || '587', 10) || 587,
-    secure: Number.parseInt(process.env.SMTP_PORT || '587', 10) === 465,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 10000,
-  });
+  const from = String(
+    process.env.EMAIL_FROM || process.env.SMTP_FROM || 'VaultBank <onboarding@resend.dev>'
+  ).trim();
 
   try {
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || process.env.SMTP_USER,
-      to: email,
-      subject: 'Verify your VaultBank email',
-      text: [
-        'Verify your email address for VaultBank.',
-        '',
-        'Open this one-time link within 30 minutes:',
-        verifyUrl,
-        '',
-        'If you did not create this account, you can ignore this message.',
-      ].join('\n'),
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + String(process.env.RESEND_API_KEY).trim(),
+        'Content-Type': 'application/json',
+        'Idempotency-Key': 'vaultbank-email-verification-' + tokenHash,
+      },
+      body: JSON.stringify({
+        from,
+        to: [email],
+        subject: 'Verify your VaultBank email',
+        text: [
+          'Verify your email address for VaultBank.',
+          '',
+          'Open this one-time link within 30 minutes:',
+          verifyUrl,
+          '',
+          'If you did not create this account, you can ignore this message.',
+        ].join('\n'),
+      }),
+      signal: AbortSignal.timeout(12000),
     });
+
+    if (!response.ok) {
+      await invalidateToken(tokenHash);
+      console.warn('VaultBank verification email delivery failed: RESEND_HTTP_' + response.status);
+      return { sent: false, reason: 'delivery-failed' };
+    }
+
     return { sent: true, expiresInMinutes: 30 };
   } catch (error) {
-    // Do not leave a link usable if delivery did not succeed.
-    try {
-      await database.query(
-        'UPDATE email_verification_tokens SET consumed_at = NOW() WHERE token_hash = $1 AND consumed_at IS NULL',
-        [tokenHash]
-      );
-    } catch (_) {}
-    console.warn('VaultBank verification email delivery failed:', error && error.code ? error.code : 'delivery-failed');
+    await invalidateToken(tokenHash);
+    const code = error && (error.code || error.name) ? (error.code || error.name) : 'delivery-failed';
+    console.warn('VaultBank verification email delivery failed:', code);
     return { sent: false, reason: 'delivery-failed' };
   }
 }
@@ -192,6 +214,7 @@ async function confirmEmailVerification(token) {
 }
 
 module.exports = {
+  resendConfigured,
   smtpConfigured,
   sendVerificationForUser,
   confirmEmailVerification,
