@@ -7,6 +7,7 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const db = require('../config/db');
 const { findAccountByUserIdAndCurrency } = require('../config/database');
 const bankDeposits = require('./bank-deposits');
+const { isCurrencyEnabled, knownCurrencies } = require('../config/currencies');
 const saltEdge = require('../services/saltEdgePartnerPIS');
 
 const AMOUNT_LIMIT = 1000000;
@@ -167,14 +168,26 @@ async function loadProviderAndTemplate(providerCode, templateIdentifier) {
 }
 
 router.get('/api/salt-edge/pis/readiness', (_req, res) => {
-    return res.status(200).json({ success: true, ...saltEdge.readiness() });
+    const readiness = saltEdge.readiness();
+    const currencies = readiness.available ? knownCurrencies().filter(currency => {
+        if (!isCurrencyEnabled(currency)) return false;
+        const cfg = saltEdge.currencyConfig(currency);
+        const destinationFields = cfg ? Object.keys(cfg.extraFields).filter(name => name.startsWith('creditor_') && !['creditor_name', 'creditor_country_code', 'creditor_address', 'creditor_street_name', 'creditor_building_number', 'creditor_post_code', 'creditor_town', 'creditor_region'].includes(name)) : [];
+        return Boolean(cfg && (cfg.creditorIban || destinationFields.length) && cfg.creditorName && /^[A-Z]{2}$/.test(cfg.creditorCountryCode) && cfg.templateIdentifier);
+    }) : [];
+    return res.status(200).json({ success: true, ...readiness, currencies });
 });
 
 router.get('/api/salt-edge/pis/providers', authenticateToken, requireVerifiedCustomerOrAdmin, requireLive, async (_req, res) => {
     try {
+        const currency = String(_req.query.currency || '').trim().toUpperCase();
+        const cfg = saltEdge.currencyConfig(currency);
+        if (!cfg || !isCurrencyEnabled(currency) || !cfg.templateIdentifier) {
+            return res.status(400).json({ success: false, code: 'SALT_EDGE_CURRENCY_NOT_CONFIGURED', message: 'Choose a currency with a configured live receiving account and payment template.' });
+        }
         const result = await saltEdge.request('GET', 'providers');
         const providers = (Array.isArray(result.data) ? result.data : [])
-            .filter(safeProvider)
+            .filter(provider => safeProvider(provider) && provider.payment_templates.includes(cfg.templateIdentifier))
             .map(provider => ({
                 code: provider.code,
                 name: provider.name,
@@ -224,7 +237,7 @@ router.post('/api/salt-edge/pis/deposits', authenticateToken, requireVerifiedCus
             name.startsWith('creditor_')
             && !['creditor_name', 'creditor_country_code', 'creditor_address', 'creditor_street_name', 'creditor_building_number', 'creditor_post_code', 'creditor_town', 'creditor_region'].includes(name)
         ) : [];
-        if (!cfg || (!cfg.creditorIban && destinationFieldNames.length === 0) || !cfg.creditorName || !/^[A-Z]{2}$/.test(cfg.creditorCountryCode) || !cfg.templateIdentifier) {
+        if (!isCurrencyEnabled(currency) || !cfg || (!cfg.creditorIban && destinationFieldNames.length === 0) || !cfg.creditorName || !/^[A-Z]{2}$/.test(cfg.creditorCountryCode) || !cfg.templateIdentifier) {
             return res.status(503).json({
                 success: false,
                 code: 'SALT_EDGE_RECEIVING_ACCOUNT_NOT_CONFIGURED',
@@ -404,7 +417,7 @@ async function handleCallback(kind, req, res) {
         const reference = String(custom.vaultbank_deposit_reference || attributes.end_to_end_id || '').trim();
         if (!reference) return res.status(202).json({ success: true, ignored: true });
 
-        const found = await db.query('SELECT * FROM salt_edge_pis_sessions WHERE reference = $1 LIMIT 1', [reference]);
+        const found = await db.query('SELECT s.*, c.customer_id AS salt_edge_customer_id FROM salt_edge_pis_sessions s JOIN salt_edge_pis_customers c ON c.user_id = s.user_id WHERE s.reference = $1 LIMIT 1', [reference]);
         const local = found.rows[0];
         if (!local) return res.status(202).json({ success: true, ignored: true });
 
@@ -417,7 +430,11 @@ async function handleCallback(kind, req, res) {
             || receivedAmount !== saltEdge.amountString(local.amount)
             || receivedCurrency !== local.currency
             || !target
+            || String(attributes.end_to_end_id || '') !== local.reference
+            || String(payment.customer_id || '') !== String(local.salt_edge_customer_id)
+            || String(payment.template_identifier || '') !== local.template_identifier
             || (target.creditorIban && receivedIban !== target.creditorIban)
+            || (attributes.creditor_name && String(attributes.creditor_name).trim().toLowerCase() !== target.creditorName.trim().toLowerCase())
             || String(payment.provider_code || '') !== local.provider_code
         ) {
             await db.query(
