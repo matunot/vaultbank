@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { AlertTriangle, ArrowUpRight, Building2, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import { api } from '../api';
 
@@ -21,6 +21,7 @@ export function SaltEdgeBankPaymentPanel() {
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const idempotencyKeyRef = useRef<string | null>(null);
   const [recentDeposits, setRecentDeposits] = useState<Array<{ id: string; reference: string; amount: string; currency: string; providerStatus?: string; status: string; depositStatus: string; walletCredited: boolean; createdAt: string }>>([]);
 
   useEffect(() => {
@@ -90,15 +91,19 @@ export function SaltEdgeBankPaymentPanel() {
     setBusy(true);
     setError('');
     try {
+      if (!idempotencyKeyRef.current) {
+        idempotencyKeyRef.current = 'pis-' + Date.now() + '-' + Math.random().toString(36).slice(2, 14);
+      }
       const result = await api.createSaltEdgePISDeposit({
         amount: parsed.toFixed(2),
         currency,
         providerCode,
-      });
+      }, idempotencyKeyRef.current);
       if (!result.success || !result.connectUrl) {
         throw new Error(result.message || 'The live bank-payment session could not be created.');
       }
       // The customer authorizes the payment directly with their own bank.
+      idempotencyKeyRef.current = null;
       window.location.assign(result.connectUrl);
     } catch (err: any) {
       setError(err?.message || 'Could not start the bank payment.');
@@ -131,20 +136,20 @@ export function SaltEdgeBankPaymentPanel() {
       <form onSubmit={(event) => void startPayment(event)} className="mt-5 grid gap-3 sm:grid-cols-3">
         <label className="block text-[10px] font-bold tracking-wider text-white/45">
           CURRENCY
-          <select value={currency} onChange={(event) => setCurrency(event.target.value)} disabled={busy} className="mt-1 block w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-cyan-400">
+          <select value={currency} onChange={(event) => { idempotencyKeyRef.current = null; setCurrency(event.target.value); }} disabled={busy} className="mt-1 block w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-cyan-400">
             {readiness.currencies?.map((code) => <option key={code} value={code}>{code}</option>)}
           </select>
         </label>
         <label className="block text-[10px] font-bold tracking-wider text-white/45">
           BANK
-          <select value={providerCode} onChange={(event) => setProviderCode(event.target.value)} disabled={busy || loadingProviders || providers.length === 0} className="mt-1 block w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-cyan-400">
+          <select value={providerCode} onChange={(event) => { idempotencyKeyRef.current = null; setProviderCode(event.target.value); }} disabled={busy || loadingProviders || providers.length === 0} className="mt-1 block w-full rounded-xl border border-white/10 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-cyan-400">
             {providers.length === 0 && <option value="">{loadingProviders ? 'Loading banks…' : 'No active banks available'}</option>}
             {providers.map((provider) => <option key={provider.code} value={provider.code}>{provider.name} ({provider.countryCode})</option>)}
           </select>
         </label>
         <label className="block text-[10px] font-bold tracking-wider text-white/45">
           AMOUNT ({currency})
-          <input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" required disabled={busy} className="mt-1 block w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-white outline-none focus:border-cyan-400" />
+          <input value={amount} onChange={(event) => { idempotencyKeyRef.current = null; setAmount(event.target.value); }} inputMode="decimal" required disabled={busy} className="mt-1 block w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-white outline-none focus:border-cyan-400" />
         </label>
         <div className="sm:col-span-3">
           <label className="flex items-start gap-2 text-xs leading-relaxed text-white/55">
