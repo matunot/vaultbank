@@ -16,6 +16,7 @@ export function SaltEdgeBankPaymentPanel() {
   const [providers, setProviders] = useState<Provider[]>([]);
   const [providerCode, setProviderCode] = useState('');
   const [amount, setAmount] = useState('25.00');
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -80,7 +81,7 @@ export function SaltEdgeBankPaymentPanel() {
 
   const startPayment = async (event: FormEvent) => {
     event.preventDefault();
-    if (busy || !providerCode) return;
+    if (busy || !providerCode || !termsAccepted) return;
     const parsed = Number(amount);
     if (!Number.isFinite(parsed) || parsed <= 0 || Math.round(parsed * 100) !== parsed * 100) {
       setError('Enter a positive amount with no more than two decimal places.');
@@ -146,7 +147,13 @@ export function SaltEdgeBankPaymentPanel() {
           <input value={amount} onChange={(event) => setAmount(event.target.value)} inputMode="decimal" required disabled={busy} className="mt-1 block w-full rounded-xl border border-white/10 bg-black/20 px-3 py-3 text-sm text-white outline-none focus:border-cyan-400" />
         </label>
         <div className="sm:col-span-3">
-          <button type="submit" disabled={busy || loadingProviders || !selectedProvider} className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
+          <label className="flex items-start gap-2 text-xs leading-relaxed text-white/55">
+            <input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} disabled={busy} className="mt-0.5 h-4 w-4 shrink-0 accent-cyan-400" />
+            <span>
+              I agree to Salt Edge's <a href="https://www.saltedge.com/gateway/partner_pis_terms" target="_blank" rel="noreferrer" className="text-cyan-200 underline">Payment Initiation Terms</a> and <a href="https://www.saltedge.com/gateway/partner_privacy_policy" target="_blank" rel="noreferrer" className="text-cyan-200 underline">Privacy Policy</a>, and confirm that I am the legal holder of the bank account used for this payment. The payment provider may request additional verification.
+            </span>
+          </label>
+          <button type="submit" disabled={busy || loadingProviders || !selectedProvider || !termsAccepted} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Building2 className="h-4 w-4" />}
             Continue to your bank <ArrowUpRight className="h-4 w-4" />
           </button>
