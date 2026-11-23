@@ -134,7 +134,7 @@ function buildPaymentAttributes({ currency, amount, reference, req, cfg }) {
         currency_code: currency,
         amount,
         description: 'VaultBank deposit ' + reference,
-        mode: 'NORMAL',
+        mode: 'normal',
     };
     if (cfg.creditorIban) attributes.creditor_iban = cfg.creditorIban;
     return attributes;
@@ -426,6 +426,11 @@ async function handleCallback(kind, req, res) {
         const receivedCurrency = String(attributes.currency_code || '').toUpperCase();
         const target = saltEdge.currencyConfig(local.currency);
         const receivedIban = String(attributes.creditor_iban || '').replace(/\s+/g, '').toUpperCase();
+        const configuredDestinationMatches = Boolean(target) && Object.entries(target.extraFields).every(([name, expected]) => {
+            if (!name.startsWith('creditor_')) return true;
+            const actual = attributes[name];
+            return actual != null && String(actual).trim().toLowerCase() === String(expected).trim().toLowerCase();
+        });
         if (
             !receivedAmount
             || receivedAmount !== saltEdge.amountString(local.amount)
@@ -433,9 +438,12 @@ async function handleCallback(kind, req, res) {
             || !target
             || String(attributes.end_to_end_id || '') !== local.reference
             || String(callbackData.customer_id || '') !== String(local.salt_edge_customer_id)
+            || String(payment.customer_id || '') !== String(local.salt_edge_customer_id)
             || String(payment.template_identifier || '') !== local.template_identifier
+            || String(payment.provider_code || '') !== local.provider_code
             || (target.creditorIban && receivedIban !== target.creditorIban)
-            || (attributes.creditor_name && String(attributes.creditor_name).trim().toLowerCase() !== target.creditorName.trim().toLowerCase())
+            || String(attributes.creditor_name || '').trim().toLowerCase() !== target.creditorName.trim().toLowerCase()
+            || !configuredDestinationMatches
         ) {
             await db.query(
                 "UPDATE salt_edge_pis_sessions SET payment_id = $2, provider_status = $3, status = 'reconciliation_required', last_callback_at = NOW(), updated_at = NOW() WHERE id = $1",
