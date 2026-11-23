@@ -38,7 +38,7 @@ Deposit request body:
 }
 \`\`\`
 
-The payment template is configured server-side per currency; the browser cannot choose or override the beneficiary account, amount reference, or template.
+Only active, `regulated: true` providers that advertise the configured payment template are returned. The provider's own `required_payment_fields` are checked as well as the generic template fields. The payment template is configured server-side per currency; the browser cannot choose or override the beneficiary account, amount reference, or template.
 
 ## Render environment variables
 
