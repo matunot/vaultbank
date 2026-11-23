@@ -9,6 +9,7 @@ const bankReceiving = require('../services/bankReceivingConfig');
 const directBankPayouts = require('./direct-bank-payouts');
 const usdAchPayouts = require('./usd-ach-payouts');
 const { enabledCurrencies } = require('../config/currencies');
+const saltEdgePIS = require('../services/saltEdgePartnerPIS');
 
 function nativeReadiness() {
     const usdReceiving = bankDeposits.receivingConfig('USD');
@@ -40,6 +41,7 @@ function nativeReadiness() {
         },
         currencies: enabledCurrencies(),
         currencyRails: bankReceiving.receivingStatus(),
+        providers: { saltEdgePartnerPIS: saltEdgePIS.readiness() },
     };
 }
 
@@ -80,6 +82,9 @@ router.get('/api/payments/methods', authenticateToken, (req, res) => {
     ];
     if (receiving && receiving.enabled) {
         methods.push({ id: 'bank_transfer', label: 'Bank transfer', type: 'bank' });
+    }
+    if (saltEdgePIS.readiness().available) {
+        methods.push({ id: 'salt_edge_bank_payment', label: 'Pay from bank', type: 'open_banking', provider: 'salt-edge-partner-pis' });
     }
     return res.status(200).json({ success: true, methods });
 });
