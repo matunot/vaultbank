@@ -54,6 +54,15 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [theme, setTheme] = useState<'obsidian' | 'royal' | 'diamond'>('obsidian');
   const [active, setActive] = useState('home');
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const requestedSection = url.searchParams.get('vb_section');
+    if (requestedSection === 'payments') setActive('payments');
+    if (requestedSection) {
+      url.searchParams.delete('vb_section');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+    }
+  }, []);
   const [modal, setModal] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const store = useAppStore();

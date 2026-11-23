@@ -19,6 +19,7 @@ const businessRoutes = require('./routes/business');
 const investmentsRoutes = require('./routes/investments');
 const adminRoutes = require('./routes/admin');
 const paymentsRoutes = require('./routes/payments');
+const saltEdgePISRoutes = require('./routes/salt-edge-pis');
 const amlRoutes = require('./routes/aml');
 const reportsRoutes = require('./routes/reports');
 const accountRoutes = require('./routes/accounts');
@@ -203,6 +204,7 @@ app.use('/', usdcWithdrawalRoutes);
 
 // ─── VaultBank-native bank transfer routes ────────────────────────────────
 app.use('/', require('./routes/bank-deposits'));
+app.use('/', saltEdgePISRoutes);
 app.use('/', directUpiRoutes); // Legacy UPI history/reconciliation only; new customer requests are retired.
 app.use('/', directBankPayoutRoutes);
 app.use('/', require('./routes/usd-ach-payouts'));
@@ -445,7 +447,7 @@ const { seedDemoData } = require('./config/database');
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
 async function startServer() {
-    console.info('[payments] merchant gateways are not mounted; bank flows use VaultBank-native ledger and bank reconciliation.');
+    console.info('[payments] VaultBank-native bank rails are mounted; Salt Edge Partner PIS is available only after explicit Live approval and signed callback configuration.');
 
     // Wait for PostgreSQL database connection
     try {
