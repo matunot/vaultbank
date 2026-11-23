@@ -50,7 +50,7 @@ Set these on the existing Render web service \`vaultbank\`. Use the existing **S
 | \`VB_SALT_EDGE_PIS_SECRET\` | Salt Edge Service API key Secret |
 | \`VB_SALT_EDGE_PIS_PRIVATE_KEY\` | RSA private key PEM used to sign outgoing API requests |
 | \`VB_SALT_EDGE_PIS_CALLBACK_BASE_URL\` | Exact base path, for example \`https://vaultbank-md20.onrender.com/api/salt-edge/pis/callbacks\` |
-| \`VB_SALT_EDGE_PIS_RETURN_URL\` | HTTPS URL where the user returns after bank authorization |
+| \`VB_SALT_EDGE_PIS_RETURN_URL\` | Use \`https://vaultbank-978m.vercel.app/?vb_section=payments\` so the app opens the Payments tab after authorization |
 | \`VB_SALT_EDGE_PIS_ENABLED\` | Set to \`true\` only when deliberately enabling the integration |
 | \`VB_SALT_EDGE_PIS_LIVE_APPROVED\` | Keep \`false\` until Salt Edge has explicitly changed the account to **Live** |
 
