@@ -49,12 +49,15 @@ function readiness() {
     else if (!cfg.appId || !cfg.secret) reason = 'api-credentials-missing';
     else if (!cfg.privateKey) reason = 'request-signing-private-key-missing';
     else if (!isSafeCallbackBaseUrl(cfg.callbackBaseUrl) || !isSafeReturnUrl(cfg.returnUrl)) reason = 'callback-or-return-url-invalid';
+    const currencies = reason ? [] : configuredCurrencies();
+    if (!reason && currencies.length === 0) reason = 'receiving-account-not-configured';
     return {
         provider: 'salt-edge-partner-pis',
         mode: 'live-only',
         available: !reason,
         realMoney: !reason,
         reason,
+        currencies: reason ? [] : currencies,
         callbacksConfigured: Boolean(cfg.callbackBaseUrl),
         signingConfigured: Boolean(cfg.privateKey),
     };
@@ -140,6 +143,19 @@ function verifyCallback(rawBody, signature, keyVersion, url) {
     }
 }
 
+function configuredCurrencies() {
+    const { enabledCurrencies } = require('../config/currencies');
+    return enabledCurrencies().filter((currency) => {
+        const config = currencyConfig(currency);
+        if (!config || !config.creditorName || !/^[A-Z]{2}$/.test(config.creditorCountryCode) || !config.templateIdentifier) return false;
+        const extraDestinationFields = Object.keys(config.extraFields).filter((name) =>
+            name.startsWith('creditor_')
+            && !['creditor_name', 'creditor_country_code', 'creditor_address', 'creditor_street_name', 'creditor_building_number', 'creditor_post_code', 'creditor_town', 'creditor_region'].includes(name)
+        );
+        return Boolean(config.creditorIban || extraDestinationFields.length > 0);
+    });
+}
+
 function currencyConfig(currency) {
     const code = String(currency || '').trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(code)) return null;
@@ -204,6 +220,7 @@ module.exports = {
     API_BASE,
     callbackUrl,
     currencyConfig,
+    configuredCurrencies,
     getConfig,
     isSafeReturnUrl,
     makeError,
