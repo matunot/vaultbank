@@ -189,7 +189,8 @@ function isSafeCallbackBaseUrl(value) {
     if (!isSafeHttpsUrl(value)) return false;
     try {
         const parsed = new URL(value);
-        return !parsed.search && parsed.pathname.replace(/\\/+$/, '') === '/api/salt-edge/pis/callbacks';
+        const path = parsed.pathname.endsWith('/') ? parsed.pathname.slice(0, -1) : parsed.pathname;
+        return !parsed.search && path === '/api/salt-edge/pis/callbacks';
     } catch (_) {
         return false;
     }
