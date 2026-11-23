@@ -11,7 +11,7 @@ function captureRawBody(req, _res, buf) {
     // Express routes are case-insensitive and trailing-slash tolerant; capture
     // must be too, or a dashboard URL with a trailing slash fails every webhook.
     const path = String(req.originalUrl || '').split('?')[0].toLowerCase().replace(/\/+$/, '');
-    if (path === '/api/collections/webhook/cashfree') {
+    if (path === '/api/collections/webhook/cashfree' || /^\/api\/salt-edge\/pis\/callbacks\/(success|fail|notify)$/.test(path)) {
         req.rawBody = Buffer.from(buf);
     }
 }
