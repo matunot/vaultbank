@@ -419,6 +419,23 @@ export const api = {
     return request<ApiResponse>('api/payments/readiness');
   },
 
+  // Live-only Salt Edge Partner Payment Initiation.
+  async saltEdgePISReadiness(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/salt-edge/pis/readiness');
+  },
+  async saltEdgePISProviders(currency: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/salt-edge/pis/providers?currency=' + encodeURIComponent(currency));
+  },
+  async createSaltEdgePISDeposit(data: { amount: string; currency: string; providerCode: string }): Promise<ApiResponse> {
+    return request<ApiResponse>('api/salt-edge/pis/deposits', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+  async saltEdgePISDeposits(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/salt-edge/pis/deposits');
+  },
+
   async openInrAccount(): Promise<ApiResponse> {
     return request<ApiResponse>('api/account/open-inr', {
       method: 'POST',
