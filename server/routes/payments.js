@@ -64,6 +64,7 @@ router.get('/api/payments/admin/readiness', authenticateToken, requireAdmin, (_r
             nativeOnly: true,
             rails: readiness.rails,
             currencyRails: readiness.currencyRails,
+            providers: readiness.providers,
         });
     } catch (error) {
         console.error('Admin native banking readiness error:', error.message);
