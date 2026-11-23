@@ -48,7 +48,7 @@ function readiness() {
     else if (!cfg.liveApproved) reason = 'salt-edge-live-approval-not-confirmed';
     else if (!cfg.appId || !cfg.secret) reason = 'api-credentials-missing';
     else if (!cfg.privateKey) reason = 'request-signing-private-key-missing';
-    else if (!cfg.callbackBaseUrl || !cfg.returnUrl) reason = 'callback-or-return-url-missing';
+    else if (!isSafeCallbackBaseUrl(cfg.callbackBaseUrl) || !isSafeReturnUrl(cfg.returnUrl)) reason = 'callback-or-return-url-invalid';
     return {
         provider: 'salt-edge-partner-pis',
         mode: 'live-only',
@@ -174,13 +174,29 @@ function amountString(value) {
     return normalized;
 }
 
-function isSafeReturnUrl(value) {
+function isSafeHttpsUrl(value) {
     try {
         const parsed = new URL(value);
-        return parsed.protocol === 'https:' && !['localhost', '127.0.0.1'].includes(parsed.hostname);
+        return parsed.protocol === 'https:'
+            && !['localhost', '127.0.0.1'].includes(parsed.hostname)
+            && !parsed.username && !parsed.password && !parsed.hash;
     } catch (_) {
         return false;
     }
+}
+
+function isSafeCallbackBaseUrl(value) {
+    if (!isSafeHttpsUrl(value)) return false;
+    try {
+        const parsed = new URL(value);
+        return !parsed.search && parsed.pathname.replace(/\\/+$/, '') === '/api/salt-edge/pis/callbacks';
+    } catch (_) {
+        return false;
+    }
+}
+
+function isSafeReturnUrl(value) {
+    return isSafeHttpsUrl(value);
 }
 
 module.exports = {
