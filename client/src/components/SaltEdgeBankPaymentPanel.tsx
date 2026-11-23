@@ -91,14 +91,14 @@ export function SaltEdgeBankPaymentPanel() {
     setBusy(true);
     setError('');
     try {
-      if (!idempotencyKeyRef.current) {
-        idempotencyKeyRef.current = 'pis-' + Date.now() + '-' + Math.random().toString(36).slice(2, 14);
-      }
+      const idempotencyKey = idempotencyKeyRef.current
+        || ('pis-' + Date.now() + '-' + Math.random().toString(36).slice(2, 14));
+      idempotencyKeyRef.current = idempotencyKey;
       const result = await api.createSaltEdgePISDeposit({
         amount: parsed.toFixed(2),
         currency,
         providerCode,
-      }, idempotencyKeyRef.current);
+      }, idempotencyKey);
       if (!result.success || !result.connectUrl) {
         throw new Error(result.message || 'The live bank-payment session could not be created.');
       }
