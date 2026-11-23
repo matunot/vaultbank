@@ -168,7 +168,11 @@ async function loadProviderAndTemplate(providerCode, templateIdentifier) {
         error.status = 502;
         throw error;
     }
-    return { provider, template, fields };
+    const providerRequiredFields = provider.required_payment_fields
+        && Array.isArray(provider.required_payment_fields[templateIdentifier])
+        ? provider.required_payment_fields[templateIdentifier]
+        : [];
+    return { provider, template, fields, providerRequiredFields };
 }
 
 router.get('/api/salt-edge/pis/readiness', (_req, res) => {
