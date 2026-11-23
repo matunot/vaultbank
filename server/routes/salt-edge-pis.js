@@ -122,7 +122,7 @@ function buildPaymentAttributes({ currency, amount, reference, req, cfg }) {
         error.status = 422;
         throw error;
     }
-    return {
+    const attributes = {
         ...cfg.extraFields,
         end_to_end_id: reference,
         customer_last_logged_at: new Date().toISOString(),
@@ -132,9 +132,10 @@ function buildPaymentAttributes({ currency, amount, reference, req, cfg }) {
         currency_code: currency,
         amount,
         description: 'VaultBank deposit ' + reference,
-        creditor_iban: cfg.creditorIban,
         mode: 'NORMAL',
     };
+    if (cfg.creditorIban) attributes.creditor_iban = cfg.creditorIban;
+    return attributes;
 }
 
 async function loadProviderAndTemplate(providerCode, templateIdentifier) {
@@ -219,7 +220,11 @@ router.post('/api/salt-edge/pis/deposits', authenticateToken, requireVerifiedCus
         if (!amount || Number(amount) > AMOUNT_LIMIT) {
             return res.status(400).json({ success: false, code: 'SALT_EDGE_AMOUNT_INVALID', message: 'Enter a valid positive amount within the current payment limit.' });
         }
-        if (!cfg || !cfg.creditorIban || !cfg.creditorName || !/^[A-Z]{2}$/.test(cfg.creditorCountryCode) || !cfg.templateIdentifier) {
+        const destinationFieldNames = cfg ? Object.keys(cfg.extraFields).filter(name =>
+            name.startsWith('creditor_')
+            && !['creditor_name', 'creditor_country_code', 'creditor_address', 'creditor_street_name', 'creditor_building_number', 'creditor_post_code', 'creditor_town', 'creditor_region'].includes(name)
+        ) : [];
+        if (!cfg || (!cfg.creditorIban && destinationFieldNames.length === 0) || !cfg.creditorName || !/^[A-Z]{2}$/.test(cfg.creditorCountryCode) || !cfg.templateIdentifier) {
             return res.status(503).json({
                 success: false,
                 code: 'SALT_EDGE_RECEIVING_ACCOUNT_NOT_CONFIGURED',
@@ -234,7 +239,13 @@ router.post('/api/salt-edge/pis/deposits', authenticateToken, requireVerifiedCus
         const { provider, fields } = await loadProviderAndTemplate(providerCode, cfg.templateIdentifier);
         const customerId = await getOrCreateLead(req.user);
         const reference = 'VB' + crypto.randomBytes(9).toString('hex').toUpperCase();
-        const attributes = buildPaymentAttributes({ currency, amount, reference, req, cfg });
+        const candidateAttributes = buildPaymentAttributes({ currency, amount, reference, req, cfg });
+        // Send only fields advertised by this template. Bank-specific required
+        // values are supplied from Render configuration, never from the browser.
+        const allowedFields = new Set(fields.map(field => field.name));
+        const attributes = Object.fromEntries(
+            Object.entries(candidateAttributes).filter(([name]) => allowedFields.has(name))
+        );
         const missingFields = fields.filter(field => field.optional !== true && (
             attributes[field.name] === undefined
             || attributes[field.name] === null
@@ -406,7 +417,7 @@ async function handleCallback(kind, req, res) {
             || receivedAmount !== saltEdge.amountString(local.amount)
             || receivedCurrency !== local.currency
             || !target
-            || (receivedIban && receivedIban !== target.creditorIban)
+            || (target.creditorIban && receivedIban !== target.creditorIban)
             || String(payment.provider_code || '') !== local.provider_code
         ) {
             await db.query(
