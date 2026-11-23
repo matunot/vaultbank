@@ -13,6 +13,7 @@ import { DirectBankPayoutModal } from './DirectBankPayoutModal';
 import { DirectBankPayoutAdminReview } from './DirectBankPayoutAdminReview';
 import { BankTransferDepositPanel } from './BankTransferDepositPanel';
 import { BankDepositAdminReview } from './BankDepositAdminReview';
+import { SaltEdgeBankPaymentPanel } from './SaltEdgeBankPaymentPanel';
 import UsdAchPayoutPanel from './UsdAchPayoutPanel';
 import ProductApplicationsAdminReview from './ProductApplicationsAdminReview';
 import KycAdminReview from './KycAdminReview';
@@ -517,6 +518,9 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
           </div>
         </motion.div>
       )}
+
+      {/* Live bank-to-bank pay-in through Salt Edge Partner PIS (hidden until Live). */}
+      <SaltEdgeBankPaymentPanel />
 
       {/* VaultBank-owned bank-transfer instruction + manual statement reconciliation. */}
       <BankTransferDepositPanel />
