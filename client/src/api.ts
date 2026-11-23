@@ -435,6 +435,9 @@ export const api = {
   async saltEdgePISDeposits(): Promise<ApiResponse> {
     return request<ApiResponse>('api/salt-edge/pis/deposits');
   },
+  async saltEdgePISAdminReconciliation(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/salt-edge/pis/admin/reconciliation');
+  },
 
   async openInrAccount(): Promise<ApiResponse> {
     return request<ApiResponse>('api/account/open-inr', {
