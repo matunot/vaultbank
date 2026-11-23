@@ -710,3 +710,4 @@ router.post('/api/bank-deposits/admin/instructions/:id/reverse', authenticateTok
 
 module.exports = router;
 module.exports.receivingConfig = receivingConfig;
+module.exports.ensureTables = ensureTables;
