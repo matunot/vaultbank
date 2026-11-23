@@ -74,8 +74,9 @@ The destination account details must belong to, or be legitimately controlled by
    - \`https://vaultbank-md20.onrender.com/api/salt-edge/pis/callbacks/success\`
    - \`https://vaultbank-md20.onrender.com/api/salt-edge/pis/callbacks/fail\`
    - \`https://vaultbank-md20.onrender.com/api/salt-edge/pis/callbacks/notify\`
-4. Enable the account's required security settings and complete Salt Edge's Partner PIS integration review.
-5. Only after the Salt Edge dashboard explicitly shows **Live**, set \`VB_SALT_EDGE_PIS_LIVE_APPROVED=true\`. Keep it false before that point.
+4. Enable 2FA for the account and every teammate, add the incident-reporting email, and complete Salt Edge's Partner PIS integration review.
+5. Salt Edge's current Live checklist also requires the integration to handle its mandatory fake providers (\`fake_oauth_client_xf\` and \`fake_client_xf\`) and successful payment-initiation tests with each provider in the key market. These are provider-qualification tests; they are not real customer funds and are not exposed by this Live-only VaultBank payment panel. Refusing all provider test flows can prevent Salt Edge from granting Live access.
+6. Only after the Salt Edge dashboard explicitly shows **Live**, set \`VB_SALT_EDGE_PIS_LIVE_APPROVED=true\`. Keep it false before that point.
 
 OpenSSL key-pair commands:
 
