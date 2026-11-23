@@ -14,6 +14,10 @@ interface InstructionRow {
   settlementAmount?: number | null;
   customerName?: string;
   customerEmail?: string;
+  paymentStatus?: string;
+  providerStatus?: string;
+  providerCode?: string;
+  paymentId?: string;
 }
 interface ReviewForm {
   settlementAmount: string;
@@ -39,8 +43,17 @@ export function BankDepositAdminReview() {
     setLoading(true);
     setError('');
     try {
-      const result = await api.bankDepositAdminInstructions(status);
-      const next = Array.isArray(result.instructions) ? result.instructions as InstructionRow[] : [];
+      const [result, pisResult] = await Promise.all([
+        api.bankDepositAdminInstructions(status),
+        api.saltEdgePISAdminReconciliation().catch(() => ({ instructions: [] })),
+      ]);
+      const pisById = new Map<string, any>(
+        (Array.isArray(pisResult.instructions) ? pisResult.instructions : []).map((item: any) => [String(item.id), item])
+      );
+      const next = (Array.isArray(result.instructions) ? result.instructions as InstructionRow[] : []).map((item) => {
+        const pis = pisById.get(item.id);
+        return pis ? { ...item, paymentStatus: pis.paymentStatus, providerStatus: pis.providerStatus, providerCode: pis.providerCode, paymentId: pis.paymentId } : item;
+      });
       setInstructions(next);
       setForms((existing) => {
         const updated = { ...existing };
@@ -193,6 +206,12 @@ export function BankDepositAdminReview() {
                     <p className="break-all font-mono text-sm font-bold text-cyan-200">{item.reference}</p>
                     <p className="mt-1 text-xl font-bold text-white">{item.currency} {Number(item.amount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                     <p className="text-xs text-white/45">{item.customerName || 'VaultBank user'}{item.customerEmail ? ' · ' + item.customerEmail : ''}</p>
+                    {item.paymentStatus && (
+                      <p className="mt-1 text-[10px] text-cyan-200/70">
+                        Open Banking · {item.providerCode || 'Salt Edge'} · {item.providerStatus || item.paymentStatus}
+                        {item.paymentId ? ' · Payment ' + item.paymentId : ''}
+                      </p>
+                    )}
                     <p className="mt-1 text-[10px] text-white/35">Created {new Date(item.createdAt).toLocaleString()} · Expires {new Date(item.expiresAt).toLocaleString()}</p>
                   </div>
                   <span className={'rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase ' + (item.status === 'settled' ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200' : item.status === 'pending' || item.status === 'settling' ? 'border-amber-500/25 bg-amber-500/10 text-amber-200' : 'border-white/10 bg-white/5 text-white/50')}>{item.status.replace(/_/g, ' ')}</span>
