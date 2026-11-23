@@ -295,7 +295,7 @@ router.post('/api/salt-edge/pis/deposits', authenticateToken, requireVerifiedCus
             Object.entries(candidateAttributes).filter(([name]) => allowedFields.has(name))
         );
         const globallyRequired = fields.filter(field => field.optional !== true).map(field => field.name);
-        const requiredFieldNames = Array.from(new Set([...globallyRequired, ...providerRequiredFields]));
+        const requiredFieldNames = providerRequiredFields.length ? providerRequiredFields : globallyRequired;
         const missingFields = requiredFieldNames.filter(name => (
             attributes[name] === undefined
             || attributes[name] === null
