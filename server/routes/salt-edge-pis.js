@@ -58,7 +58,10 @@ async function ensureTables() {
     await db.ensureConnection();
     await bankDeposits.ensureTables();
     await db.query("CREATE TABLE IF NOT EXISTS salt_edge_pis_customers (user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, customer_id TEXT NOT NULL UNIQUE, email TEXT NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
-    await db.query("CREATE TABLE IF NOT EXISTS salt_edge_pis_sessions (id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), deposit_instruction_id UUID NOT NULL UNIQUE REFERENCES bank_deposit_instructions(id) ON DELETE CASCADE, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, reference TEXT NOT NULL UNIQUE, amount NUMERIC(15,2) NOT NULL CHECK (amount > 0), currency TEXT NOT NULL, provider_code TEXT NOT NULL, template_identifier TEXT NOT NULL, payment_id TEXT UNIQUE, provider_status TEXT, status TEXT NOT NULL DEFAULT 'initiating', session_expires_at TIMESTAMPTZ, last_callback_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+    await db.query("CREATE TABLE IF NOT EXISTS salt_edge_pis_sessions (id UUID PRIMARY KEY DEFAULT uuid_generate_v4(), deposit_instruction_id UUID NOT NULL UNIQUE REFERENCES bank_deposit_instructions(id) ON DELETE CASCADE, user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, reference TEXT NOT NULL UNIQUE, idempotency_key TEXT, connect_url TEXT, amount NUMERIC(15,2) NOT NULL CHECK (amount > 0), currency TEXT NOT NULL, provider_code TEXT NOT NULL, template_identifier TEXT NOT NULL, payment_id TEXT UNIQUE, provider_status TEXT, status TEXT NOT NULL DEFAULT 'initiating', session_expires_at TIMESTAMPTZ, last_callback_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())");
+    await db.query("ALTER TABLE salt_edge_pis_sessions ADD COLUMN IF NOT EXISTS idempotency_key TEXT");
+    await db.query("ALTER TABLE salt_edge_pis_sessions ADD COLUMN IF NOT EXISTS connect_url TEXT");
+    await db.query("CREATE UNIQUE INDEX IF NOT EXISTS salt_edge_pis_user_idempotency_uq ON salt_edge_pis_sessions (user_id, idempotency_key) WHERE idempotency_key IS NOT NULL");
     await db.query("CREATE INDEX IF NOT EXISTS salt_edge_pis_user_created_idx ON salt_edge_pis_sessions (user_id, created_at DESC)");
     await db.query("CREATE INDEX IF NOT EXISTS salt_edge_pis_status_created_idx ON salt_edge_pis_sessions (status, created_at DESC)");
 }
@@ -230,6 +233,33 @@ router.post('/api/salt-edge/pis/deposits', authenticateToken, requireVerifiedCus
         const currency = String(req.body && req.body.currency || '').trim().toUpperCase();
         const amount = saltEdge.amountString(req.body && req.body.amount);
         const providerCode = String(req.body && req.body.providerCode || '').trim();
+        const idempotencyKey = String(req.headers['idempotency-key'] || '').trim();
+        if (!/^[A-Za-z0-9._:-]{8,100}$/.test(idempotencyKey)) {
+            return res.status(400).json({ success: false, code: 'IDEMPOTENCY_KEY_REQUIRED', message: 'A unique idempotency key is required for each bank-payment attempt.' });
+        }
+        const existingSession = await db.query(
+            "SELECT s.*, i.status AS deposit_status, i.credited_at FROM salt_edge_pis_sessions s JOIN bank_deposit_instructions i ON i.id = s.deposit_instruction_id WHERE s.user_id = $1 AND s.idempotency_key = $2 LIMIT 1",
+            [req.user.id, idempotencyKey]
+        );
+        if (existingSession.rows[0]) {
+            const existing = existingSession.rows[0];
+            if (existing.connect_url && existing.session_expires_at && new Date(existing.session_expires_at).getTime() > Date.now()) {
+                return res.status(200).json({
+                    success: true,
+                    duplicate: true,
+                    provider: 'salt-edge-partner-pis',
+                    realBankPayment: true,
+                    walletCredited: Boolean(existing.credited_at),
+                    status: existing.status,
+                    reference: existing.reference,
+                    amount: String(existing.amount),
+                    currency: existing.currency,
+                    connectUrl: existing.connect_url,
+                    expiresAt: existing.session_expires_at,
+                });
+            }
+            return res.status(409).json({ success: false, code: 'PAYMENT_ATTEMPT_ALREADY_EXISTS', message: 'This payment attempt already exists and cannot be safely restarted. Review its status before creating a new attempt.' });
+        }
         const cfg = saltEdge.currencyConfig(currency);
         if (!amount || Number(amount) > AMOUNT_LIMIT) {
             return res.status(400).json({ success: false, code: 'SALT_EDGE_AMOUNT_INVALID', message: 'Enter a valid positive amount within the current payment limit.' });
@@ -283,8 +313,8 @@ router.post('/api/salt-edge/pis/deposits', authenticateToken, requireVerifiedCus
         );
         const instruction = instructionResult.rows[0];
         const sessionResult = await db.query(
-            "INSERT INTO salt_edge_pis_sessions (deposit_instruction_id, user_id, reference, amount, currency, provider_code, template_identifier, status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'initiating') RETURNING id",
-            [instruction.id, req.user.id, reference, amount, currency, provider.code, cfg.templateIdentifier]
+            "INSERT INTO salt_edge_pis_sessions (deposit_instruction_id, user_id, reference, idempotency_key, amount, currency, provider_code, template_identifier, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'initiating') RETURNING id",
+            [instruction.id, req.user.id, reference, idempotencyKey, amount, currency, provider.code, cfg.templateIdentifier]
         );
         const localSessionId = sessionResult.rows[0].id;
 
@@ -310,8 +340,8 @@ router.post('/api/salt-edge/pis/deposits', authenticateToken, requireVerifiedCus
                 throw saltEdge.makeError('SALT_EDGE_CONNECT_URL_INVALID', 'Salt Edge returned an unexpected payment authorization URL.', 502);
             }
             await db.query(
-                "UPDATE salt_edge_pis_sessions SET status = 'awaiting_authorization', session_expires_at = $2, updated_at = NOW() WHERE id = $1",
-                [localSessionId, session.data.expires_at || null]
+                "UPDATE salt_edge_pis_sessions SET status = 'awaiting_authorization', connect_url = $2, session_expires_at = $3, updated_at = NOW() WHERE id = $1",
+                [localSessionId, connectUrl, session.data.expires_at || null]
             );
             return res.status(201).json({
                 success: true,
