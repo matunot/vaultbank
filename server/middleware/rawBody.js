@@ -4,7 +4,7 @@
  * express.json() consumes the request stream before the route runs, so a
  * route-level express.raw() would otherwise see an already-parsed object.
  * The verify hook keeps a Buffer copy for the Cashfree collections webhook
- * only; every other request stays unchanged.
+ * and Salt Edge PIS callbacks; every other request stays unchanged.
  */
 function captureRawBody(req, _res, buf) {
     if (!buf || !buf.length) return;
