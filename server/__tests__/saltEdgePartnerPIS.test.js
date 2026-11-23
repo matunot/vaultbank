@@ -2,8 +2,14 @@
 
 const crypto = require('crypto');
 const saltEdge = require('../services/saltEdgePartnerPIS');
+const saltEdgeRouter = require('../routes/salt-edge-pis');
 
 describe('Salt Edge Partner PIS security helpers', () => {
+    test('loads the Express router without starting provider calls', () => {
+        expect(saltEdgeRouter).toBeDefined();
+        expect(typeof saltEdgeRouter.use).toBe('function');
+    });
+
     test('signs the exact outgoing request canonical string', () => {
         const pair = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
         const privateKey = pair.privateKey.export({ type: 'pkcs8', format: 'pem' });
