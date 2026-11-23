@@ -426,9 +426,10 @@ export const api = {
   async saltEdgePISProviders(currency: string): Promise<ApiResponse> {
     return request<ApiResponse>('api/salt-edge/pis/providers?currency=' + encodeURIComponent(currency));
   },
-  async createSaltEdgePISDeposit(data: { amount: string; currency: string; providerCode: string }): Promise<ApiResponse> {
+  async createSaltEdgePISDeposit(data: { amount: string; currency: string; providerCode: string }, idempotencyKey: string): Promise<ApiResponse> {
     return request<ApiResponse>('api/salt-edge/pis/deposits', {
       method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(data),
     });
   },
