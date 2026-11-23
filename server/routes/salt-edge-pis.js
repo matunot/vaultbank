@@ -68,6 +68,7 @@ function safeProvider(provider) {
     const country = String(provider && provider.country_code || '').toUpperCase();
     return Boolean(provider)
         && provider.status === 'active'
+        && provider.regulated === true
         && /^[a-z0-9_-]{2,100}$/i.test(code)
         && country !== 'XF'
         && !/fake|sandbox|mock/i.test(code + ' ' + String(provider.name || ''))
@@ -431,11 +432,10 @@ async function handleCallback(kind, req, res) {
             || receivedCurrency !== local.currency
             || !target
             || String(attributes.end_to_end_id || '') !== local.reference
-            || String(payment.customer_id || '') !== String(local.salt_edge_customer_id)
+            || String(callbackData.customer_id || '') !== String(local.salt_edge_customer_id)
             || String(payment.template_identifier || '') !== local.template_identifier
             || (target.creditorIban && receivedIban !== target.creditorIban)
             || (attributes.creditor_name && String(attributes.creditor_name).trim().toLowerCase() !== target.creditorName.trim().toLowerCase())
-            || String(payment.provider_code || '') !== local.provider_code
         ) {
             await db.query(
                 "UPDATE salt_edge_pis_sessions SET payment_id = $2, provider_status = $3, status = 'reconciliation_required', last_callback_at = NOW(), updated_at = NOW() WHERE id = $1",
