@@ -155,7 +155,7 @@ export function SaltEdgeBankPaymentPanel() {
           <label className="flex items-start gap-2 text-xs leading-relaxed text-white/55">
             <input type="checkbox" checked={termsAccepted} onChange={(event) => setTermsAccepted(event.target.checked)} disabled={busy} className="mt-0.5 h-4 w-4 shrink-0 accent-cyan-400" />
             <span>
-              I agree to Salt Edge's <a href="https://www.saltedge.com/gateway/partner_pis_terms" target="_blank" rel="noreferrer" className="text-cyan-200 underline">Payment Initiation Terms</a> and <a href="https://www.saltedge.com/gateway/partner_privacy_policy" target="_blank" rel="noreferrer" className="text-cyan-200 underline">Privacy Policy</a>, and confirm that I am the legal holder of the bank account used for this payment. The payment provider may request additional verification.
+              By clicking Proceed I agree to be bound by Salt Edge's <a href="https://www.saltedge.com/gateway/partner_pis_terms" target="_blank" rel="noreferrer" className="text-cyan-200 underline">Gateway Partner Terms and Conditions</a> and <a href="https://www.saltedge.com/gateway/partner_privacy_policy" target="_blank" rel="noreferrer" className="text-cyan-200 underline">Privacy Policy</a>. I confirm that I am the legal holder of the bank account used for this payment. The payment provider may request additional verification.
             </span>
           </label>
           <button type="submit" disabled={busy || loadingProviders || !selectedProvider || !termsAccepted} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-500 px-4 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50">
