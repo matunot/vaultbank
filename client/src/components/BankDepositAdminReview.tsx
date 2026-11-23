@@ -47,9 +47,10 @@ export function BankDepositAdminReview() {
         api.bankDepositAdminInstructions(status),
         api.saltEdgePISAdminReconciliation().catch(() => ({ instructions: [] })),
       ]);
-      const pisById = new Map<string, any>(
-        (Array.isArray(pisResult.instructions) ? pisResult.instructions : []).map((item: any) => [String(item.id), item])
-      );
+      const pisById = new Map<string, any>();
+      for (const item of (Array.isArray(pisResult.instructions) ? pisResult.instructions : []) as any[]) {
+        pisById.set(String(item.id), item);
+      }
       const next = (Array.isArray(result.instructions) ? result.instructions as InstructionRow[] : []).map((item) => {
         const pis = pisById.get(item.id);
         return pis ? { ...item, paymentStatus: pis.paymentStatus, providerStatus: pis.providerStatus, providerCode: pis.providerCode, paymentId: pis.paymentId } : item;
