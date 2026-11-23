@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AlertTriangle, ArrowUpRight, Building2, Loader2, RefreshCw, ShieldCheck } from 'lucide-react';
 import { api } from '../api';
 
@@ -20,6 +20,7 @@ export function SaltEdgeBankPaymentPanel() {
   const [loadingProviders, setLoadingProviders] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [recentDeposits, setRecentDeposits] = useState<Array<{ id: string; reference: string; amount: string; currency: string; providerStatus?: string; status: string; depositStatus: string; walletCredited: boolean; createdAt: string }>>([]);
 
   useEffect(() => {
     let active = true;
@@ -68,7 +69,16 @@ export function SaltEdgeBankPaymentPanel() {
     [providers, providerCode],
   );
 
-  const startPayment = async (event: React.FormEvent) => {
+  useEffect(() => {
+    if (!readiness?.available) return;
+    let active = true;
+    api.saltEdgePISDeposits()
+      .then((result) => { if (active) setRecentDeposits(Array.isArray(result.deposits) ? result.deposits : []); })
+      .catch(() => { if (active) setRecentDeposits([]); });
+    return () => { active = false; };
+  }, [readiness?.available]);
+
+  const startPayment = async (event: FormEvent) => {
     event.preventDefault();
     if (busy || !providerCode) return;
     const parsed = Number(amount);
@@ -148,6 +158,26 @@ export function SaltEdgeBankPaymentPanel() {
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         Authorizing a bank payment is not the same as final settlement. The wallet is not credited by a browser redirect or a provider callback alone.
       </div>
+
+      {recentDeposits.length > 0 && (
+        <div className="mt-5 border-t border-white/10 pt-4">
+          <h4 className="text-sm font-bold text-white">Open Banking payment history</h4>
+          <div className="mt-3 space-y-2">
+            {recentDeposits.slice(0, 5).map((deposit) => (
+              <div key={deposit.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/5 bg-white/[0.02] p-3">
+                <div className="min-w-0">
+                  <p className="break-all font-mono text-xs text-cyan-200">{deposit.reference}</p>
+                  <p className="mt-1 text-sm font-bold text-white">{deposit.currency} {Number(deposit.amount).toFixed(2)}</p>
+                  <p className="text-[10px] text-white/40">{deposit.providerStatus ? 'Bank status: ' + deposit.providerStatus : 'Authorization: ' + deposit.status.replace(/_/g, ' ')}</p>
+                </div>
+                <span className={'rounded-full border px-2.5 py-1 text-[9px] font-bold ' + (deposit.walletCredited ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200' : 'border-amber-500/25 bg-amber-500/10 text-amber-100')}>
+                  {deposit.walletCredited ? 'CREDITED' : 'AWAITING SETTLEMENT'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </section>
   );
 }
