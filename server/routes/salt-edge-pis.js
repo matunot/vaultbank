@@ -147,7 +147,7 @@ async function loadProviderAndTemplate(providerCode, templateIdentifier) {
         error.status = 400;
         throw error;
     }
-    const providerResponse = await saltEdge.request('GET', 'providers');
+    const providerResponse = await saltEdge.request('GET', 'providers?include_payments_fields=true');
     const providers = Array.isArray(providerResponse.data) ? providerResponse.data : [];
     const provider = providers.find(item => item.code === providerCode);
     if (!safeProvider(provider) || !provider.payment_templates.includes(templateIdentifier)) {
@@ -186,7 +186,7 @@ router.get('/api/salt-edge/pis/providers', authenticateToken, requireVerifiedCus
         if (!cfg || !isCurrencyEnabled(currency) || !cfg.templateIdentifier) {
             return res.status(400).json({ success: false, code: 'SALT_EDGE_CURRENCY_NOT_CONFIGURED', message: 'Choose a currency with a configured live receiving account and payment template.' });
         }
-        const result = await saltEdge.request('GET', 'providers');
+        const result = await saltEdge.request('GET', 'providers?include_payments_fields=true');
         const providers = (Array.isArray(result.data) ? result.data : [])
             .filter(provider => safeProvider(provider) && provider.payment_templates.includes(cfg.templateIdentifier))
             .map(provider => ({
@@ -250,7 +250,7 @@ router.post('/api/salt-edge/pis/deposits', authenticateToken, requireVerifiedCus
             return res.status(400).json({ success: false, code: 'VAULTBANK_CURRENCY_ACCOUNT_NOT_FOUND', message: 'You do not have an active VaultBank account for this currency.' });
         }
 
-        const { provider, fields } = await loadProviderAndTemplate(providerCode, cfg.templateIdentifier);
+        const { provider, fields, providerRequiredFields } = await loadProviderAndTemplate(providerCode, cfg.templateIdentifier);
         const customerId = await getOrCreateLead(req.user);
         const reference = 'VB' + crypto.randomBytes(9).toString('hex').toUpperCase();
         const candidateAttributes = buildPaymentAttributes({ currency, amount, reference, req, cfg });
@@ -260,11 +260,13 @@ router.post('/api/salt-edge/pis/deposits', authenticateToken, requireVerifiedCus
         const attributes = Object.fromEntries(
             Object.entries(candidateAttributes).filter(([name]) => allowedFields.has(name))
         );
-        const missingFields = fields.filter(field => field.optional !== true && (
-            attributes[field.name] === undefined
-            || attributes[field.name] === null
-            || String(attributes[field.name]).trim() === ''
-        )).map(field => field.name);
+        const globallyRequired = fields.filter(field => field.optional !== true).map(field => field.name);
+        const requiredFieldNames = Array.from(new Set([...globallyRequired, ...providerRequiredFields]));
+        const missingFields = requiredFieldNames.filter(name => (
+            attributes[name] === undefined
+            || attributes[name] === null
+            || String(attributes[name]).trim() === ''
+        ));
         if (missingFields.length) {
             return res.status(422).json({
                 success: false,
