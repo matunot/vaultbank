@@ -18,7 +18,7 @@ const app = express();
 app.use(express.json({
   limit: '10mb',
   verify(req, _res, buffer) {
-    const path = String(req.originalUrl || '').split('?')[0].toLowerCase().replace(/\\/+$/, '');
+    const path = String(req.originalUrl || '').split('?')[0].toLowerCase();
     if (path === ENDPOINT) req.rawBody = Buffer.from(buffer);
   },
 }));
