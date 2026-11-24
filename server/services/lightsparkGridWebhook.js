@@ -113,7 +113,7 @@ function normalizeGridWebhook(payload) {
     throw error;
   }
 
-  const webhookId = nullableText(payload.webhookId, 255);
+  const webhookId = nullableText(payload.webhookId || payload.id, 255);
   const eventType = nullableText(payload.type, 80);
   if (!webhookId || !eventType) {
     const error = new Error('Webhook payload must include webhookId and type.');
