@@ -5,6 +5,7 @@ export const navItems = [
   { id: 'cards',    label: 'Cards',      icon: 'CreditCard' },
   { id: 'credit',   label: 'Credit',     icon: 'Wallet' },
   { id: 'payments', label: 'Payments',   icon: 'Wallet' },
+  { id: 'international', label: 'International', icon: 'Globe' },
   { id: 'invest',   label: 'Invest',     icon: 'TrendingUp' },
   { id: 'loans',    label: 'Debts',      icon: 'Landmark' },
   { id: 'send',     label: 'Transfer',   icon: 'Send' },

@@ -35,6 +35,7 @@ const TransferSection = lazy(() => import('./components/TransferSection'));
 const HistorySection = lazy(() => import('./components/HistorySection'));
 const RewardsSection = isDev ? lazy(() => import('./components/RewardsSection')) : (null as unknown as typeof import('./components/RewardsSection').default);
 const VerificationSection = lazy(() => import('./components/VerificationSection'));
+const InternationalPayouts = lazy(() => import('./components/InternationalPayouts'));
 
 // Loading fallback
 const SectionLoader = () => (
@@ -201,6 +202,7 @@ export default function App() {
                     {active === 'history' && <HistorySection />}
                     {active === 'rewards' && (isDev ? <RewardsSection /> : <PreviewOnlyNotice title="Rewards program is not live yet" message="The development preview contains sample points and benefits. Production rewards, interest rates, and fee waivers are not being promised by this screen." />)}
                     {active === 'security' && <VerificationSection />}
+                    {active === 'international' && <InternationalPayouts />}
                   </Suspense>
                 </ErrorBoundary>
               </motion.div>

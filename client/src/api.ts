@@ -676,6 +676,73 @@ export const api = {
     return request<ApiResponse>('api/usd-ach/admin/requests/' + encodeURIComponent(id) + '/refund', { method: 'POST', body: JSON.stringify({ evidenceNote, bankConfirmedNotSent }) });
   },
 
+  // Lightspark Grid — international payouts. All values come from the provider
+  // through the backend; the client never holds provider credentials.
+  async gridAvailability(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/availability');
+  },
+  async gridCorridors(sourceCurrency: string, destinationCurrency?: string): Promise<ApiResponse> {
+    const query = '?sourceCurrency=' + encodeURIComponent(sourceCurrency)
+      + (destinationCurrency ? '&destinationCurrency=' + encodeURIComponent(destinationCurrency) : '');
+    return request<ApiResponse>('api/lightspark-grid/corridors' + query);
+  },
+  async gridCustomer(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/customer');
+  },
+  async gridCreateCustomer(consents: Array<{ type: string; acceptedAt: string; termsVersion: string; acceptanceMethod: string }>): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/customer', { method: 'POST', body: JSON.stringify({ consents }) });
+  },
+  async gridKycLink(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/customer/kyc-link', { method: 'POST' });
+  },
+  async gridRefreshCustomer(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/customer/refresh', { method: 'POST' });
+  },
+  async gridAccounts(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/accounts');
+  },
+  async gridBeneficiaries(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/beneficiaries');
+  },
+  async gridCreateBeneficiary(data: Record<string, unknown>): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/beneficiaries', { method: 'POST', body: JSON.stringify(data) });
+  },
+  async gridBeneficiaryReceiver(id: string, sendingCurrency: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/beneficiaries/' + encodeURIComponent(id)
+      + '/receiver?sendingCurrency=' + encodeURIComponent(sendingCurrency));
+  },
+  async gridCreateQuote(data: Record<string, unknown>): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/quotes', { method: 'POST', body: JSON.stringify(data) });
+  },
+  async gridQuote(id: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/quotes/' + encodeURIComponent(id));
+  },
+  async gridCreatePayout(quoteId: string, idempotencyKey: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/payouts', {
+      method: 'POST',
+      headers: { 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify({ quoteId, idempotencyKey }),
+    });
+  },
+  async gridPayouts(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/payouts');
+  },
+  async gridPayout(id: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/payouts/' + encodeURIComponent(id));
+  },
+  async gridAdminPayouts(status?: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/admin/payouts' + (status ? '?status=' + encodeURIComponent(status) : ''));
+  },
+  async gridReconcilePayout(id: string): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/admin/payouts/' + encodeURIComponent(id) + '/reconcile', { method: 'POST' });
+  },
+  async gridExceptions(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/admin/exceptions');
+  },
+  async gridWebhookDeliveries(): Promise<ApiResponse> {
+    return request<ApiResponse>('api/lightspark-grid/admin/webhooks');
+  },
+
   async healthCheck(): Promise<ApiResponse> {
     return request<ApiResponse>('health');
   },
