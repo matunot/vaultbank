@@ -23,10 +23,19 @@ app.use(express.json({
     if (path === ENDPOINT) req.rawBody = Buffer.from(buffer);
   },
 }));
+app.use((req, _res, next) => {
+  if (req.path === ENDPOINT) {
+    lastCapturedRawBody = req.rawBody ? Buffer.from(req.rawBody) : null;
+    lastCapturedSignature = req.get('X-Grid-Signature');
+  }
+  next();
+});
 app.use(webhookRouter);
 
 const records = new Map();
 let keys;
+let lastCapturedRawBody = null;
+let lastCapturedSignature = null;
 
 function makeSignature(rawBody) {
   const bodyHash = crypto.createHash('sha256').update(rawBody).digest();
@@ -78,7 +87,15 @@ async function sendEvent(payload, signatureOverride) {
     .post(ENDPOINT)
     .set('Content-Type', 'application/json')
     .set('X-Grid-Signature', signatureHeader)
-    .send(rawBody.toString('utf8'));
+    .send(rawBody.toString('utf8'))
+    .then((response) => {
+      if (!signatureOverride) {
+        expect(lastCapturedRawBody).not.toBeNull();
+        expect(lastCapturedRawBody.equals(rawBody)).toBe(true);
+        expect(lastCapturedSignature).toBe(signatureHeader);
+      }
+      return response;
+    });
 }
 
 beforeAll(() => {
