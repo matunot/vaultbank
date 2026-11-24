@@ -89,6 +89,9 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 // ─── Rate Limiting (global) ──────────────────────────────────────────────────
+app.use(require('./routes/lightspark-grid-webhook'));
+
+// Provider webhooks have their own signature verification and idempotency controls.
 app.use(generalLimiter);
 
 // Attach audit logger to request for easy use in routes
