@@ -12,6 +12,7 @@ const express = require('express');
 const request = require('supertest');
 const { db } = require('../config/database');
 const webhookRouter = require('../routes/lightspark-grid-webhook');
+const { verifyGridWebhookSignature } = require('../services/lightsparkGridWebhook');
 
 const ENDPOINT = '/api/webhooks/lightspark/grid';
 const app = express();
@@ -65,11 +66,19 @@ function installDatabaseMock() {
 
 async function sendEvent(payload, signatureOverride) {
   const rawBody = Buffer.from(JSON.stringify(payload));
+  const signatureHeader = signatureOverride || makeSignature(rawBody);
+  if (!signatureOverride) {
+    expect(verifyGridWebhookSignature({
+      rawBody,
+      signatureHeader,
+      publicKeyPem: process.env.LIGHTSPARK_GRID_WEBHOOK_PUBLIC_KEY,
+    })).toEqual({ version: '1' });
+  }
   return request(app)
     .post(ENDPOINT)
     .set('Content-Type', 'application/json')
-    .set('X-Grid-Signature', signatureOverride || makeSignature(rawBody))
-    .send(rawBody);
+    .set('X-Grid-Signature', signatureHeader)
+    .send(rawBody.toString('utf8'));
 }
 
 beforeAll(() => {
