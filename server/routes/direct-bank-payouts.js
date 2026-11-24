@@ -36,11 +36,11 @@ function requireVerifiedCustomerOrAdmin(req, res, next) {
       message: 'Manual bank payouts are restricted to the authorized admin pilot.',
     });
   }
-  if (!req.user || req.user.email_verified !== true || req.user.kyc_status !== 'verified') {
+  if (!req.user || req.user.kyc_status !== 'verified') {
     return res.status(403).json({
       success: false,
       code: 'CUSTOMER_VERIFICATION_REQUIRED',
-      message: 'Verify your email and complete identity verification before requesting a payout.',
+      message: 'Complete identity verification before requesting a bank payout.',
     });
   }
   return next();

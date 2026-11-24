@@ -94,11 +94,11 @@ function requireCustomerAccess(req, res) {
     });
     return false;
   }
-  if (!req.user || req.user.email_verified !== true || req.user.kyc_status !== 'verified') {
+  if (!req.user || req.user.kyc_status !== 'verified') {
     res.status(403).json({
       success: false,
       code: 'CUSTOMER_VERIFICATION_REQUIRED',
-      message: 'Verify your email and complete identity verification before requesting a USD bank payout.',
+      message: 'Complete identity verification before requesting a USD bank payout.',
     });
     return false;
   }
