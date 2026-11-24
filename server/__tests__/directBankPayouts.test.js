@@ -156,7 +156,7 @@ describe('VaultBank-owned manual bank payouts', () => {
     expect(CDB.db.getClient).not.toHaveBeenCalled();
   });
 
-  test('manual payout customer pilot rejects users without completed KYC or email verification', async () => {
+  test('manual payout customer pilot still requires completed identity verification', async () => {
     enable();
     process.env.VB_DIRECT_BANK_PAYOUT_CUSTOMER_ACCESS_ENABLED = 'true';
     const response = await call('/api/direct-bank-payouts/requests', {
@@ -211,8 +211,9 @@ describe('VaultBank-owned manual bank payouts', () => {
     expect(CDB.db.getClient).not.toHaveBeenCalled();
   });
 
-  test('reserves INR funds atomically and returns only the masked destination', async () => {
+  test('reserves INR funds for a KYC-verified customer without email verification', async () => {
     enable();
+    process.env.VB_DIRECT_BANK_PAYOUT_CUSTOMER_ACCESS_ENABLED = 'true';
     const row = {
       ...REQUEST,
       destination_account_encrypted: route.encryptAccountNumber('123456789'),
@@ -237,6 +238,7 @@ describe('VaultBank-owned manual bank payouts', () => {
     CDB.db.getClient.mockResolvedValue(client);
     const response = await call('/api/direct-bank-payouts/requests', {
       method: 'post',
+      user: { id: 'user-1', role: 'user', email_verified: false, kyc_status: 'verified' },
       headers: { 'idempotency-key': 'payout-attempt-0001' },
       body: { amount: '100.00', beneficiaryName: 'Alice User', bankAccount: '123456789', ifsc: 'HDFC0001234' },
     });
