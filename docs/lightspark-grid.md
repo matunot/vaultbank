@@ -149,6 +149,18 @@ Sandbox UAT with real Grid credentials has **not** been performed (no
 credentials are present in this environment). Unit tests use injected fake
 transports and never contact Grid.
 
+A read-only provider smoke test is provided for the operator:
+
+```powershell
+cd server
+npm run grid:sandbox-smoke              # skips cleanly when not configured
+npm run grid:sandbox-smoke -- --send-webhook
+```
+
+It queries `/config`, `/customers/agreements` and `/exchange-rates`, optionally
+triggers Grid's test webhook, prints no secrets and makes no money movement.
+Its output is engineering evidence only — never proof of settlement.
+
 ## 8. Render environment variables required before any enablement
 
 ```
