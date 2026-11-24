@@ -15,8 +15,9 @@ const generalLimiter = rateLimit({
         retryAfter: 900
     },
     skip: (req) => {
-        // Skip rate limiting for health check
-        return req.path === '/health';
+        // Health checks and signed Grid webhooks use their own budgets: a busy
+        // provider must not be throttled by the browser-facing API bucket.
+        return req.path === '/health' || req.path === '/api/webhooks/lightspark/grid';
     }
 });
 
@@ -113,6 +114,18 @@ const adminLimiter = rateLimit({
     }
 });
 
+/**
+ * Signed provider webhooks. Deduplication happens after signature verification;
+ * this only bounds malformed/unsigned floods reaching verification.
+ */
+const gridWebhookLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { success: false, message: 'Too many webhook deliveries.' }
+});
+
 module.exports = {
     generalLimiter,
     authLimiter,
@@ -120,5 +133,6 @@ module.exports = {
     applicationLimiter,
     transferLimiter,
     signupLimiter,
-    adminLimiter
+    adminLimiter,
+    gridWebhookLimiter
 };

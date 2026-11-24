@@ -30,6 +30,7 @@ const directUpiRoutes = require('./routes/direct-upi');
 const directBankPayoutRoutes = require('./routes/direct-bank-payouts');
 const productApplicationRoutes = require('./routes/product-applications');
 const kycRoutes = require('./routes/kyc');
+const lightsparkGridRoutes = require('./routes/lightspark-grid');
 
 // Import middleware
 const { generalLimiter } = require('./middleware/rateLimiter');
@@ -208,6 +209,7 @@ app.use('/', directBankPayoutRoutes);
 app.use('/', require('./routes/usd-ach-payouts'));
 app.use('/', productApplicationRoutes);
 app.use('/', kycRoutes);
+app.use('/', lightsparkGridRoutes);
 app.use('/', require('./routes/currencies'));
 app.use('/', require('./vbr'));
 app.use('/', require('./routes/usdc-deposits'));
