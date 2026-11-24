@@ -7,6 +7,7 @@ const {
   GridWebhookSignatureError,
   verifyGridWebhookSignature,
   normalizeGridWebhook,
+  chooseGridWebhookDisposition,
 } = require('../services/lightsparkGridWebhook');
 
 const router = express.Router();
@@ -55,37 +56,6 @@ async function ensureWebhookSchema() {
   return schemaPromise;
 }
 
-function chooseWebhookDisposition(event) {
-  if (event.eventType === 'INCOMING_PAYMENT'
-      && String(event.transactionStatus || '').toUpperCase() === 'PENDING') {
-    // Grid interprets HTTP 200 for an incoming PENDING event as approval.
-    // Until VaultBank has its Grid inbound compliance + settlement workflow,
-    // reject explicitly rather than accidentally authorizing a real payment.
-    return {
-      disposition: 'rejected_inbound_approval_disabled',
-      status: 403,
-      body: {
-        code: 'REJECTED_BY_PLATFORM',
-        message: 'VaultBank has not enabled its Grid inbound-payment approval workflow.',
-        reason: 'FAILED_COUNTERPARTY_CHECK',
-      },
-    };
-  }
-
-  if (event.eventType === 'OUTGOING_PAYMENT' || event.eventType === 'INCOMING_PAYMENT') {
-    return {
-      disposition: 'awaiting_ledger_reconciliation',
-      status: 200,
-      body: { received: true },
-    };
-  }
-
-  return {
-    disposition: 'ignored_unknown_event_type',
-    status: 200,
-    body: { received: true, ignored: true },
-  };
-}
 
 router.post(ENDPOINT, async (req, res) => {
   const rawBody = req.rawBody;
@@ -122,7 +92,7 @@ router.post(ENDPOINT, async (req, res) => {
     return res.status(400).json({ success: false, code: error.code || 'GRID_WEBHOOK_PAYLOAD_INVALID' });
   }
 
-  const decision = chooseWebhookDisposition(event);
+  const decision = chooseGridWebhookDisposition(event);
   const payloadHash = crypto.createHash('sha256').update(rawBody).digest('hex');
 
   try {

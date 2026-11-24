@@ -153,8 +153,41 @@ function normalizeGridWebhook(payload) {
   };
 }
 
+
+function chooseGridWebhookDisposition(event) {
+  if (event.eventType === 'INCOMING_PAYMENT'
+      && String(event.transactionStatus || '').toUpperCase() === 'PENDING') {
+    // Grid treats HTTP 200 for an incoming PENDING event as approval.
+    // Until the inbound compliance/approval flow exists, fail closed.
+    return {
+      disposition: 'rejected_inbound_approval_disabled',
+      status: 403,
+      body: {
+        code: 'REJECTED_BY_PLATFORM',
+        message: 'VaultBank has not enabled its Grid inbound-payment approval workflow.',
+        reason: 'FAILED_COUNTERPARTY_CHECK',
+      },
+    };
+  }
+
+  if (event.eventType === 'OUTGOING_PAYMENT' || event.eventType === 'INCOMING_PAYMENT') {
+    return {
+      disposition: 'awaiting_ledger_reconciliation',
+      status: 200,
+      body: { received: true },
+    };
+  }
+
+  return {
+    disposition: 'ignored_unknown_event_type',
+    status: 200,
+    body: { received: true, ignored: true },
+  };
+}
+
 module.exports = {
   GridWebhookSignatureError,
   verifyGridWebhookSignature,
   normalizeGridWebhook,
+  chooseGridWebhookDisposition,
 };

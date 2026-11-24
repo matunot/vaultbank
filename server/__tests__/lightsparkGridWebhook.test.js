@@ -5,6 +5,7 @@ const {
   GridWebhookSignatureError,
   verifyGridWebhookSignature,
   normalizeGridWebhook,
+  chooseGridWebhookDisposition,
 } = require('../services/lightsparkGridWebhook');
 
 function makeKeyPair() {
@@ -92,5 +93,50 @@ describe('Lightspark Grid webhook verification', () => {
     });
     expect(event).not.toHaveProperty('counterpartyInformation');
     expect(JSON.stringify(event)).not.toContain('Must not be persisted');
+  });
+});
+
+describe('Lightspark Grid webhook handling policy', () => {
+  test('does not approve an incoming PENDING payment before inbound controls exist', () => {
+    expect(chooseGridWebhookDisposition({
+      eventType: 'INCOMING_PAYMENT',
+      transactionStatus: 'PENDING',
+    })).toMatchObject({
+      disposition: 'rejected_inbound_approval_disabled',
+      status: 403,
+      body: { code: 'REJECTED_BY_PLATFORM' },
+    });
+  });
+
+  test('durably acknowledges outgoing payment events for later ledger reconciliation', () => {
+    expect(chooseGridWebhookDisposition({
+      eventType: 'OUTGOING_PAYMENT',
+      transactionStatus: 'COMPLETED',
+    })).toMatchObject({
+      disposition: 'awaiting_ledger_reconciliation',
+      status: 200,
+      body: { received: true },
+    });
+  });
+
+  test('does not fail on an authenticated future event type', () => {
+    expect(chooseGridWebhookDisposition({
+      eventType: 'FUTURE_GRID_EVENT',
+    })).toMatchObject({
+      disposition: 'ignored_unknown_event_type',
+      status: 200,
+      body: { ignored: true },
+    });
+  });
+});
+
+describe('Grid webhook raw-body middleware', () => {
+  test('captures exact bytes for the Grid endpoint, including query strings', () => {
+    const { captureRawBody } = require('../middleware/rawBody');
+    const req = { originalUrl: '/api/webhooks/lightspark/grid?source=dashboard' };
+    const bytes = Buffer.from('{"exact":"bytes"}');
+    captureRawBody(req, {}, bytes);
+    expect(req.rawBody).toEqual(bytes);
+    expect(req.rawBody).not.toBe(bytes);
   });
 });
