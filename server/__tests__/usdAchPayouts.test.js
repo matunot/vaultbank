@@ -54,6 +54,11 @@ describe('native USD ACH payout preparation',()=>{
   enable();const res=await call('/api/usd-ach/payouts',{method:'post',user:{id:'customer-1',role:'user',email_verified:true,kyc_status:'verified'},headers:{'idempotency-key':'usd-ach-customer-001'},body:{amount:'25.00',beneficiaryName:'Alice Test',routingNumber:'021000021',accountNumber:'0012345',accountType:'checking',authorizationAccepted:true}});
   expect(res.statusCode).toBe(403);expect(res.body.code).toBe('USD_ACH_CUSTOMER_ACCESS_DISABLED');expect(CDB.db.query).not.toHaveBeenCalled();
  });
+ test('still requires identity verification when email verification is not required',async()=>{
+  enable({customerAccess:true});
+  const res=await call('/api/usd-ach/payouts',{method:'post',user:{id:'customer-1',role:'user',email_verified:false,kyc_status:'pending'},headers:{'idempotency-key':'usd-ach-kyc-pending-001'},body:{amount:'25.00',beneficiaryName:'Alice Test',routingNumber:'021000021',accountNumber:'0012345',accountType:'checking',authorizationAccepted:true}});
+  expect(res.statusCode).toBe(403);expect(res.body.code).toBe('CUSTOMER_VERIFICATION_REQUIRED');expect(res.body.message).toContain('identity verification');expect(CDB.db.query).not.toHaveBeenCalled();
+ });
  test('rejects invalid ABA routing checksum before touching payout storage',async()=>{
   enable({customerAccess:true});CDB.findUserById.mockResolvedValue({id:'customer-1',full_name:'Alice Test'});
   const res=await call('/api/usd-ach/payouts',{method:'post',user:{id:'customer-1',role:'user',email_verified:true,kyc_status:'verified'},headers:{'idempotency-key':'usd-ach-routing-001'},body:{amount:'25.00',beneficiaryName:'Alice Test',routingNumber:'021000022',accountNumber:'0012345',accountType:'checking',authorizationAccepted:true}});
@@ -68,7 +73,7 @@ describe('native USD ACH payout preparation',()=>{
    if(t.includes('UPDATE accounts SET balance = balance -'))return {rows:[{balance_before:'500.00',balance_after:'475.00'}]};return {rows:[]};
   }),release:jest.fn()};
   CDB.db.getClient.mockResolvedValue(client);CDB.db.query.mockResolvedValue({rows:[]});
-  const res=await call('/api/usd-ach/payouts',{method:'post',user:{id:'customer-1',role:'user',email_verified:true,kyc_status:'verified'},headers:{'idempotency-key':'usd-ach-positive-001'},body:{amount:'25.00',beneficiaryName:'Alice Test',routingNumber:'021000021',accountNumber:'0012345',accountType:'checking',authorizationAccepted:true}});
+  const res=await call('/api/usd-ach/payouts',{method:'post',user:{id:'customer-1',role:'user',email_verified:false,kyc_status:'verified'},headers:{'idempotency-key':'usd-ach-positive-001'},body:{amount:'25.00',beneficiaryName:'Alice Test',routingNumber:'021000021',accountNumber:'0012345',accountType:'checking',authorizationAccepted:true}});
   expect(res.statusCode).toBe(201);expect(res.body.request.status).toBe('reserved');expect(res.body.message).toContain('has not been sent');
   expect(ledger.changeVerifiedAvailableBalance).toHaveBeenCalledWith(client,'account-usd-1','25.00','debit');
   expect(ledger.postBalancedJournal).toHaveBeenCalledWith(client,expect.objectContaining({eventType:'payout_reserved',sourceType:'usd_ach_payout',currency:'USD'}));
