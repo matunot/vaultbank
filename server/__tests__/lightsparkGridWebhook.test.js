@@ -64,6 +64,25 @@ describe('Lightspark Grid webhook verification', () => {
     })).toThrow('Grid webhook public key must use the P-256 curve.');
   });
 
+  test('accepts the documented Grid dashboard TEST webhook id field', () => {
+    const event = normalizeGridWebhook({
+      id: 'Webhook:grid-test-1',
+      type: 'TEST',
+      timestamp: '2026-11-24T09:00:00.000Z',
+      data: {},
+    });
+    expect(event).toMatchObject({
+      webhookId: 'Webhook:grid-test-1',
+      eventType: 'TEST',
+      transactionId: null,
+    });
+    expect(chooseGridWebhookDisposition(event)).toMatchObject({
+      disposition: 'ignored_unknown_event_type',
+      status: 200,
+      body: { received: true, ignored: true },
+    });
+  });
+
   test('normalizes supported payment metadata without retaining counterparty PII', () => {
     const event = normalizeGridWebhook({
       webhookId: 'Webhook:test-3',
