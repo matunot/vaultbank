@@ -243,6 +243,11 @@ const router = express.Router();
  */
 router.post('/api/kyc', authenticateToken, receiveDocument, async (req, res) => {
     try {
+        return res.status(503).json({
+            success: false,
+            code: 'KYC_TEMPORARILY_PAUSED',
+            message: 'KYC document intake is paused while VaultBank is in internal testing.',
+        });
         if (!req.file || !req.file.buffer || req.file.buffer.length === 0) {
             return res.status(400).json({
                 success: false,
