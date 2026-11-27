@@ -93,6 +93,7 @@ app.use(generalLimiter);
 
 // Grid webhooks inherit the global limiter before signature verification and durable idempotency handling.
 app.use(require('./routes/lightspark-grid-webhook'));
+app.use(require('./routes/modern-treasury'));
 
 // Attach audit logger to request for easy use in routes
 app.use((req, res, next) => {
