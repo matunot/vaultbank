@@ -11,6 +11,7 @@ function captureRawBody(req, _res, buf) {
     if (
         path === '/api/collections/webhook/cashfree'
         || path === '/api/webhooks/lightspark/grid'
+        || path === '/api/webhooks/modern-treasury'
     ) {
         req.rawBody = Buffer.from(buf);
     }
