@@ -447,6 +447,46 @@ const { ensureConnection } = require('./config/db');
 const { isProductionRuntime } = require('./config/database-mode');
 const { seedDemoData } = require('./config/database');
 
+// Run provider diagnostics after the HTTP listener is ready. This is deliberately
+// read-only: it authenticates with Modern Treasury, checks the API-key mode,
+// and lists only account count/currencies. It never creates resources or moves money.
+async function runModernTreasuryStartupDiagnostics() {
+    const provider = require('./services/modernTreasuryClient');
+    const config = provider.getConfig();
+    const webhookKeyConfigured = Boolean(String(process.env.MODERN_TREASURY_WEBHOOK_KEY || '').trim());
+
+    console.info('[modern-treasury] startup diagnostics:', {
+        credentialsConfigured: config.configured,
+        webhookSigningKeyConfigured: webhookKeyConfigured,
+        moneyMovementEnabled: false,
+    });
+
+    if (!config.configured) {
+        console.warn('[modern-treasury] skipped live API handshake: Organization ID or API key is missing.');
+        return;
+    }
+
+    try {
+        const connection = await provider.checkConnection();
+        const accounts = await provider.listInternalAccounts();
+        const currencies = [...new Set(accounts.map((account) => account.currency).filter(Boolean))].sort();
+
+        console.info('[modern-treasury] read-only API handshake passed:', {
+            mode: connection.mode,
+            apiKeyName: connection.apiKey && connection.apiKey.name,
+            internalAccountCount: accounts.length,
+            activeAccountCurrencies: currencies,
+            webhookSigningKeyConfigured: webhookKeyConfigured,
+        });
+    } catch (error) {
+        console.error('[modern-treasury] read-only API handshake failed:', {
+            code: error && error.code ? error.code : 'MODERN_TREASURY_DIAGNOSTIC_FAILED',
+            status: error && Number.isInteger(error.status) ? error.status : null,
+            webhookSigningKeyConfigured: webhookKeyConfigured,
+        });
+    }
+}
+
 // ─── Start Server ─────────────────────────────────────────────────────────────
 async function startServer() {
     console.info('[payments] merchant gateways are not mounted; bank flows use VaultBank-native ledger and bank reconciliation.');
@@ -477,6 +517,10 @@ async function startServer() {
     }
 
     app.listen(PORT, () => {
+        // Fire-and-forget, read-only provider checks; never block API startup.
+        runModernTreasuryStartupDiagnostics().catch((error) => {
+            console.error('[modern-treasury] startup diagnostics crashed:', error && error.code ? error.code : 'unknown');
+        });
         console.log(`
 â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—
 â•‘                     ðŸ¦ VAULTBANK SERVER                       â•‘
