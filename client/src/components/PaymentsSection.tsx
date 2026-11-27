@@ -54,7 +54,7 @@ interface InrTransaction {
 }
 
 
-export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal: string) => void }) {
+export default function PaymentsSection({ onOpenModal, onOpenVerification }: { onOpenModal?: (modal: string) => void; onOpenVerification?: () => void }) {
   const [currency, setCurrency] = useState<Currency>('USD');
   const [hideBalances, setHideBalances] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -519,7 +519,7 @@ export default function PaymentsSection({ onOpenModal }: { onOpenModal?: (modal:
       )}
 
       {/* VaultBank-owned bank-transfer instruction + manual statement reconciliation. */}
-      <BankTransferDepositPanel />
+      <BankTransferDepositPanel onOpenVerification={onOpenVerification} />
       <UsdAchPayoutPanel visible={currency === 'USD'} />
 
       {/* ── REAL rails readiness — no fake providers ── */}

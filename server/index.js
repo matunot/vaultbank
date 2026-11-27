@@ -3,6 +3,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const morgan = require('morgan');
 const requestLogger = require('./middleware/logger');
 const { captureRawBody } = require('./middleware/rawBody');
@@ -118,6 +119,15 @@ try {
 
 // ─── Health Check ─────────────────────────────────────────────────────────────
 app.get('/health', (req, res) => {
+    // Pool counters only — never connection strings, query text or user data.
+    let dbPool = null;
+    try {
+        const { pool, isDemo } = require('./config/db');
+        dbPool = isDemo || !pool
+            ? { mode: 'demo' }
+            : { total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount };
+    } catch { /* health must never fail because diagnostics did */ }
+
     return res.status(200).json({
         status: 'ok',
         uptime: Date.now() - startTime,
@@ -125,6 +135,7 @@ app.get('/health', (req, res) => {
         version: '1.0.0',
         environment: process.env.NODE_ENV || 'development',
         memory: typeof process.memoryUsage === 'function' ? process.memoryUsage() : {},
+        dbPool,
         usdcTestnet: require('./payments/usdc-testnet').MODE || undefined,
         authProbe: bcryptProbe,
         message: 'ðŸ¦ VaultBank API is running!'
@@ -223,7 +234,28 @@ app.use('/', require('./routes/usdc-deposits'));
 // This guarantees the deployed app can always reach its own API — no stale
 // frontend build or cross-origin mismatch can break login again.
 if (hasFrontend) {
-    app.use(express.static(FRONTEND_DIST));
+    // Compress the built app at the origin. Cloudflare may re-compress for the
+    // public edge, but direct requests (local, previews, degraded proxies) must
+    // not pay the full uncompressed size. Mounted only for frontend assets so
+    // streaming API responses keep their current behaviour.
+    app.use(compression({ threshold: 1024 }));
+    // Content-hashed build assets can be cached forever: a new build always
+    // produces a new filename. index.html must revalidate so clients pick up
+    // the new asset graph immediately. Non-hashed files get a short TTL.
+    const immutableAsset = /[\\/]assets[\\/].+[-.][A-Za-z0-9_-]{6,}\.(?:js|css|woff2?|ttf|otf|png|jpe?g|gif|svg|webp|avif|ico)$/i;
+    app.use(express.static(FRONTEND_DIST, {
+        etag: true,
+        lastModified: true,
+        setHeaders: (res, filePath) => {
+            if (immutableAsset.test(filePath)) {
+                res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            } else if (filePath.endsWith('.html')) {
+                res.setHeader('Cache-Control', 'no-cache');
+            } else {
+                res.setHeader('Cache-Control', 'public, max-age=3600');
+            }
+        }
+    }));
 }
 
 app.get('/', (req, res) => {

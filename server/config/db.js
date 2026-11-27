@@ -10,6 +10,11 @@ require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
 
 const { Pool } = require('pg');
 const { isProductionRuntime, resolveDemoMode } = require('./database-mode');
+const { recordDbQuery } = require('./dbMetrics');
+
+function elapsedMs(startedAt) {
+    return Number(process.hrtime.bigint() - startedAt) / 1e6;
+}
 
 // ─── Database mode: demo is for local/test only ──────────────────────────────
 // Never silently switch a production deployment to in-memory demo accounts.
@@ -44,7 +49,10 @@ const pool = databaseUrl ? new Pool({
     ...connectionOptions(databaseUrl),
     max: 10,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000,
+    application_name: 'vaultbank-api',
 }) : null;
 
 if (pool) {
@@ -79,9 +87,14 @@ async function query(text, params) {
     }
     await ensureConnection();
     const client = await pool.connect();
+    const startedAt = process.hrtime.bigint();
     try {
         const result = await client.query(text, params);
+        recordDbQuery(text, elapsedMs(startedAt), true);
         return { rows: result.rows, rowCount: result.rowCount };
+    } catch (error) {
+        recordDbQuery(text, elapsedMs(startedAt), false);
+        throw error;
     } finally {
         client.release();
     }
@@ -96,8 +109,15 @@ async function getClient() {
     const client = await pool.connect();
     return {
         query: async (text, params) => {
-            const result = await client.query(text, params);
-            return { rows: result.rows, rowCount: result.rowCount };
+            const startedAt = process.hrtime.bigint();
+            try {
+                const result = await client.query(text, params);
+                recordDbQuery(text, elapsedMs(startedAt), true);
+                return { rows: result.rows, rowCount: result.rowCount };
+            } catch (error) {
+                recordDbQuery(text, elapsedMs(startedAt), false);
+                throw error;
+            }
         },
         // release(true) destroys the connection instead of returning it to the
         // pool — required when a COMMIT acknowledgement was lost and the

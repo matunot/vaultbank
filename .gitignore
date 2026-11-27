@@ -31,6 +31,12 @@ now.json
 # Testing
 coverage/
 .nyc_output/
+client/test-results/
+client/playwright-report/
+client/e2e/.auth/
+
+# Local performance evidence (logs, screenshots, traces)
+reports/
 
 # Editor/OS
 .vscode/

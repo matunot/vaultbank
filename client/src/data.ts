@@ -3,14 +3,13 @@ export const navItems = [
   { id: 'vault',    label: 'Vault',      icon: 'Vault' },
   { id: 'swiss',    label: 'Swiss Bank', icon: 'Mountain' },
   { id: 'cards',    label: 'Cards',      icon: 'CreditCard' },
-  { id: 'credit',   label: 'Credit',     icon: 'Wallet' },
   { id: 'payments', label: 'Payments',   icon: 'Wallet' },
   { id: 'invest',   label: 'Invest',     icon: 'TrendingUp' },
   { id: 'loans',    label: 'Debts',      icon: 'Landmark' },
   { id: 'send',     label: 'Transfer',   icon: 'Send' },
   { id: 'history',  label: 'History',    icon: 'History' },
   { id: 'rewards',  label: 'Rewards',    icon: 'Gem' },
-  { id: 'security', label: 'Security',   icon: 'Shield' },
+  { id: 'security', label: 'Verification Center', icon: 'Shield' },
 ];
 
 export const balance = {
